@@ -39,7 +39,7 @@ Webflow CMS collections the backend reads or writes:
 | Actions | `6af7ebcaa5421969142eccae` | `name`, `slug`, `done-count`, `votes`, `do-it-with` (multi-reference), `suggestion` (reference to Suggestions), `hidden` |
 | Suggestions | `6af8ab957991d4c1991814e9` | Idea text, submitter, `Status` (New, Approved, Rejected), `action` (reference to Actions) |
 | Stories | `6af93db2a61504315554fd90` | `story`, `photo`, `video`, `action` (reference), `submitted-by`, `email`, `submitted-on`, `status` (New, Approved, Rejected), `review-notes` |
-| Companions | `6af7ebc62c8c45967935cd43` | "On your own", "With kids", "With friends", "With colleagues" |
+| Companions | `6af7ebc62c8c45967935cd43` | "On my own", "With kids", "With friends", "With colleagues" |
 | Products, Drops | See the Webflow CMS | Drop quantity and lead product |
 
 Pages that will call the backend: The action page ("I did this", like, "Do this with me", "Share your story"), `/account`, `/share-your-story`, `/do-this-with-me`, `/suggest-an-action`, `/stories`, the front page drop hero and the cart.

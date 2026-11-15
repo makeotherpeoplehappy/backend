@@ -248,13 +248,49 @@
     if (ok) window.HF.sync = sync;
   });
 
-  // "Notify me when this drop goes live", under the countdown of an upcoming drop.
-  async function dropNotify() {
+  // "Notify me when this drop goes live". On a drop (home page, /drops/<slug>)
+  // the form sits under the countdown. On /shop and on the lead product's page
+  // it sits above the products, using the drop shown on the home page.
+  function readHomeDrop() {
+    return fetch('/', { credentials: 'same-origin' })
+      .then(function (r) { return r.ok ? r.text() : ''; })
+      .then(function (html) {
+        if (!html || typeof DOMParser === 'undefined') return null;
+        var d = new DOMParser().parseFromString(html, 'text/html');
+        var g = function (id) { var e = d.getElementById(id); return e ? e.textContent.trim() : ''; };
+        return { status: g('hf-drop-status'), lead: g('hf-drop-lead'), date: g('hf-drop-date') };
+      })
+      .catch(function () { return null; });
+  }
+
+  async function dropPlacement() {
     var status = document.getElementById('hf-drop-status');
     var count = document.getElementById('hf-drop-count');
-    if (!status || !count || status.textContent.trim().toLowerCase() !== 'upcoming' || document.getElementById('hfb-notify')) return;
-    var m = location.pathname.match(/^\/drops\/([a-z0-9-]+)/);
-    var drop = m ? m[1] : null;
+    if (status && count) {
+      if (status.textContent.trim().toLowerCase() !== 'upcoming') return null;
+      var m = location.pathname.match(/^\/drops\/([a-z0-9-]+)/);
+      return { anchor: count, where: 'afterend', drop: m ? m[1] : null, label: 'Get an email when this drop goes live.' };
+    }
+    var p = location.pathname.match(/^\/products\/([^\/]+)/);
+    var anchor = location.pathname === '/shop' ? document.getElementById('hf-shop') : p ? document.getElementById('hf-product') : null;
+    if (!anchor) return null;
+    var home = await readHomeDrop();
+    if (!home || home.status.toLowerCase() !== 'upcoming') return null;
+    if (p && p[1] !== home.lead) return null;
+    var when = home.date ? ' on ' + home.date + ' ET' : '';
+    return {
+      anchor: anchor,
+      where: 'beforebegin',
+      drop: null,
+      label: p ? 'This piece goes live with the next drop' + when + '. Get an email when it does.' : 'The next drop goes live' + when + '. Get an email when it does.',
+    };
+  }
+
+  async function dropNotify() {
+    if (document.getElementById('hfb-notify')) return false;
+    var place = await dropPlacement();
+    if (!place || document.getElementById('hfb-notify')) return false;
+    var drop = place.drop;
     var signedIn = !!token();
     var form = document.createElement('form');
     form.id = 'hfb-notify';
@@ -262,7 +298,7 @@
     form.style.margin = '12px 0';
     var label = document.createElement('label');
     label.htmlFor = 'hfb-notify-email';
-    label.textContent = signedIn ? 'Get an email at your account address when this drop goes live.' : 'Get an email when this drop goes live.';
+    label.textContent = signedIn ? place.label.replace('Get an email', 'Get an email at your account address') : place.label;
     label.style.display = 'block';
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px';
@@ -287,7 +323,7 @@
     form.appendChild(label);
     form.appendChild(row);
     form.appendChild(msg);
-    count.insertAdjacentElement('afterend', form);
+    place.anchor.insertAdjacentElement(place.where, form);
     var busy = false;
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
@@ -306,10 +342,11 @@
         msg.textContent = (r.data && r.data.message) || 'That did not work. Please try again.';
       }
     });
+    return true;
   }
-  waitFor(function () { return !!window.HF; }, 10000).then(function () { dropNotify(); });
+  waitFor(function () { return !!window.HF; }, 10000).then(function () { return dropNotify(); }).catch(function () {});
 
-  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey };
+  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
   else resume();

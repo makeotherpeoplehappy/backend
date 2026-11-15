@@ -2,7 +2,7 @@
 // from Miniflare, the same runtime Webflow Cloud uses, with fake Shopify,
 // Webflow, Resend and Turnstile services behind an injected fetch.
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { Miniflare } from 'miniflare';
 import { createApp } from '../src/core/app';
 import { CMS } from '../src/core/config';
@@ -20,17 +20,32 @@ export interface FakeCustomer {
   actionVotes?: string;
 }
 
+export interface FakeProduct {
+  id: string;
+  handle: string;
+  title: string;
+  status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
+  descriptionHtml: string;
+  description: string;
+  seoDescription?: string | null;
+  imageUrl?: string | null;
+}
+
 export interface FakeItem {
   id: string;
   isDraft: boolean;
   live: boolean;
   fieldData: Record<string, unknown>;
+  /** What the live site shows (set when published). */
+  liveFieldData?: Record<string, unknown>;
 }
 
 export class FakeServices {
   /** token -> customer */
   tokens = new Map<string, FakeCustomer>();
   customers: FakeCustomer[] = [];
+  products: FakeProduct[] = [];
+  webhookSubs: { id: string; topic: string; uri: string }[] = [];
   /** collectionId -> items */
   items = new Map<string, FakeItem[]>();
   emails: { to: string[]; subject: string; text: string; headers?: Record<string, string> }[] = [];
@@ -115,6 +130,29 @@ export class FakeServices {
         done: c.actionsTaken ? { value: c.actionsTaken } : null,
         votes: c.actionVotes ? { value: c.actionVotes } : null,
       });
+      const productNode = (p: FakeProduct) => ({
+        id: p.id,
+        handle: p.handle,
+        title: p.title,
+        status: p.status,
+        descriptionHtml: p.descriptionHtml,
+        description: p.description,
+        seo: { description: p.seoDescription ?? null },
+        featuredMedia: p.imageUrl ? { preview: { image: { url: p.imageUrl, altText: null } } } : null,
+      });
+      if (q.query.includes('webhookSubscriptionCreate')) {
+        const sub = { id: `gid://shopify/WebhookSubscription/${this.webhookSubs.length + 1}`, topic: String(q.variables.topic), uri: String(q.variables.uri) };
+        this.webhookSubs.push(sub);
+        return j({ data: { webhookSubscriptionCreate: { webhookSubscription: { id: sub.id }, userErrors: [] } } });
+      }
+      if (q.query.includes('webhookSubscriptions')) return j({ data: { webhookSubscriptions: { nodes: this.webhookSubs } } });
+      if (q.query.includes('product(id:')) {
+        const p = this.products.find((x) => x.id === q.variables.id);
+        return j({ data: { product: p ? productNode(p) : null } });
+      }
+      if (q.query.includes('products(')) {
+        return j({ data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: this.products.filter((p) => p.status === 'ACTIVE').map(productNode) } } });
+      }
       if (q.query.includes('customer(id:')) {
         const c = this.customers.find((x) => x.id === q.variables.id);
         return j({ data: { customer: c ? node(c) : null } });
@@ -126,6 +164,29 @@ export class FakeServices {
     if (url.hostname === 'api.webflow.com') {
       if (headers.get('Authorization') !== 'Bearer wf_test') return j({ message: 'Unauthorized' }, 401);
       if (this.webflowDown) return j({ message: 'Service Unavailable' }, 503);
+      const pub = /^\/v2\/collections\/([^/]+)\/items\/publish$/.exec(url.pathname);
+      if (pub && method === 'POST') {
+        const items = this.collection(pub[1]);
+        for (const id of (body as { itemIds: string[] }).itemIds) {
+          const it = items.find((i) => i.id === id);
+          if (!it) return j({ message: 'not found' }, 404);
+          it.live = true;
+          it.liveFieldData = { ...it.fieldData };
+        }
+        return j({ publishedItemIds: (body as { itemIds: string[] }).itemIds }, 202);
+      }
+      const createLive = /^\/v2\/collections\/([^/]+)\/items\/live$/.exec(url.pathname);
+      if (createLive && method === 'POST') {
+        const items = this.collection(createLive[1]);
+        const b = body as { fieldData: Record<string, unknown> };
+        if (items.some((i) => i.fieldData.slug === b.fieldData.slug)) {
+          return j({ message: 'Validation Error', details: [{ param: 'slug', description: 'Unique value is already in database' }] }, 400);
+        }
+        const it: FakeItem = { id: this.newId(), isDraft: false, live: true, fieldData: { ...b.fieldData } };
+        it.liveFieldData = { ...it.fieldData };
+        items.push(it);
+        return j(it, 202);
+      }
       const m = /^\/v2\/collections\/([^/]+)\/items(?:\/([^/]+))?(?:\/(live))?$/.exec(url.pathname);
       if (!m) return j({ message: 'not found' }, 404);
       const [, cid, rawId, rawLive] = m;
@@ -163,7 +224,9 @@ export class FakeServices {
       if (method === 'PATCH' && itemId) {
         const it = items.find((i) => i.id === itemId);
         if (!it) return j({ message: 'not found' }, 404);
-        Object.assign(it.fieldData, (body as { fieldData: Record<string, unknown> }).fieldData);
+        const b = body as { fieldData: Record<string, unknown>; isDraft?: boolean };
+        Object.assign(it.fieldData, b.fieldData);
+        if (typeof b.isDraft === 'boolean') it.isDraft = b.isDraft;
         return j(it);
       }
       if (method === 'DELETE' && itemId && live) {
@@ -218,7 +281,12 @@ export async function createHarness(): Promise<Harness> {
     r2Buckets: ['MEDIA'],
   });
   const DB = (await mf.getD1Database('DB')) as unknown as D1Database;
-  const sql = readFileSync(new URL('../migrations/0001_init.sql', import.meta.url), 'utf8');
+  const dir = new URL('../migrations/', import.meta.url);
+  const sql = readdirSync(dir)
+    .filter((f) => f.endsWith('.sql'))
+    .sort()
+    .map((f) => readFileSync(new URL(f, dir), 'utf8'))
+    .join(';\n');
   for (const stmt of sql
     .split(/;\s*\n/)
     .map((s) => s.replace(/--.*$/gm, '').trim())

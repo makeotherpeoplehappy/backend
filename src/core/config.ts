@@ -17,6 +17,9 @@ export const CMS = {
       rejected: 'e2e01c9b7f6584b7f9e65faca50e1773',
     },
   },
+  products: {
+    id: '6af88f08848599f43fec76c8',
+  },
   stories: {
     id: '6af93db2a61504315554fd90',
     status: {

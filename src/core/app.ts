@@ -10,6 +10,7 @@ import { actionState, assertActionId, markDone, syncActions } from './features/a
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
+import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
 import { deleteStory, sendStory, sendSuggestion } from './features/submissions';
 import { customerGid } from './shopify';
 
@@ -147,16 +148,25 @@ route('POST', '/api/notifications/off', false, unsubscribe);
 route('POST', '/api/jobs/tick', false, async ({ req, env, deps }) => {
   requireSecret(req, env.JOBS_SECRET);
   const out: Record<string, unknown> = { queue: await drain(env, deps, { limit: 60, deadlineMs: 25_000 }) };
-  const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = 'sync-actions'`).first<{ last_run_at: string }>();
-  if (!last || deps.now().getTime() - Date.parse(last.last_run_at) > 60 * 60 * 1000) {
+  // Hourly jobs. Each runs at most once an hour, whatever the timer does.
+  const hourly: [string, string, () => Promise<unknown>][] = [
+    ['sync-actions', 'syncActions', () => syncActions(env, deps)],
+    ['sync-products', 'syncProducts', () => syncAllProducts(env, deps)],
+  ];
+  for (const [job, key, run] of hourly) {
+    const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = ?1`).bind(job).first<{ last_run_at: string }>();
+    if (last && deps.now().getTime() - Date.parse(last.last_run_at) <= 60 * 60 * 1000) continue;
     try {
-      out.syncActions = await syncActions(env, deps);
-      await env.DB.prepare(`INSERT INTO job_runs (job, last_run_at) VALUES ('sync-actions', ?1) ON CONFLICT (job) DO UPDATE SET last_run_at = excluded.last_run_at`)
-        .bind(iso(deps.now()))
+      const result = await run();
+      out[key] = result;
+      const errs = (result as { errors?: unknown[] }).errors;
+      if (errs?.length) await reportError(env, deps, { where: `job ${job}`, error: new Error(`${errs.length} item(s) failed`), details: { errors: errs } });
+      await env.DB.prepare(`INSERT INTO job_runs (job, last_run_at) VALUES (?1, ?2) ON CONFLICT (job) DO UPDATE SET last_run_at = excluded.last_run_at`)
+        .bind(job, iso(deps.now()))
         .run();
     } catch (e) {
-      out.syncActions = { error: (e as Error).message };
-      await reportError(env, deps, { where: 'job sync-actions', error: e });
+      out[key] = { error: (e as Error).message };
+      await reportError(env, deps, { where: `job ${job}`, error: e });
     }
   }
   return json(out);
@@ -165,6 +175,16 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps }) => {
 route('POST', '/api/admin/sync-actions', false, async ({ req, env, deps }) => {
   requireSecret(req, env.ADMIN_SECRET);
   return json(await syncActions(env, deps));
+});
+
+route('POST', '/api/admin/sync-products', false, async ({ req, env, deps }) => {
+  requireSecret(req, env.ADMIN_SECRET);
+  return json(await syncAllProducts(env, deps));
+});
+
+route('POST', '/api/admin/shopify-webhooks', false, async ({ req, env, deps, baseUrl }) => {
+  requireSecret(req, env.ADMIN_SECRET);
+  return json(await ensureShopifyWebhooks(env, deps, `${baseUrl}/api/webhooks/shopify`));
 });
 
 route('POST', '/api/admin/import', false, async ({ req, env, deps }) => {
@@ -193,6 +213,10 @@ route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
       const id = topic === 'customers/delete' ? body.id : (body.customer as { id?: unknown } | undefined)?.id;
       const deleted = id ? await deleteMemberByCustomerId(env, deps, customerGid(String(id))) : false;
       return json({ ok: true, deleted });
+    }
+    if (topic === 'products/create' || topic === 'products/update' || topic === 'products/delete') {
+      if (!body.id) return json({ ok: true, ignored: 'no product id' });
+      return json({ ok: true, ...(await syncOneProduct(env, deps, String(body.id), topic === 'products/delete')) });
     }
     // Order webhooks arrive in Phase 3.
     return json({ ok: true, ignored: topic });

@@ -98,3 +98,45 @@ export async function getLiveItem(env: Env, deps: Deps, collectionId: string, it
   if (!res.ok) return fail(res, 'get live item');
   return (await res.json()) as WebflowItem;
 }
+
+/** Lists every item of a collection, drafts included (staged view). */
+export async function listAllItems(env: Env, deps: Deps, collectionId: string): Promise<WebflowItem[]> {
+  const all: WebflowItem[] = [];
+  for (let offset = 0; ; offset += 100) {
+    const res = await request(env, deps, 'GET', `/collections/${collectionId}/items?limit=100&offset=${offset}`);
+    if (!res.ok) await fail(res, 'list items');
+    const body = (await res.json()) as { items?: WebflowItem[]; pagination?: { total?: number } };
+    const items = body.items || [];
+    all.push(...items);
+    if (items.length < 100 || all.length >= (body.pagination?.total ?? 0)) break;
+  }
+  return all;
+}
+
+/** Creates an item and publishes it straight to the live site. */
+export async function createLiveItem(
+  env: Env,
+  deps: Deps,
+  collectionId: string,
+  fieldData: Record<string, unknown> & { name: string; slug: string },
+): Promise<WebflowItem> {
+  const res = await request(env, deps, 'POST', `/collections/${collectionId}/items/live`, { isArchived: false, isDraft: false, fieldData });
+  if (!res.ok) return fail(res, 'create live item');
+  return (await res.json()) as WebflowItem;
+}
+
+/** Updates an item (making it a non-draft) and publishes it to the live site. */
+export async function updateAndPublishItem(env: Env, deps: Deps, collectionId: string, itemId: string, fieldData: Record<string, unknown>): Promise<void> {
+  const res = await request(env, deps, 'PATCH', `/collections/${collectionId}/items/${itemId}`, { isDraft: false, isArchived: false, fieldData });
+  if (!res.ok) await fail(res, 'update item');
+  const pub = await request(env, deps, 'POST', `/collections/${collectionId}/items/publish`, { itemIds: [itemId] });
+  if (!pub.ok) await fail(pub, 'publish item');
+}
+
+/** Takes an item off the live site and keeps it as a draft. */
+export async function unpublishItem(env: Env, deps: Deps, collectionId: string, itemId: string): Promise<void> {
+  const live = await request(env, deps, 'DELETE', `/collections/${collectionId}/items/${itemId}/live`);
+  if (!live.ok && live.status !== 404 && live.status !== 409 && live.status !== 400) await fail(live, 'unpublish item');
+  const res = await request(env, deps, 'PATCH', `/collections/${collectionId}/items/${itemId}`, { isDraft: true, fieldData: {} });
+  if (!res.ok && res.status !== 404) await fail(res, 'mark item as draft');
+}

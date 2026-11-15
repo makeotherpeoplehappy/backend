@@ -41,10 +41,28 @@ export const productGid = (id: string | number) => {
   return s.startsWith('gid://') ? s : `gid://shopify/Product/${s}`;
 };
 
+/** Plain text from Shopify's HTML, with a space wherever a paragraph or line ends. */
+export function plainText(html: string): string {
+  return html
+    .replace(/<\s*br\s*\/?>/gi, ' ')
+    .replace(/<\/\s*(p|div|li|h[1-6]|blockquote|tr)\s*>/gi, ' ')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 function shortDescription(p: ShopifyProduct): string {
   const seo = p.seo?.description?.trim();
   if (seo) return seo.slice(0, 300);
-  const text = (p.description || '').replace(/\s+/g, ' ').trim();
+  // Shopify's own plain-text description runs paragraphs together, so the
+  // text is taken from the HTML instead.
+  const text = p.descriptionHtml ? plainText(p.descriptionHtml) : (p.description || '').replace(/\s+/g, ' ').trim();
   if (text.length <= 160) return text;
   const cut = text.slice(0, 160);
   return `${cut.slice(0, cut.lastIndexOf(' ') > 100 ? cut.lastIndexOf(' ') : 160).trim()}…`;

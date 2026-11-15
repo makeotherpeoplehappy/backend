@@ -56,6 +56,13 @@ describe('Product sync', () => {
     });
   });
 
+  it('keeps a space between paragraphs in the short description', async () => {
+    h.fake.products[0].descriptionHtml = '<p>Printed across the chest.</p><p>100 pieces. Fish &amp; chips.</p>';
+    h.fake.products[0].description = 'Printed across the chest.100 pieces. Fish & chips.';
+    await sync();
+    expect(P()[0].fieldData['short-description']).toBe('Printed across the chest. 100 pieces. Fish & chips.');
+  });
+
   it('writes nothing when nothing changed, and updates only what changed', async () => {
     await sync();
     const writesBefore = h.fake.calls.filter((c) => c.url.includes('api.webflow.com') && c.method !== 'GET').length;

@@ -1,0 +1,14 @@
+{
+  "name": "happiness-backend",
+  "compatibility_date": "2025-09-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "d1_databases": [
+    { "binding": "DB", "database_name": "happiness", "migrations_dir": "./migrations" }
+  ],
+  "kv_namespaces": [
+    { "binding": "CACHE" }
+  ],
+  "r2_buckets": [
+    { "binding": "MEDIA", "bucket_name": "happiness-media" }
+  ]
+}

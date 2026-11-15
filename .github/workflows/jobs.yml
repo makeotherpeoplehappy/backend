@@ -1,0 +1,39 @@
+# Every 5 minutes, ask the backend to retry queued writes to Webflow,
+# Shopify and email, and run any scheduled job that is due. Webflow Cloud
+# does not document scheduled jobs, so this timer stands in for one.
+#
+# Repository secrets (Settings > Secrets and variables > Actions):
+#   JOBS_URL_LIVE     https://happiness-foundation.webflow.io/join/api/jobs/tick
+#   JOBS_SECRET_LIVE  same value as JOBS_SECRET in the live environment
+#   JOBS_URL_TEST     optional, the test environment's .../api/jobs/tick
+#   JOBS_SECRET_TEST  optional, JOBS_SECRET in the test environment
+
+name: Backend jobs
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  tick:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    strategy:
+      fail-fast: false
+      matrix:
+        environment: [LIVE, TEST]
+    steps:
+      - name: Run due jobs
+        env:
+          URL: ${{ matrix.environment == 'LIVE' && secrets.JOBS_URL_LIVE || secrets.JOBS_URL_TEST }}
+          SECRET: ${{ matrix.environment == 'LIVE' && secrets.JOBS_SECRET_LIVE || secrets.JOBS_SECRET_TEST }}
+        run: |
+          if [ -z "$URL" ] || [ -z "$SECRET" ]; then
+            echo "No URL or secret set for ${{ matrix.environment }}; skipping."
+            exit 0
+          fi
+          curl --fail-with-body --silent --show-error --max-time 60 \
+            -X POST "$URL" -H "Authorization: Bearer $SECRET"

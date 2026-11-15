@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.astro/
+.wrangler/
+# Local secrets: never commit these.
+dev.vars
+.dev.vars
+.env
+.env.*
+!dev.vars.example
+.DS_Store

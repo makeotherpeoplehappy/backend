@@ -1,0 +1,25 @@
+# Copy to dev.vars for local development and fill in TEST values.
+# dev.vars is ignored by git. Real values live only in the Webflow Cloud
+# app settings for each environment (Test and Live).
+
+ENVIRONMENT=test
+ALLOWED_ORIGINS=http://localhost:4321,https://happiness-foundation.webflow.io
+
+SHOPIFY_STORE_DOMAIN=r40e0y-zs.myshopify.com
+# From the Shopify Dev Dashboard app (Settings > Client credentials)
+SHOPIFY_CLIENT_ID=
+SHOPIFY_CLIENT_SECRET=
+# Optional; defaults to 2026-07
+# SHOPIFY_ADMIN_API_VERSION=2026-07
+
+WEBFLOW_API_TOKEN=
+
+RESEND_API_KEY=
+EMAIL_FROM=Happiness Foundation <hello@happiness.foundation>
+ERROR_EMAIL_TO=
+
+TURNSTILE_SECRET_KEY=
+
+JOBS_SECRET=
+ADMIN_SECRET=
+LINK_SECRET=

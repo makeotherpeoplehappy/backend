@@ -140,6 +140,15 @@ describe('Product sync', () => {
     expect((await (await tick()).json()).syncProducts).toMatchObject({ unchanged: 1 });
   });
 
+  it('the jobs timer registers the Shopify webhooks by itself, once a day', async () => {
+    const tick = () => h.request('POST', '/api/jobs/tick', { origin: null, key: null, headers: { Authorization: 'Bearer jobs_secret' } });
+    expect((await (await tick()).json()).shopifyWebhooks.created).toHaveLength(4);
+    expect((await (await tick()).json()).shopifyWebhooks).toBeUndefined();
+    h.clock.advance(25 * 60 * 60 * 1000);
+    expect((await (await tick()).json()).shopifyWebhooks.created).toEqual([]);
+    expect(h.fake.webhookSubs).toHaveLength(4);
+  });
+
   it('registers the Shopify webhooks once, pointing at this backend', async () => {
     const first = await (await admin('/api/admin/shopify-webhooks')).json();
     expect(first.created.sort()).toEqual(['CUSTOMERS_DELETE', 'PRODUCTS_CREATE', 'PRODUCTS_DELETE', 'PRODUCTS_UPDATE']);

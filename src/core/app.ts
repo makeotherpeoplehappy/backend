@@ -145,17 +145,20 @@ route('POST', '/api/notifications/off', false, unsubscribe);
 
 // --- Scheduled jobs and admin -----------------------------------------------
 
-route('POST', '/api/jobs/tick', false, async ({ req, env, deps }) => {
+route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
   requireSecret(req, env.JOBS_SECRET);
   const out: Record<string, unknown> = { queue: await drain(env, deps, { limit: 60, deadlineMs: 25_000 }) };
   // Hourly jobs. Each runs at most once an hour, whatever the timer does.
-  const hourly: [string, string, () => Promise<unknown>][] = [
-    ['sync-actions', 'syncActions', () => syncActions(env, deps)],
-    ['sync-products', 'syncProducts', () => syncAllProducts(env, deps)],
+  const HOUR = 60 * 60 * 1000;
+  const jobs: [string, string, number, () => Promise<unknown>][] = [
+    ['sync-actions', 'syncActions', HOUR, () => syncActions(env, deps)],
+    ['sync-products', 'syncProducts', HOUR, () => syncAllProducts(env, deps)],
+    // Keeps Shopify's product and customer-deletion webhooks pointed here.
+    ['shopify-webhooks', 'shopifyWebhooks', 24 * HOUR, () => ensureShopifyWebhooks(env, deps, `${baseUrl}/api/webhooks/shopify`)],
   ];
-  for (const [job, key, run] of hourly) {
+  for (const [job, key, every, run] of jobs) {
     const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = ?1`).bind(job).first<{ last_run_at: string }>();
-    if (last && deps.now().getTime() - Date.parse(last.last_run_at) <= 60 * 60 * 1000) continue;
+    if (last && deps.now().getTime() - Date.parse(last.last_run_at) <= every) continue;
     try {
       const result = await run();
       out[key] = result;

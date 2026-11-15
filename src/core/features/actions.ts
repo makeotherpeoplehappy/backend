@@ -16,8 +16,29 @@ export interface ActionRow {
 
 const ID_PATTERN = /^[a-f0-9]{24}$/;
 
+const SLUG_PATTERN = /^[a-z0-9][a-z0-9-]{0,199}$/;
+
 export function assertActionId(id: string): void {
   if (!ID_PATTERN.test(id)) throw new HttpError(400, 'invalid_action', 'That action could not be found.');
+}
+
+/**
+ * Pages know their address (slug), not the CMS item ID. A call may name the
+ * action either way; records are always stored by CMS item ID.
+ */
+export async function resolveActionRef(env: Env, deps: Deps, ref: string): Promise<string> {
+  if (ID_PATTERN.test(ref)) return ref;
+  if (!SLUG_PATTERN.test(ref)) throw new HttpError(400, 'invalid_action', 'That action could not be found.');
+  const find = () =>
+    env.DB.prepare(`SELECT cms_item_id FROM actions WHERE slug = ?1 ORDER BY status = 'published' DESC LIMIT 1`).bind(ref).first<{ cms_item_id: string }>();
+  let row = await find();
+  if (!row) {
+    // A new or renamed action: refresh the mirror once.
+    await syncActions(env, deps);
+    row = await find();
+  }
+  if (!row) throw new HttpError(404, 'action_not_found', 'This action is no longer available.');
+  return row.cms_item_id;
 }
 
 function rowFromItem(item: webflow.WebflowItem, now: string) {
@@ -110,7 +131,7 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
       .bind(member.id, actionId)
       .first<{ last: string | null }>();
     const like = await env.DB.prepare(`SELECT value FROM likes WHERE member_id = ?1 AND action_id = ?2`).bind(member.id, actionId).first<{ value: number }>();
-    state.me = { done: !!last?.last, lastDoneAt: last?.last ?? null, liked: like?.value === 1 };
+    state.me = { done: !!last?.last, lastDoneAt: last?.last ?? null, liked: like?.value === 1, tally: await memberTally(env, member.id) };
   }
   return state;
 }
@@ -135,4 +156,22 @@ export async function markDone(env: Env, deps: Deps, member: Member, actionId: s
     await refundDaily(env, deps, member.id, 'done');
     throw e;
   }
+}
+
+/** Sets or clears the member's like. Likes are private; they are never shown to visitors. */
+export async function setLike(env: Env, deps: Deps, member: Member, actionId: string, liked: boolean) {
+  const action = await getAction(env, deps, actionId);
+  if (!action || action.status !== 'published') throw new HttpError(404, 'action_not_found', 'This action is no longer available.');
+  if (liked) {
+    await env.DB.prepare(
+      `INSERT INTO likes (member_id, action_id, value, updated_at, source) VALUES (?1, ?2, 1, ?3, 'site')
+       ON CONFLICT (member_id, action_id) DO UPDATE SET value = 1, updated_at = excluded.updated_at, source = 'site'`,
+    )
+      .bind(member.id, actionId, iso(deps.now()))
+      .run();
+  } else {
+    // Only a like is cleared; an imported "don't like" stays as a private signal.
+    await env.DB.prepare(`DELETE FROM likes WHERE member_id = ?1 AND action_id = ?2 AND value = 1`).bind(member.id, actionId).run();
+  }
+  return { actionId, liked };
 }

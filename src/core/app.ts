@@ -6,7 +6,7 @@ import { HttpError, UpstreamError, base64url, errorResponse, hmac, iso, json, re
 import { optionalMember, requireMember, type Member } from './identity';
 import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
-import { actionState, assertActionId, markDone, syncActions } from './features/actions';
+import { actionState, markDone, resolveActionRef, setLike, syncActions } from './features/actions';
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
@@ -68,12 +68,23 @@ route('GET', '/api/health', false, async ({ env }) => {
 });
 
 route('GET', '/api/actions/:id/state', true, async ({ req, env, deps, params }) => {
-  assertActionId(params.id);
+  const id = await resolveActionRef(env, deps, params.id);
   const member = await optionalMember(req, env, deps);
-  return json(await actionState(env, deps, params.id, member));
+  return json(await actionState(env, deps, id, member));
 });
 
-route('POST', '/api/actions/:id/done', true, memberWrite('done', ({ env, deps, params }, m) => markDone(env, deps, m, params.id), 201));
+route('POST', '/api/actions/:id/done', true, memberWrite('done', async ({ env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id)), 201));
+
+route(
+  'PUT',
+  '/api/actions/:id/like',
+  true,
+  memberWrite('like', async ({ req, env, deps, params }, m) => {
+    const body = await readJson<{ liked?: unknown }>(req);
+    if (typeof body.liked !== 'boolean') throw new HttpError(400, 'invalid_like', 'That could not be saved.');
+    return setLike(env, deps, m, await resolveActionRef(env, deps, params.id), body.liked);
+  }),
+);
 
 route(
   'POST',
@@ -172,6 +183,7 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
       await reportError(env, deps, { where: `job ${job}`, error: e });
     }
   }
+  out.importMetafields = await importJob(env, deps);
   return json(out);
 });
 
@@ -195,6 +207,49 @@ route('POST', '/api/admin/import', false, async ({ req, env, deps }) => {
   const body = await readJson<{ cursor?: string; customerId?: string }>(req);
   return json(await runImport(env, deps, { cursor: body.cursor ?? null, customerId: body.customerId ?? null }));
 });
+
+// One-time import of done actions and likes from Shopify metafields, run by
+// the jobs timer: a full pass now, and one more a day later to catch anything
+// written by pages that were still open during the switch. Safe to repeat.
+const IMPORT_PASSES = 2;
+async function importJob(env: Env, deps: Deps): Promise<unknown> {
+  const state = ((await env.CACHE.get('import:state', 'json')) as { passes: number; cursor: string | null; lastFinished: string | null } | null) || {
+    passes: 0,
+    cursor: null,
+    lastFinished: null,
+  };
+  if (state.passes >= IMPORT_PASSES) return undefined;
+  if (!state.cursor && state.lastFinished && deps.now().getTime() - Date.parse(state.lastFinished) < 24 * 60 * 60 * 1000) return undefined;
+  const totals = { customers: 0, marksAdded: 0, likesAdded: 0, unmatched: [] as unknown[], invalid: [] as unknown[] };
+  const started = Date.now();
+  try {
+    do {
+      const r = await runImport(env, deps, { cursor: state.cursor });
+      totals.customers += r.customers;
+      totals.marksAdded += r.marksAdded;
+      totals.likesAdded += r.likesAdded;
+      totals.unmatched.push(...r.unmatched);
+      totals.invalid.push(...r.invalid);
+      state.cursor = r.nextCursor;
+    } while (state.cursor && Date.now() - started < 15_000);
+    if (!state.cursor) {
+      state.passes++;
+      state.lastFinished = iso(deps.now());
+      if (totals.unmatched.length || totals.invalid.length) {
+        await reportError(env, deps, {
+          where: 'import metafields',
+          error: new Error(`${totals.unmatched.length} unmatched slug(s), ${totals.invalid.length} invalid record(s)`),
+          details: { unmatched: totals.unmatched.slice(0, 50), invalid: totals.invalid.slice(0, 50) },
+        });
+      }
+    }
+    await env.CACHE.put('import:state', JSON.stringify(state));
+    return { pass: state.passes, finished: !state.cursor, ...totals, unmatched: totals.unmatched.length, invalid: totals.invalid.length };
+  } catch (e) {
+    await reportError(env, deps, { where: 'import metafields', error: e });
+    return { error: (e as Error).message };
+  }
+}
 
 // --- Incoming webhooks ------------------------------------------------------
 
@@ -235,7 +290,7 @@ function corsHeaders(req: Request, env: Env): Record<string, string> {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'false',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, CF-Turnstile-Response',
-    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',
   };

@@ -16,6 +16,7 @@
   var BASE = (script && script.src ? new URL(script.src).pathname : '/join/hf-backend.js').replace(/\/hf-backend\.js$/, '');
   var SITEKEY = script && script.getAttribute('data-turnstile-sitekey');
   var INTENT_KEY = 'hfb_intent';
+  var LOCAL_KEY = 'hfb_local_intent';
 
   function store(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
   function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -56,7 +57,8 @@
     return new Promise(function (resolve) {
       if (!SITEKEY || !window.turnstile) return resolve(null);
       var box = document.createElement('div');
-      box.style.display = 'none';
+      // Invisible widgets still need a box that is part of the page.
+      box.style.cssText = 'position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden';
       document.body.appendChild(box);
       window.turnstile.render(box, {
         sitekey: SITEKEY,
@@ -151,21 +153,46 @@
   async function requireSignIn(intent) {
     intent.returnTo = intent.returnTo || location.pathname + location.search;
     var r = await call('/api/intents', { method: 'POST', body: intent, auth: false, turnstile: true });
-    if (r.ok && r.data && r.data.id) store(INTENT_KEY, r.data.id);
+    if (r.ok && r.data && r.data.id) {
+      store(INTENT_KEY, r.data.id);
+      store(LOCAL_KEY, null);
+    } else {
+      // The server could not save it (for example the bot check failed):
+      // keep it in this browser and finish it after sign-in instead.
+      store(LOCAL_KEY, JSON.stringify({ kind: intent.kind, actionId: intent.actionId, returnTo: intent.returnTo, key: newKey() }));
+    }
     if (window.HF && window.HF.signin) window.HF.signin();
+    return r;
+  }
+
+  // Finishes a click kept in this browser. Signed in, no bot check is needed.
+  async function resumeLocal() {
+    var saved;
+    try { saved = JSON.parse(read(LOCAL_KEY) || 'null'); } catch (e) { saved = null; }
+    if (!saved || !saved.actionId) return null;
+    var path = '/api/actions/' + encodeURIComponent(saved.actionId);
+    var r = saved.kind === 'like'
+      ? await call(path + '/like', { method: 'PUT', body: { liked: true }, key: saved.key })
+      : saved.kind === 'done' ? await call(path + '/done', { method: 'POST', key: saved.key }) : { ok: true };
+    if (r.status !== 401) store(LOCAL_KEY, null);
+    if (r.ok) {
+      document.dispatchEvent(new CustomEvent('hfb:resumed', { detail: { kind: saved.kind, actionId: saved.actionId, returnTo: saved.returnTo, result: r.data } }));
+      if (saved.returnTo && saved.returnTo !== location.pathname + location.search) location.href = saved.returnTo;
+    }
     return r;
   }
 
   /** After sign-in: finishes the remembered action once and returns to it. */
   async function resume() {
     var id = read(INTENT_KEY);
-    if (!id) return null;
+    if (!id && !read(LOCAL_KEY)) return null;
     await waitFor(function () { return !!window.HF; }, 10000);
     // Back from Shopify sign-in: exchange the code for a token first.
     if (/[?&]code=/.test(location.search) && window.HF && window.HF.finish) {
       try { await window.HF.finish(); } catch (e) {}
     }
     if (!token()) return null;
+    if (!id) return resumeLocal();
     var r = await call('/api/intents/' + encodeURIComponent(id) + '/complete', { method: 'POST', key: 'intent-' + id });
     if (r.status !== 401) store(INTENT_KEY, null);
     if (r.ok && r.data) {

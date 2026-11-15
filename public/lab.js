@@ -100,7 +100,61 @@
         ['Products synced', h.productsSynced]
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))])
     ]));
+    root.appendChild(accessPanel(k.me));
     if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
+  }
+
+  // "Who can see this": anyone with access can add or remove invited people.
+  function accessPanel(me) {
+    var wrap = el('div', {}, [el('h2', { text: 'Who can see this' })]);
+    var panel = el('div', { class: 'panel' });
+    var list = el('div');
+    var form = el('form', { novalidate: '' });
+    var label = el('label', { for: 'lab-invite-email', text: 'Add someone by email. They get an email with the link and sign in with that address.' });
+    label.style.display = 'block';
+    var row = el('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:8px 0 0';
+    var input = el('input', { id: 'lab-invite-email', type: 'email', autocomplete: 'off', placeholder: 'name@example.com' });
+    input.style.cssText = 'font:inherit;padding:9px 12px;border:1px solid var(--lab-line);border-radius:8px;background:var(--lab-card);color:var(--lab-fg);min-width:0;flex:1 1 220px';
+    var add = el('button', { type: 'submit', text: 'Add' });
+    var msg = el('p', { role: 'status', 'aria-live': 'polite' });
+    msg.style.cssText = 'margin:8px 0 0;font-size:14px';
+    row.appendChild(input); row.appendChild(add);
+    form.appendChild(label); form.appendChild(row); form.appendChild(msg);
+    panel.appendChild(list); panel.appendChild(form);
+    wrap.appendChild(panel);
+
+    function draw(data) {
+      list.innerHTML = '';
+      var t = el('table');
+      t.appendChild(el('tr', {}, [el('th', { text: 'Email' }), el('th', { text: 'Access', class: 'n' }), el('th', { text: '', class: 'n' })]));
+      (data.owners || []).forEach(function (o) {
+        t.appendChild(el('tr', {}, [el('td', { text: o + (me && me.email === o ? ' (you)' : '') }), el('td', { class: 'n', text: 'Owner' }), el('td', { class: 'n' })]));
+      });
+      (data.invited || []).forEach(function (p) {
+        var b = el('button', { type: 'button', text: 'Remove', 'aria-label': 'Remove ' + p.email });
+        b.style.cssText = 'padding:4px 12px;font-size:13px;background:transparent;color:var(--lab-fg);border:1px solid var(--lab-line)';
+        b.onclick = async function () {
+          b.disabled = true;
+          var r = await window.HFB.call('/api/lab/access', { method: 'DELETE', body: { email: p.email } });
+          if (r.ok) { draw(r.data); msg.textContent = p.email + ' was removed.'; } else { b.disabled = false; msg.textContent = (r.data && r.data.message) || 'That did not work.'; }
+        };
+        t.appendChild(el('tr', {}, [el('td', { text: p.email + (me && me.email === p.email ? ' (you)' : '') }), el('td', { class: 'n', text: 'Invited by ' + p.addedBy }), el('td', { class: 'n' }, [b])]));
+      });
+      list.appendChild(t);
+    }
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      var v = input.value.trim();
+      if (!v) { msg.textContent = 'Please enter an email address.'; input.focus(); return; }
+      add.disabled = true;
+      var r = await window.HFB.call('/api/lab/access', { method: 'POST', body: { email: v } });
+      add.disabled = false;
+      if (r.ok) { draw(r.data); input.value = ''; msg.textContent = r.data.added ? v + ' can now see the dashboard. An invitation email is on its way.' : v + ' already has access.'; }
+      else msg.textContent = (r.data && r.data.message) || 'That did not work.';
+    });
+    window.HFB.call('/api/lab/access').then(function (r) { if (r.ok) draw(r.data); });
+    return wrap;
   }
 
   function message(root, text, withButton) {
@@ -136,6 +190,9 @@
     if (window.HFB.resume) { try { await window.HFB.resume(); } catch (e) {} }
     if (!(window.HF.token && window.HF.token())) return message(root, 'Sign in with an account on the dashboard allow-list to see the numbers.', true);
     async function load() {
+      // Do not redraw while someone is typing an invitation.
+      var active = document.activeElement;
+      if (active && active.id === 'lab-invite-email') return;
       var r = await window.HFB.call('/api/lab/kpis');
       if (r.ok) render(root, r.data);
       else if (r.status === 401) message(root, 'Your sign-in has expired. Sign in again to see the numbers.', true);

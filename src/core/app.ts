@@ -12,7 +12,7 @@ import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
 import { signUpForDrop } from './features/drops';
-import { assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis } from './features/ops';
+import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
 import { deleteStory, sendStory, sendSuggestion } from './features/submissions';
 import { customerGid } from './shopify';
 
@@ -155,8 +155,24 @@ route('POST', '/api/drops/notify', true, async ({ req, env, deps, ctx }) => {
 // KPIs for the /lab dashboard page.
 route('GET', '/api/lab/kpis', true, async ({ req, env, deps }) => {
   const member = await requireMember(req, env, deps);
-  assertLabAccess(env, member);
-  return json(await labKpis(env, deps));
+  const me = await assertLabAccess(env, member);
+  return json({ ...(await labKpis(env, deps)), me });
+});
+
+// Who can see /lab: anyone with access can add or remove invited people.
+route('GET', '/api/lab/access', true, async ({ req, env, deps }) => {
+  await assertLabAccess(env, await requireMember(req, env, deps));
+  return json(await listLabAccess(env));
+});
+route('POST', '/api/lab/access', true, async ({ req, env, deps, ctx, baseUrl }) => {
+  const me = await assertLabAccess(env, await requireMember(req, env, deps));
+  const out = await addLabAccess(env, deps, me.email, await readJson(req), baseUrl);
+  ctx.waitUntil(drain(env, deps, { limit: 3, deadlineMs: 10_000 }).catch(() => undefined));
+  return json(out);
+});
+route('DELETE', '/api/lab/access', true, async ({ req, env, deps }) => {
+  await assertLabAccess(env, await requireMember(req, env, deps));
+  return json(await removeLabAccess(env, await readJson(req)));
 });
 
 // --- Email links ------------------------------------------------------------

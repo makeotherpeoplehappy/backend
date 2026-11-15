@@ -151,6 +151,50 @@ describe('Daily backup', () => {
   });
 });
 
+describe('/lab access managed on the page', () => {
+  beforeEach(() => {
+    h.env.LAB_EMAILS = 'Owner One <owner@example.com>; second@example.com';
+    h.fake.signIn('shcat_owner', { email: 'owner@example.com' });
+    h.fake.signIn('shcat_guest', { email: 'guest@example.com' });
+  });
+  const access = (method: string, token: string, body?: unknown) => h.request(method, '/api/lab/access', { token, body, key: null });
+
+  it('owners written with names or semicolons still work', async () => {
+    expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_owner' })).status).toBe(200);
+  });
+
+  it('an owner invites someone: they get access and an invitation email, no redeploy', async () => {
+    expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_guest' })).status).toBe(403);
+    const r = await (await access('POST', 'shcat_owner', { email: 'Guest@Example.com' })).json();
+    expect(r).toMatchObject({ added: true, owners: ['owner@example.com', 'second@example.com'] });
+    expect(r.invited[0]).toMatchObject({ email: 'guest@example.com', addedBy: 'owner@example.com' });
+    expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_guest' })).status).toBe(200);
+    await h.settle();
+    await drain(h.env, h.app.deps);
+    const mail = h.fake.emails.find((e) => e.to[0] === 'guest@example.com');
+    expect(mail?.subject).toBe('You can now see the Happiness Foundation Lab');
+    expect(mail?.text).toContain('/lab');
+  });
+
+  it('invited people can be removed, owners cannot', async () => {
+    await access('POST', 'shcat_owner', { email: 'guest@example.com' });
+    await access('DELETE', 'shcat_owner', { email: 'guest@example.com' });
+    expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_guest' })).status).toBe(403);
+    expect((await access('DELETE', 'shcat_owner', { email: 'second@example.com' })).status).toBe(400);
+  });
+
+  it('someone without access cannot see or change the list, and is told which account they used', async () => {
+    const r = await access('POST', 'shcat_guest', { email: 'guest@example.com' });
+    expect(r.status).toBe(403);
+    expect((await r.json()).message).toContain('gu…@example.com');
+    expect((await access('GET', 'shcat_guest')).status).toBe(403);
+  });
+
+  it('refuses a bad address', async () => {
+    expect((await access('POST', 'shcat_owner', { email: 'nope' })).status).toBe(400);
+  });
+});
+
 describe('/lab KPIs', () => {
   it('only accounts on the allow-list can read them', async () => {
     h.fake.signIn('shcat_ana', { email: 'ana@example.com' });

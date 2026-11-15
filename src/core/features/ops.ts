@@ -5,6 +5,7 @@ import type { Deps, Env } from '../env';
 import { HttpError, iso, utcDay } from '../http';
 import type { Member } from '../identity';
 import * as webflow from '../webflow';
+import { enqueue } from '../queue';
 import { forgetDrops } from './drops';
 
 // ---------------------------------------------------------------------------
@@ -112,13 +113,77 @@ export async function backupDatabase(env: Env, deps: Deps) {
 // KPIs for /lab. Only accounts on the LAB_EMAILS allow-list may read them.
 // ---------------------------------------------------------------------------
 
-export function assertLabAccess(env: Env, member: Member) {
-  const allowed = (env.LAB_EMAILS || '')
-    .split(',')
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
-  if (!allowed.length) throw new HttpError(403, 'lab_not_set_up', 'The dashboard is not set up yet: add LAB_EMAILS in the backend settings.');
-  if (!member.email || !allowed.includes(member.email.toLowerCase())) throw new HttpError(403, 'lab_forbidden', 'This account cannot open the dashboard.');
+const LAB_EMAIL = /^[^\s@,]{1,64}@[^\s@,]{1,190}\.[^\s@,]{2,24}$/;
+
+export function labOwners(env: Env): string[] {
+  // Picks out the addresses whatever the separators ("a@x.com, b@y.com",
+  // "Name <a@x.com>; b@y.com").
+  const found = (env.LAB_EMAILS || '').toLowerCase().match(/[^\s@,;<>"']+@[^\s@,;<>"']+\.[^\s@,;<>"']+/g) || [];
+  return [...new Set(found)];
+}
+
+/** Owners (LAB_EMAILS) and people they or others invited from /lab. */
+export async function assertLabAccess(env: Env, member: Member): Promise<{ email: string; owner: boolean }> {
+  const owners = labOwners(env);
+  if (!owners.length) throw new HttpError(403, 'lab_not_set_up', 'The dashboard is not set up yet: add LAB_EMAILS in the backend settings.');
+  const email = (member.email || '').toLowerCase();
+  if (!email) throw new HttpError(403, 'lab_forbidden', 'This account has no email address, so it cannot open the dashboard.');
+  if (owners.includes(email)) return { email, owner: true };
+  const invited = await env.DB.prepare(`SELECT 1 AS ok FROM lab_access WHERE email = ?1`).bind(email).first();
+  if (invited) return { email, owner: false };
+  throw new HttpError(403, 'lab_forbidden', `This account (${maskEmail(email)}) cannot open the dashboard. Ask someone with access to add it.`);
+}
+
+function maskEmail(email: string): string {
+  const [user, domain] = email.split('@');
+  return `${user.slice(0, 2)}…@${domain}`;
+}
+
+export async function listLabAccess(env: Env) {
+  const invited = await env.DB.prepare(`SELECT email, added_by AS addedBy, added_at AS addedAt FROM lab_access ORDER BY added_at`).all<{
+    email: string;
+    addedBy: string;
+    addedAt: string;
+  }>();
+  return { owners: labOwners(env), invited: invited.results };
+}
+
+export async function addLabAccess(env: Env, deps: Deps, by: string, input: { email?: unknown }, baseUrl: string) {
+  const email = (typeof input.email === 'string' ? input.email : '').trim().toLowerCase();
+  if (!LAB_EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'Please enter a valid email address.');
+  if (labOwners(env).includes(email)) return { ...(await listLabAccess(env)), added: false };
+  const res = await env.DB.prepare(`INSERT INTO lab_access (email, added_by, added_at) VALUES (?1, ?2, ?3) ON CONFLICT (email) DO NOTHING`)
+    .bind(email, by, iso(deps.now()))
+    .run();
+  if (res.meta.changes) {
+    const site = baseUrl.replace(/\/join$/, '');
+    await enqueue(env, deps, `lab-invite:${email}:${utcDay(deps.now())}`, {
+      op: 'email.send',
+      message: {
+        to: email,
+        subject: 'You can now see the Happiness Foundation Lab',
+        text: [
+          'Hi,',
+          '',
+          'You have been given access to the Happiness Foundation Lab, the live dashboard of engagement and impact.',
+          '',
+          `Open it here and sign in with this email address: ${site}/lab`,
+          '',
+          'If you did not expect this, you can ignore this email.',
+          '',
+          'Happiness Foundation',
+        ].join('\n'),
+      },
+    }).run();
+  }
+  return { ...(await listLabAccess(env)), added: !!res.meta.changes };
+}
+
+export async function removeLabAccess(env: Env, input: { email?: unknown }) {
+  const email = (typeof input.email === 'string' ? input.email : '').trim().toLowerCase();
+  if (labOwners(env).includes(email)) throw new HttpError(400, 'owner', 'Owners are set in the backend settings and cannot be removed here.');
+  await env.DB.prepare(`DELETE FROM lab_access WHERE email = ?1`).bind(email).run();
+  return listLabAccess(env);
 }
 
 export async function labKpis(env: Env, deps: Deps) {

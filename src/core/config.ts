@@ -20,6 +20,14 @@ export const CMS = {
   products: {
     id: '6af88f08848599f43fec76c8',
   },
+  drops: {
+    id: '6af92c5cccbe9a8c51c0789b',
+    status: {
+      upcoming: '84e93c6e454298fb5d27b0560cfcb722',
+      live: 'd0f494f8da2232e9bec526a3cce776af',
+      soldOut: 'd804c22cd5d0d4c42b9be6c997cd94dc',
+    },
+  },
   stories: {
     id: '6af93db2a61504315554fd90',
     status: {

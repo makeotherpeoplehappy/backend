@@ -37,6 +37,8 @@ export interface Env {
   ADMIN_SECRET: string;
   /** Signs links in emails (unsubscribe). */
   LINK_SECRET: string;
+  /** Comma-separated emails of the accounts allowed to open /lab. Optional. */
+  LAB_EMAILS?: string;
 }
 
 const REQUIRED: (keyof Env)[] = [

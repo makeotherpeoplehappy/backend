@@ -14,7 +14,7 @@ const TTL_SECONDS = 2 * 3600;
 // These are completed by the backend. "join" (Phase 4) is saved and handed
 // back so the page can finish it itself until invites exist.
 const COMPLETABLE = ['done', 'like', 'suggestion', 'story'] as const;
-const KINDS = [...COMPLETABLE, 'like', 'join'] as const;
+const KINDS = [...COMPLETABLE, 'join', 'return'] as const;
 type Kind = (typeof KINDS)[number];
 
 export interface Intent {

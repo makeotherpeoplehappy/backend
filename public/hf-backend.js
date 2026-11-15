@@ -169,7 +169,12 @@
   async function resumeLocal() {
     var saved;
     try { saved = JSON.parse(read(LOCAL_KEY) || 'null'); } catch (e) { saved = null; }
-    if (!saved || !saved.actionId) return null;
+    if (!saved) return null;
+    if (saved.kind === 'return' || !saved.actionId) {
+      store(LOCAL_KEY, null);
+      if (saved.returnTo && saved.returnTo !== location.pathname + location.search) location.href = saved.returnTo;
+      return { ok: true, status: 200, data: { kind: 'return' } };
+    }
     var path = '/api/actions/' + encodeURIComponent(saved.actionId);
     var r = saved.kind === 'like'
       ? await call(path + '/like', { method: 'PUT', body: { liked: true }, key: saved.key })
@@ -242,6 +247,67 @@
   waitFor(function () { return !!window.HF; }, 10000).then(function (ok) {
     if (ok) window.HF.sync = sync;
   });
+
+  // "Notify me when this drop goes live", under the countdown of an upcoming drop.
+  async function dropNotify() {
+    var status = document.getElementById('hf-drop-status');
+    var count = document.getElementById('hf-drop-count');
+    if (!status || !count || status.textContent.trim().toLowerCase() !== 'upcoming' || document.getElementById('hfb-notify')) return;
+    var m = location.pathname.match(/^\/drops\/([a-z0-9-]+)/);
+    var drop = m ? m[1] : null;
+    var signedIn = !!token();
+    var form = document.createElement('form');
+    form.id = 'hfb-notify';
+    form.noValidate = true;
+    form.style.margin = '12px 0';
+    var label = document.createElement('label');
+    label.htmlFor = 'hfb-notify-email';
+    label.textContent = signedIn ? 'Get an email at your account address when this drop goes live.' : 'Get an email when this drop goes live.';
+    label.style.display = 'block';
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px';
+    var input = document.createElement('input');
+    input.id = 'hfb-notify-email';
+    input.type = 'email';
+    input.autocomplete = 'email';
+    input.required = true;
+    input.placeholder = 'you@example.com';
+    input.className = 'w-input';
+    input.style.cssText = 'max-width:260px;margin:0';
+    var btn = document.createElement('button');
+    btn.type = 'submit';
+    btn.className = 'hf-button-light';
+    btn.textContent = 'Notify me';
+    var msg = document.createElement('p');
+    msg.setAttribute('role', 'status');
+    msg.setAttribute('aria-live', 'polite');
+    msg.style.margin = '6px 0 0';
+    if (!signedIn) row.appendChild(input);
+    row.appendChild(btn);
+    form.appendChild(label);
+    form.appendChild(row);
+    form.appendChild(msg);
+    count.insertAdjacentElement('afterend', form);
+    var busy = false;
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      if (busy) return;
+      if (!signedIn && !input.value.trim()) { msg.textContent = 'Please enter your email address.'; input.focus(); return; }
+      busy = true;
+      btn.setAttribute('aria-busy', 'true');
+      var r = await call('/api/drops/notify', { method: 'POST', body: { drop: drop, email: signedIn ? undefined : input.value }, auth: signedIn, turnstile: !signedIn });
+      busy = false;
+      btn.removeAttribute('aria-busy');
+      if (r.ok) {
+        msg.textContent = r.data && r.data.alreadySignedUp ? 'You are already on the list for this drop.' : 'You are on the list. We will email you when it goes live.';
+        input.disabled = true;
+        btn.disabled = true;
+      } else {
+        msg.textContent = (r.data && r.data.message) || 'That did not work. Please try again.';
+      }
+    });
+  }
+  waitFor(function () { return !!window.HF; }, 10000).then(function () { dropNotify(); });
 
   window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey };
 

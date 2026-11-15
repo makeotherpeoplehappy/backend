@@ -11,6 +11,8 @@ import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings 
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
+import { signUpForDrop } from './features/drops';
+import { assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis } from './features/ops';
 import { deleteStory, sendStory, sendSuggestion } from './features/submissions';
 import { customerGid } from './shopify';
 
@@ -139,6 +141,24 @@ route('POST', '/api/intents/:id/complete', true, async (c) => {
   return res;
 });
 
+// "Notify me when this drop goes live". Signed in: the account's email is
+// used. Signed out: the visitor types an email and passes the bot check.
+route('POST', '/api/drops/notify', true, async ({ req, env, deps, ctx }) => {
+  const body = await readJson<{ drop?: unknown; email?: unknown; turnstileToken?: unknown }>(req);
+  const member = await optionalMember(req, env, deps);
+  if (!member) await requireHuman(req, env, deps, body.turnstileToken);
+  const result = await signUpForDrop(env, deps, body, member);
+  ctx.waitUntil(drain(env, deps, { limit: 3, deadlineMs: 10_000 }).catch(() => undefined));
+  return json(result, 201);
+});
+
+// KPIs for the /lab dashboard page.
+route('GET', '/api/lab/kpis', true, async ({ req, env, deps }) => {
+  const member = await requireMember(req, env, deps);
+  assertLabAccess(env, member);
+  return json(await labKpis(env, deps));
+});
+
 // --- Email links ------------------------------------------------------------
 
 async function unsubscribe({ req, env, deps }: Call): Promise<Response> {
@@ -166,6 +186,7 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['sync-products', 'syncProducts', HOUR, () => syncAllProducts(env, deps)],
     // Keeps Shopify's product and customer-deletion webhooks pointed here.
     ['shopify-webhooks', 'shopifyWebhooks', 24 * HOUR, () => ensureShopifyWebhooks(env, deps, `${baseUrl}/api/webhooks/shopify`)],
+    ['backup', 'backup', 24 * HOUR, () => backupDatabase(env, deps)],
   ];
   for (const [job, key, every, run] of jobs) {
     const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = ?1`).bind(job).first<{ last_run_at: string }>();
@@ -252,6 +273,11 @@ async function importJob(env: Env, deps: Deps): Promise<unknown> {
 }
 
 // --- Incoming webhooks ------------------------------------------------------
+
+route('POST', '/api/webhooks/webflow', false, async ({ req, env, deps }) => {
+  const body = await readJson(req);
+  return json(await handleWebflowWebhook(env, deps, body));
+});
 
 route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
   const raw = new Uint8Array(await req.arrayBuffer());

@@ -46,6 +46,8 @@ export class FakeServices {
   customers: FakeCustomer[] = [];
   products: FakeProduct[] = [];
   webhookSubs: { id: string; topic: string; uri: string }[] = [];
+  /** Shopify customers created or updated by drop sign-ups, by email. */
+  marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
   items = new Map<string, FakeItem[]>();
   emails: { to: string[]; subject: string; text: string; headers?: Record<string, string> }[] = [];
@@ -140,6 +142,27 @@ export class FakeServices {
         seo: { description: p.seoDescription ?? null },
         featuredMedia: p.imageUrl ? { preview: { image: { url: p.imageUrl, altText: null } } } : null,
       });
+      if (q.query.includes('customers(first: 1, query: $q)')) {
+        const email = String(q.variables.q).replace(/^email:"|"$/g, '');
+        const m = this.marketing.get(email);
+        return j({ data: { customers: { nodes: m ? [{ id: m.id, tags: m.tags, emailMarketingConsent: { marketingState: m.state } }] : [] } } });
+      }
+      if (q.query.includes('customerCreate')) {
+        const input = q.variables.input as { email: string; firstName?: string; tags: string[]; emailMarketingConsent: { marketingState: string } };
+        this.marketing.set(input.email, { id: `gid://shopify/Customer/${9000 + this.marketing.size}`, tags: [...input.tags], state: input.emailMarketingConsent.marketingState, firstName: input.firstName });
+        return j({ data: { customerCreate: { customer: { id: 'x' }, userErrors: [] } } });
+      }
+      if (q.query.includes('tagsAdd')) {
+        const m = [...this.marketing.values()].find((x) => x.id === q.variables.id);
+        m?.tags.push(...(q.variables.tags as string[]));
+        return j({ data: { tagsAdd: { userErrors: [] } } });
+      }
+      if (q.query.includes('customerEmailMarketingConsentUpdate')) {
+        const input = q.variables.input as { customerId: string; emailMarketingConsent: { marketingState: string } };
+        const m = [...this.marketing.values()].find((x) => x.id === input.customerId);
+        if (m) m.state = input.emailMarketingConsent.marketingState;
+        return j({ data: { customerEmailMarketingConsentUpdate: { userErrors: [] } } });
+      }
       if (q.query.includes('webhookSubscriptionCreate')) {
         const sub = { id: `gid://shopify/WebhookSubscription/${this.webhookSubs.length + 1}`, topic: String(q.variables.topic), uri: String(q.variables.uri) };
         this.webhookSubs.push(sub);

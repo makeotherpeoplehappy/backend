@@ -40,7 +40,19 @@
     return token();
   }
 
-  function turnstileToken() {
+  function waitFor(test, ms) {
+    return new Promise(function (resolve) {
+      var t0 = Date.now();
+      (function check() {
+        if (test()) return resolve(true);
+        if (Date.now() - t0 > ms) return resolve(false);
+        setTimeout(check, 50);
+      })();
+    });
+  }
+
+  async function turnstileToken() {
+    await waitFor(function () { return !!window.turnstile; }, 5000);
     return new Promise(function (resolve) {
       if (!SITEKEY || !window.turnstile) return resolve(null);
       var box = document.createElement('div');
@@ -147,7 +159,13 @@
   /** After sign-in: finishes the remembered action once and returns to it. */
   async function resume() {
     var id = read(INTENT_KEY);
-    if (!id || !token()) return null;
+    if (!id) return null;
+    await waitFor(function () { return !!window.HF; }, 10000);
+    // Back from Shopify sign-in: exchange the code for a token first.
+    if (/[?&]code=/.test(location.search) && window.HF && window.HF.finish) {
+      try { await window.HF.finish(); } catch (e) {}
+    }
+    if (!token()) return null;
     var r = await call('/api/intents/' + encodeURIComponent(id) + '/complete', { method: 'POST', key: 'intent-' + id });
     if (r.status !== 401) store(INTENT_KEY, null);
     if (r.ok && r.data) {
@@ -178,7 +196,27 @@
     return { clear: function () { store(key, null); } };
   }
 
-  window.HFB = { base: BASE, call: call, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey };
+  /**
+   * The site's shared HF.sync now reads done actions from the backend and no
+   * longer writes them to the Shopify customer record.
+   */
+  async function sync() {
+    var c = window.HF && window.HF.load ? await window.HF.load() : null;
+    if (!c) return null;
+    var r = await call('/api/me');
+    var done = r.ok && r.data && r.data.done ? r.data.done : [];
+    c.actions = done
+      .filter(function (d) { return d.slug; })
+      .map(function (d) { return { idea: d.slug, date: d.doneAt, id: d.actionId, title: d.title }; })
+      .reverse();
+    c.tally = r.ok && r.data ? r.data.tally : c.actions.length;
+    return c;
+  }
+  waitFor(function () { return !!window.HF; }, 10000).then(function (ok) {
+    if (ok) window.HF.sync = sync;
+  });
+
+  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
   else resume();

@@ -6,15 +6,14 @@
 import type { Deps, Env } from '../env';
 import { HttpError, iso, randomId, safeReturnTo } from '../http';
 import type { Member } from '../identity';
-import { assertActionId, markDone } from './actions';
+import { assertActionId, markDone, setLike } from './actions';
 import { sendStory, sendSuggestion } from './submissions';
 
 const TTL_SECONDS = 2 * 3600;
 
-// Phase 1 completes these. "like" (Phase 3) and "join" (Phase 4) are added
-// with their features; until then they are saved and handed back so the page
-// can finish them itself.
-const COMPLETABLE = ['done', 'suggestion', 'story'] as const;
+// These are completed by the backend. "join" (Phase 4) is saved and handed
+// back so the page can finish it itself until invites exist.
+const COMPLETABLE = ['done', 'like', 'suggestion', 'story'] as const;
 const KINDS = [...COMPLETABLE, 'like', 'join'] as const;
 type Kind = (typeof KINDS)[number];
 
@@ -67,6 +66,7 @@ export async function completeIntent(env: Env, deps: Deps, member: Member, id: s
   let completed = false;
   if ((COMPLETABLE as readonly string[]).includes(intent.kind)) {
     if (intent.kind === 'done') result = await markDone(env, deps, member, intent.actionId!);
+    if (intent.kind === 'like') result = await setLike(env, deps, member, intent.actionId!, true);
     if (intent.kind === 'suggestion') result = await sendSuggestion(env, deps, member, { text: intent.data?.text });
     if (intent.kind === 'story') result = await sendStory(env, deps, member, { actionId: intent.actionId, text: intent.data?.text, showName: intent.data?.showName });
     completed = true;

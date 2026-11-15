@@ -8,7 +8,9 @@ import { storyRemovalStatements, suggestionSlug } from './submissions';
 
 export async function getAccount(env: Env, member: Member) {
   const done = await env.DB.prepare(
-    `SELECT action_id AS actionId, action_title AS title, done_at AS doneAt FROM done_marks WHERE member_id = ?1 ORDER BY done_at DESC LIMIT 500`,
+    `SELECT d.action_id AS actionId, d.action_title AS title, d.done_at AS doneAt, a.slug AS slug, a.status AS actionStatus
+     FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id
+     WHERE d.member_id = ?1 ORDER BY d.done_at DESC LIMIT 500`,
   )
     .bind(member.id)
     .all();

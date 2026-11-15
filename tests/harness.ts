@@ -39,6 +39,9 @@ export class FakeServices {
   /** Webflow creates the item but the answer is lost (network drop). */
   webflowLoseNextCreateResponse = false;
   shopifyDown = false;
+  /** Admin API token currently accepted (issued by the client credentials grant). */
+  adminToken: string | null = null;
+  adminTokensIssued = 0;
   private seq = 0;
 
   newId(): string {
@@ -90,9 +93,20 @@ export class FakeServices {
       return j({ data: { customer: { id: c.id, firstName: c.firstName, emailAddress: c.email ? { emailAddress: c.email } : null } } });
     }
 
+    // Shopify Dev Dashboard app: client credentials grant
+    if (url.href === `https://${STORE}/admin/oauth/access_token`) {
+      const form = new URLSearchParams(String(init.body || ''));
+      if (form.get('grant_type') !== 'client_credentials' || form.get('client_id') !== 'shopify_client_id' || form.get('client_secret') !== 'shopify_webhook_secret') {
+        return j({ error: 'invalid_client' }, 401);
+      }
+      this.adminTokensIssued++;
+      this.adminToken = `shpat_issued_${this.adminTokensIssued}`;
+      return j({ access_token: this.adminToken, scope: 'read_customers,write_customers', expires_in: 86399 });
+    }
+
     // Shopify Admin API
     if (url.hostname === STORE && url.pathname.startsWith('/admin/api/')) {
-      if (headers.get('X-Shopify-Access-Token') !== 'shpat_test') return j({ errors: 'Unauthorized' }, 401);
+      if (!this.adminToken || headers.get('X-Shopify-Access-Token') !== this.adminToken) return j({ errors: 'Invalid API key or access token' }, 401);
       const q = body as { query: string; variables: Record<string, unknown> };
       const node = (c: FakeCustomer) => ({
         id: c.id,
@@ -219,8 +233,8 @@ export async function createHarness(): Promise<Harness> {
     ENVIRONMENT: 'test',
     ALLOWED_ORIGINS: `${SITE},https://happiness.foundation`,
     SHOPIFY_STORE_DOMAIN: STORE,
-    SHOPIFY_ADMIN_TOKEN: 'shpat_test',
-    SHOPIFY_WEBHOOK_SECRET: 'shopify_webhook_secret',
+    SHOPIFY_CLIENT_ID: 'shopify_client_id',
+    SHOPIFY_CLIENT_SECRET: 'shopify_webhook_secret',
     WEBFLOW_API_TOKEN: 'wf_test',
     RESEND_API_KEY: 're_test',
     EMAIL_FROM: 'Happiness Foundation <hello@happiness.foundation>',

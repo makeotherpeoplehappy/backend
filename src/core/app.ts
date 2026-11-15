@@ -178,8 +178,8 @@ route('POST', '/api/admin/import', false, async ({ req, env, deps }) => {
 route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
   const raw = new Uint8Array(await req.arrayBuffer());
   const given = req.headers.get('X-Shopify-Hmac-Sha256') || '';
-  const expected = btoa(String.fromCharCode(...(await hmac(env.SHOPIFY_WEBHOOK_SECRET, raw))));
-  if (!env.SHOPIFY_WEBHOOK_SECRET || !timingSafeEqual(given, expected)) throw new HttpError(401, 'unauthorized', 'Not authorised.');
+  const expected = btoa(String.fromCharCode(...(await hmac(env.SHOPIFY_CLIENT_SECRET, raw))));
+  if (!env.SHOPIFY_CLIENT_SECRET || !timingSafeEqual(given, expected)) throw new HttpError(401, 'unauthorized', 'Not authorised.');
   const topic = req.headers.get('X-Shopify-Topic') || '';
   const webhookId = req.headers.get('X-Shopify-Webhook-Id') || base64url(await hmac('id', raw));
   let body: Record<string, unknown> = {};

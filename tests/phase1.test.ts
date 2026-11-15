@@ -401,6 +401,19 @@ describe('Check 6: existing done actions and likes for the test account appear a
     expect(out.nextCursor).toBeNull();
   });
 
+  it('gets the Shopify Admin API token from the app ID and secret, reuses it, and renews it when refused', async () => {
+    const c = h.fake.signIn('t1', { id: 'gid://shopify/Customer/1' });
+    c.actionsTaken = JSON.stringify([{ idea: 'compliment-a-stranger', date: '2026-10-01' }]);
+    const run = () => h.request('POST', '/api/admin/import', { origin: null, key: null, headers: { Authorization: 'Bearer admin_secret' }, body: {} });
+    expect((await run()).status).toBe(200);
+    expect((await run()).status).toBe(200);
+    expect(h.fake.adminTokensIssued).toBe(1);
+    // Shopify stops accepting the token (expired or revoked): a new one is fetched once.
+    h.fake.adminToken = 'revoked';
+    expect((await run()).status).toBe(200);
+    expect(h.fake.adminTokensIssued).toBe(2);
+  });
+
   it('is closed without the admin secret', async () => {
     const res = await h.request('POST', '/api/admin/import', { origin: null, key: null, headers: { Authorization: 'Bearer wrong' }, body: {} });
     expect(res.status).toBe(401);

@@ -32,8 +32,8 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `ENVIRONMENT` | no | `test` or `live`, shown in error emails |
 | `ALLOWED_ORIGINS` | no | Comma-separated site origins allowed to call the backend |
 | `SHOPIFY_STORE_DOMAIN` | no | `r40e0y-zs.myshopify.com` |
-| `SHOPIFY_ADMIN_TOKEN` | yes | Admin API access token of the Shopify app |
-| `SHOPIFY_WEBHOOK_SECRET` | yes | The Shopify app's client secret, used to verify webhooks |
+| `SHOPIFY_CLIENT_ID` | no | Client ID of the Shopify Dev Dashboard app |
+| `SHOPIFY_CLIENT_SECRET` | yes | That app's client secret. The backend exchanges ID and secret for a 24-hour Admin API token, and uses the secret to verify webhooks |
 | `SHOPIFY_ADMIN_API_VERSION` | no | Optional, default `2026-07` |
 | `WEBFLOW_API_TOKEN` | yes | Site API token with CMS read and write |
 | `RESEND_API_KEY` | yes | Resend API key for happiness.foundation |

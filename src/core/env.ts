@@ -14,10 +14,10 @@ export interface Env {
 
   /** e.g. r40e0y-zs.myshopify.com */
   SHOPIFY_STORE_DOMAIN: string;
-  /** Admin API access token of the Shopify app. */
-  SHOPIFY_ADMIN_TOKEN: string;
-  /** Shopify app client secret, used to verify webhooks. */
-  SHOPIFY_WEBHOOK_SECRET: string;
+  /** Client ID of the Shopify Dev Dashboard app. */
+  SHOPIFY_CLIENT_ID: string;
+  /** Client secret of that app: gets Admin API tokens and verifies webhooks. */
+  SHOPIFY_CLIENT_SECRET: string;
   SHOPIFY_ADMIN_API_VERSION?: string;
 
   /** Webflow site API token with CMS read and write. */
@@ -42,8 +42,8 @@ export interface Env {
 const REQUIRED: (keyof Env)[] = [
   'ALLOWED_ORIGINS',
   'SHOPIFY_STORE_DOMAIN',
-  'SHOPIFY_ADMIN_TOKEN',
-  'SHOPIFY_WEBHOOK_SECRET',
+  'SHOPIFY_CLIENT_ID',
+  'SHOPIFY_CLIENT_SECRET',
   'WEBFLOW_API_TOKEN',
   'RESEND_API_KEY',
   'EMAIL_FROM',

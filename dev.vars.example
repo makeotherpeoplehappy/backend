@@ -6,8 +6,9 @@ ENVIRONMENT=test
 ALLOWED_ORIGINS=http://localhost:4321,https://happiness-foundation.webflow.io
 
 SHOPIFY_STORE_DOMAIN=r40e0y-zs.myshopify.com
-SHOPIFY_ADMIN_TOKEN=
-SHOPIFY_WEBHOOK_SECRET=
+# From the Shopify Dev Dashboard app (Settings > Client credentials)
+SHOPIFY_CLIENT_ID=
+SHOPIFY_CLIENT_SECRET=
 # Optional; defaults to 2026-07
 # SHOPIFY_ADMIN_API_VERSION=2026-07
 

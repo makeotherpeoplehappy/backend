@@ -17,6 +17,8 @@ const THROTTLE_SECONDS = 3600;
 export async function reportError(env: Env, deps: Deps, report: ErrorReport): Promise<void> {
   try {
     const err = report.error instanceof Error ? report.error : new Error(String(report.error));
+    // Always in the Webflow Cloud runtime log, even when the email is throttled or fails.
+    console.error(`[error] ${report.where}: ${err.name}: ${err.message}`, JSON.stringify(report.details || {}).slice(0, 1000));
     const signature = await sha256Hex(`${report.where}|${err.name}|${err.message.replace(/\d+/g, '#').slice(0, 200)}`);
     const throttleKey = `errmail:${signature.slice(0, 32)}`;
     if (env.CACHE && (await env.CACHE.get(throttleKey))) return;

@@ -55,8 +55,11 @@ export async function callUpstream(
   init: RequestInit,
   timeoutMs = 10_000,
 ): Promise<Response> {
+  // Some services refuse requests that do not say what they are.
+  const headers = new Headers(init.headers);
+  if (!headers.has('User-Agent')) headers.set('User-Agent', 'HappinessFoundationBackend/1.0 (+https://happiness.foundation)');
   try {
-    return await doFetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) });
+    return await doFetch(url, { ...init, headers, signal: AbortSignal.timeout(timeoutMs) });
   } catch (e) {
     throw new UpstreamError(service, 0, `${service} unreachable: ${(e as Error).message}`);
   }

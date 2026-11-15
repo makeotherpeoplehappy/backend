@@ -7,6 +7,7 @@ import { reportError } from './errors';
 import { sendEmail, type EmailMessage } from './email';
 import { UpstreamError, iso } from './http';
 import * as webflow from './webflow';
+import { writeDropSignupToShopify } from './features/drops';
 
 export type Target = 'webflow' | 'shopify' | 'email';
 
@@ -21,13 +22,15 @@ export type QueuedOp =
     }
   | { op: 'webflow.update'; collectionId: string; itemId?: string; slug?: string; fieldData: Record<string, unknown> }
   | { op: 'webflow.delete'; collectionId: string; itemId?: string; slug?: string; afterCreate?: string }
-  | { op: 'email.send'; message: EmailMessage };
+  | { op: 'email.send'; message: EmailMessage }
+  | { op: 'shopify.dropSignup'; email: string; firstName: string | null; tag: string };
 
 const TARGET_OF: Record<QueuedOp['op'], Target> = {
   'webflow.create': 'webflow',
   'webflow.update': 'webflow',
   'webflow.delete': 'webflow',
   'email.send': 'email',
+  'shopify.dropSignup': 'shopify',
 };
 
 // Writes per drain run, per service. Webflow's CMS API allows 60 requests a
@@ -107,7 +110,12 @@ export async function drain(env: Env, deps: Deps, opts: { limit?: number; deadli
         result.retried++;
         continue;
       }
-      await env.DB.prepare(`UPDATE outbox SET status = 'done', locked_until = NULL, last_error = NULL, updated_at = ?2 WHERE id = ?1`)
+      // Once delivered, personal details are not kept in the queue.
+      await env.DB.prepare(
+        `UPDATE outbox SET status = 'done', locked_until = NULL, last_error = NULL, updated_at = ?2,
+           payload = CASE WHEN op IN ('shopify.dropSignup', 'email.send') THEN '{"op":"' || op || '","redacted":true}' ELSE payload END
+         WHERE id = ?1`,
+      )
         .bind(row.id, now())
         .run();
       result.done++;
@@ -197,6 +205,9 @@ async function run(env: Env, deps: Deps, op: QueuedOp, row: OutboxRow): Promise<
     }
     case 'email.send':
       await sendEmail(env, deps, op.message, row.dedupe_key);
+      return 'ok';
+    case 'shopify.dropSignup':
+      await writeDropSignupToShopify(env, deps, op);
       return 'ok';
   }
 }

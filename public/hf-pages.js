@@ -268,15 +268,11 @@
       list.forEach(function (s) { storiesBox.appendChild(storyCard(s, false)); });
     }
 
+    // Signed out: straight to sign-in. The click is remembered and finished
+    // after sign-in, back on this action.
     function ask(kind) {
-      if (!prompt) return HFB.requireSignIn({ kind: kind, actionId: id });
-      prompt.innerHTML = '';
-      prompt.appendChild(el('p', { text: kind === 'like' ? 'Sign in to save actions for later. It is free.' : 'Sign in to count the people you make happy. It is free.' }));
-      var b = el('button', { type: 'button', class: 'hf-button', text: 'Sign in' });
-      b.addEventListener('click', function () { HFB.requireSignIn({ kind: kind, actionId: id }); });
-      prompt.appendChild(b);
-      prompt.style.display = 'block';
-      b.focus();
+      msg.textContent = kind === 'like' ? 'Taking you to sign in. Your save will be waiting.' : 'Taking you to sign in. This will be counted when you are back.';
+      HFB.requireSignIn({ kind: kind, actionId: id });
     }
 
     var busy = false;

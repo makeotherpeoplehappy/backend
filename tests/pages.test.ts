@@ -105,14 +105,18 @@ describe('Action page', () => {
     expect(p.document.querySelectorAll('#hfp-compose').length, p.document.body.innerHTML.slice(-600)).toBe(0);
   });
 
-  it('asks a signed-out visitor to sign in and remembers the click', async () => {
+  it('sends a signed-out visitor straight to sign in and remembers the click', async () => {
     const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [] } } : undefined), { signedIn: false });
+    const save = [...p.document.querySelectorAll('button')].find((b) => b.textContent === '♡ Save')!;
+    save.click();
+    await p.settle();
     p.document.getElementById('hf-did-this')!.click();
     await p.settle();
-    const signIn = [...p.document.querySelectorAll('#hf-signup-prompt button')][0] as unknown as HTMLButtonElement;
-    expect(signIn.textContent).toBe('Sign in');
-    signIn.click();
-    expect(p.signIns).toEqual([{ kind: 'done', actionId: 'a1' }]);
+    expect(p.signIns).toEqual([
+      { kind: 'like', actionId: 'a1' },
+      { kind: 'done', actionId: 'a1' },
+    ]);
+    expect(p.document.getElementById('hf-did-msg')!.textContent).toContain('Taking you to sign in');
   });
 
   it('shows approved stories with a vertical player and a report link', async () => {

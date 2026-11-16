@@ -344,3 +344,47 @@ export async function shopDrops(env: Env, deps: Deps) {
   const past = out.filter((d) => d !== current && d.status === 'sold_out').sort((a, b) => String(b.dropDate).localeCompare(String(a.dropDate)));
   return { current, past };
 }
+
+/**
+ * The scarcity label for each product, by handle. True and specific only:
+ *   drop pieces          "Drop 01 · 100 pieces", "Drop 01 · 64 of 100 left", "Drop 01 · Sold out"
+ *   limited editions     "Limited edition · 250 pieces" (Shopify field custom.edition_size)
+ *   everything else      no label
+ * Cached for 60 seconds.
+ */
+export async function productLabels(env: Env, deps: Deps): Promise<Record<string, string>> {
+  const cached = (await env.CACHE.get('product-labels', 'json')) as Record<string, string> | null;
+  if (cached) return cached;
+  const r = await adminGraphql<{
+    products: { nodes: { id: string; handle: string; tracksInventory: boolean; totalInventory: number; edition: { value: string } | null }[] };
+  }>(
+    env,
+    deps,
+    `query { products(first: 100, query: "status:active") { nodes { id handle tracksInventory totalInventory edition: metafield(namespace: "custom", key: "edition_size") { value } } } }`,
+  );
+  const drops = await listDrops(env, deps);
+  const sync = await env.DB.prepare(`SELECT shopify_id, cms_item_id FROM product_sync WHERE cms_item_id IS NOT NULL`).all<{ shopify_id: string; cms_item_id: string }>();
+  const dropOf = new Map<string, Drop>();
+  const byItem = new Map(sync.results.map((s) => [s.cms_item_id, s.shopify_id]));
+  for (const d of drops) for (const item of d.productItemIds) if (byItem.get(item) && !dropOf.has(byItem.get(item)!)) dropOf.set(byItem.get(item)!, d);
+  const labels: Record<string, string> = {};
+  for (const p of r.products.nodes) {
+    const left = p.tracksInventory ? Math.max(0, p.totalInventory) : null;
+    const d = dropOf.get(p.id);
+    if (d) {
+      const status = await effectiveStatus(env, deps, d);
+      if (status === 'sold_out' || (status === 'live' && left === 0)) labels[p.handle] = `${d.name} · Sold out`;
+      else if (status === 'live' && left !== null && d.quantity) labels[p.handle] = `${d.name} · ${Math.min(left, d.quantity)} of ${d.quantity} left`;
+      else labels[p.handle] = d.quantity ? `${d.name} · ${d.quantity} pieces` : d.name;
+      continue;
+    }
+    const size = p.edition ? parseInt(p.edition.value, 10) : NaN;
+    if (Number.isFinite(size) && size > 0) {
+      if (left === 0) labels[p.handle] = 'Limited edition · Sold out';
+      else if (left !== null && left < size) labels[p.handle] = `Limited edition · ${left} of ${size} left`;
+      else labels[p.handle] = `Limited edition · ${size} pieces`;
+    }
+  }
+  await env.CACHE.put('product-labels', JSON.stringify(labels), { expirationTtl: 60 });
+  return labels;
+}

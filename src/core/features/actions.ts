@@ -2,7 +2,6 @@ import { CMS, COUNT_THRESHOLD } from '../config';
 import type { Deps, Env } from '../env';
 import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
-import { consumeDaily, refundDaily } from '../safety';
 import { enqueue } from '../queue';
 import * as webflow from '../webflow';
 import { recomputeKeeps } from './pledges';
@@ -166,37 +165,26 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
 }
 
 /**
- * Records "I did this". Doing it again is allowed at most once a day per
- * action; the public count counts people, the member's tally every time.
+ * Records "I did this". There is no limit: an action can be done as often as
+ * the member does it. One click still makes one record (one-time keys).
  */
 export async function markDone(env: Env, deps: Deps, member: Member, actionId: string) {
   const action = await getAction(env, deps, actionId);
   if (!action || action.status !== 'published') throw new HttpError(404, 'action_not_found', 'This action is no longer available.');
-  const now = iso(deps.now());
-  const today = await env.DB.prepare(`SELECT 1 AS x FROM done_marks WHERE member_id = ?1 AND action_id = ?2 AND substr(done_at, 1, 10) = ?3 LIMIT 1`)
-    .bind(member.id, actionId, now.slice(0, 10))
-    .first();
-  if (today) throw new HttpError(409, 'done_today', 'You have already marked this today. You can do it again tomorrow.');
-  await consumeDaily(env, deps, member.id, 'done');
-  try {
-    const mark = await env.DB.prepare(
-      `INSERT INTO done_marks (member_id, action_id, done_at, action_title, source) VALUES (?1, ?2, ?3, ?4, 'site') RETURNING id, done_at`,
-    )
-      .bind(member.id, actionId, now, action.title)
-      .first<{ id: number; done_at: string }>();
-    await forgetCounts(env, actionId);
-    await recomputeKeeps(env, member.id);
-    return {
-      markId: mark!.id,
-      doneAt: mark!.done_at,
-      tally: await memberTally(env, member.id),
-      count: await publicCount(env, actionId),
-      ripple: await rippleTotal(env, member.id),
-    };
-  } catch (e) {
-    await refundDaily(env, deps, member.id, 'done');
-    throw e;
-  }
+  const mark = await env.DB.prepare(
+    `INSERT INTO done_marks (member_id, action_id, done_at, action_title, source) VALUES (?1, ?2, ?3, ?4, 'site') RETURNING id, done_at`,
+  )
+    .bind(member.id, actionId, iso(deps.now()), action.title)
+    .first<{ id: number; done_at: string }>();
+  await forgetCounts(env, actionId);
+  await recomputeKeeps(env, member.id);
+  return {
+    markId: mark!.id,
+    doneAt: mark!.done_at,
+    tally: await memberTally(env, member.id),
+    count: await publicCount(env, actionId),
+    ripple: await rippleTotal(env, member.id),
+  };
 }
 
 /** Removes the member's latest mark for an action, unless a story is attached. */
@@ -242,7 +230,7 @@ export async function mostDone(env: Env) {
 const MOST_DONE_MIN = 5;
 
 /**
- * Daily: writes each action's public count (people, 0 below the threshold)
+ * Hourly: writes each action's public count (people, 0 below the threshold)
  * and its likes (minus imported "don't like") to the CMS, so the numbers are
  * in the page for search engines and for Mickey. Only changes are written.
  */

@@ -43,7 +43,7 @@ const ACTION_HTML = `<h1>Cook a meal</h1><p class="hf-lead">Cook for someone.</p
 <section><div><a id="hf-did-this" href="#" class="hf-button">I did this</a><p id="hf-did-msg"></p><div id="hf-signup-prompt"></div></div></section><footer></footer>`;
 
 describe('Action page', () => {
-  it('marks done, offers the share card, then "Done today" and undo', async () => {
+  it('marks done, offers the share card, then "I did this again" and undo', async () => {
     let me = { done: false, doneToday: false, canUndo: false, liked: false, tally: 0, doneWith: [] as string[], story: null };
     const state = () => ({ data: { actionId: 'a1', slug: 'cook-a-meal', count: null, canDoWithOthers: true, suggestedBy: 'Ana', stories: [], me } });
     const p = await page('/action/cook-a-meal', ACTION_HTML, (m, path) => {
@@ -63,13 +63,13 @@ describe('Action page', () => {
     expect(p.document.body.textContent).toContain('Invite someone to do it with you, not the person you are doing it for.');
     btn.click();
     await p.settle();
-    expect(btn.textContent).toBe('Done today');
-    expect(btn.getAttribute('aria-disabled')).toBe('true');
+    expect(btn.textContent).toBe('I did this again');
+    expect(btn.getAttribute('aria-disabled')).toBe('false');
     expect(p.document.body.textContent).toContain('I made someone happy today');
     expect(p.document.getElementById('hf-did-msg')!.textContent).toBe('You have made 1 person happy.');
     btn.click();
     await p.settle();
-    expect(p.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/done'))).toHaveLength(1);
+    expect(p.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/done'))).toHaveLength(2);
     const undo = [...p.document.querySelectorAll('button')].find((b) => b.textContent === 'Undo')!;
     undo.click();
     await p.settle();

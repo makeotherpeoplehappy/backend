@@ -43,7 +43,6 @@ export const LIMITS = {
   suggestion: 5,
   story: 5,
   invite: 20,
-  done: 10,
 } as const;
 
 export type LimitKind = keyof typeof LIMITS;
@@ -52,7 +51,6 @@ export const LIMIT_MESSAGES: Record<LimitKind, string> = {
   suggestion: 'You can send 5 suggestions a day. Please try again tomorrow.',
   story: 'You can share 5 stories a day. Please try again tomorrow.',
   invite: 'You can create 20 invites a day. Please try again tomorrow.',
-  done: 'You can mark 10 actions as done a day. Please try again tomorrow.',
 };
 
 // The four member emails. Each has its own on/off setting.

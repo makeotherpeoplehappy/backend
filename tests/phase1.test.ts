@@ -210,7 +210,6 @@ describe('Check 3: a double click on any button creates one record', () => {
 
   it('different clicks with different keys are separate records', async () => {
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
-    h.clock.advance(24 * 60 * 60 * 1000); // "again" is allowed once a day
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
     expect(await h.db('SELECT * FROM done_marks')).toHaveLength(2);
   });
@@ -346,14 +345,11 @@ describe('Check 5: the sixth suggestion in a day is refused with a clear message
     }
   });
 
-  it('limits each member separately, and applies the done and story limits too', async () => {
+  it('limits each member separately, and never limits marking actions done', async () => {
     h.fake.signIn('shcat_ana');
     h.fake.signIn('shcat_ben', { firstName: 'Ben' });
-    const many = Array.from({ length: 11 }, (_, i) => h.fake.addAction(`daily-${i}`, `Daily ${i}`));
-    for (let i = 0; i < 10; i++) expect((await h.request('POST', `/api/actions/${many[i]}/done`, { token: 'shcat_ana' })).status).toBe(201);
-    const eleventh = await h.request('POST', `/api/actions/${many[10]}/done`, { token: 'shcat_ana' });
-    expect(eleventh.status).toBe(429);
-    expect((await eleventh.json()).message).toMatch(/10 actions/);
+    // Marking actions done has no daily limit (decided 16 Nov 2026).
+    for (let i = 0; i < 12; i++) expect((await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' })).status).toBe(201);
     expect((await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ben' })).status).toBe(201);
   });
 });

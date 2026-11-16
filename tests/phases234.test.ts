@@ -254,15 +254,11 @@ describe('Phase 3: counts', () => {
     expect((await (await h.request('GET', `/api/actions/${actionA}/state`)).json()).count).toBe(10);
   });
 
-  it('"I did this again" twice in one day is refused the second time', async () => {
-    expect((await done('shcat_ana')).status).toBe(201);
-    const again = await done('shcat_ana');
-    expect(again.status).toBe(409);
-    expect((await again.json()).error).toBe('done_today');
-    h.clock.advance(DAY);
-    const next = await done('shcat_ana');
-    expect(next.status).toBe(201);
-    expect((await next.json()).tally).toBe(2);
+  it('"I did this again" has no limit: every click counts toward the tally, the public count counts people once', async () => {
+    for (let i = 1; i <= 15; i++) expect((await (await done('shcat_ana')).json()).tally).toBe(i);
+    const st = await (await h.request('GET', `/api/actions/${actionA}/state`, { token: 'shcat_ana' })).json();
+    expect(st.me).toMatchObject({ timesDone: 15, tally: 15 });
+    expect(await h.db(`SELECT COUNT(DISTINCT member_id) AS n FROM done_marks`)).toEqual([{ n: 1 }]);
   });
 
   it('undo lowers the tally and the count, and is refused when a story is attached', async () => {
@@ -293,8 +289,12 @@ describe('Phase 3: counts', () => {
     const b = items(CMS.actions.id).find((i) => i.id === actionB)!;
     expect(a.fieldData).toMatchObject({ 'done-count': 10, votes: 0 });
     expect(b.fieldData).toMatchObject({ 'done-count': 0, votes: 1 });
-    h.clock.advance(DAY + 1000);
+    h.clock.advance(61 * 60 * 1000); // hourly
     expect((await (await tick()).json()).writeCounts.changed).toBe(0);
+    h.fake.signIn('shcat_p10');
+    await done('shcat_p10');
+    h.clock.advance(61 * 60 * 1000);
+    expect((await (await tick()).json()).writeCounts.changed).toBe(1);
   });
 
   it('"Most done" stays hidden until 5 actions reach 10 people', async () => {

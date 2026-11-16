@@ -273,7 +273,7 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     // Phase 3: drops, counts and pledges.
     ['drops', 'drops', 0, () => updateDropsInCms(env, deps)],
     ['drop-releases', 'dropReleases', HOUR, () => scheduleDropReleases(env, deps)],
-    ['write-counts', 'writeCounts', 24 * HOUR, () => writeCountsToCms(env, deps)],
+    ['write-counts', 'writeCounts', HOUR, () => writeCountsToCms(env, deps)],
     ['sync-orders', 'syncOrders', 6 * HOUR, () => syncRecentOrders(env, deps, { days: 3 })],
     ['pledge-reminders', 'pledgeReminders', HOUR, () => pledgeReminders(env, deps, baseUrl)],
     // Phase 4: one summary email a day per inviter.

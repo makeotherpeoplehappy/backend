@@ -190,8 +190,8 @@
       save.textContent = me && me.liked ? '♥ Saved' : '♡ Save';
       save.setAttribute('aria-pressed', me && me.liked ? 'true' : 'false');
       if (me && me.done) {
-        btn.textContent = me.doneToday ? 'Done today' : 'I did this again';
-        btn.setAttribute('aria-disabled', me.doneToday ? 'true' : 'false');
+        btn.textContent = 'I did this again';
+        btn.setAttribute('aria-disabled', 'false');
         msg.textContent = 'You have made ' + me.tally + ' ' + plural(me.tally, 'person', 'people') + ' happy.';
         story.style.display = '';
         story.textContent = me.story ? 'Edit your story' : 'Share your story';

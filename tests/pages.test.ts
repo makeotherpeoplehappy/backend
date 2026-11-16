@@ -238,7 +238,8 @@ describe('Shop', () => {
     expect(p.calls.filter((c) => c.path === '/api/shop')).toHaveLength(1);
     expect(p.document.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02: Jane Doe');
     expect(p.document.querySelector('#hfp-shop-drop .hf-drop-quote')!.textContent).toBe('Be the reason.');
-    expect(text).toContain('Drop 02 · 50 pieces');
+    // Before launch the drop's pieces are left to the drop page.
+    expect(p.document.querySelector('#hfp-shop-drop .hfp-grid')).toBeNull();
     expect(text).not.toContain('Available now'); // empty: never shown
     expect(text).toContain('Past drops');
     expect(text).toContain('100 pledges made, 81 kept');
@@ -256,14 +257,15 @@ describe('Shop', () => {
 describe('Drop page', () => {
   it('shows every piece of the drop on the page, without "Add to cart" before launch', async () => {
     // The real Shopify script is not loaded in tests.
-    const p = await page('/drops/drop-01', '<script type="text/plain" src="https://cdn.shopify.com/storefront/web-components.js"></script><div class="hf-drop"><a class="hf-drop-button" href="/products/tee">See the piece</a></div><footer></footer>', (_m, path) =>
+    const p = await page('/drops/drop-01', '<script type="text/plain" src="https://cdn.shopify.com/storefront/web-components.js"></script><div class="hf-drop"></div><footer></footer>', (_m, path) =>
       path.startsWith('/api/drops/state') ? { data: { drop: 'drop-01', status: 'upcoming' } } : path === '/api/products/labels' ? { data: { labels: {} } } : path === '/api/shop' ? { data: { current: null, past: [] } } : undefined,
     );
     expect(p.document.getElementById('hfp-pieces')!.textContent).toContain('The pieces');
     expect(p.document.querySelector('#hfp-pieces shopify-context')!.getAttribute('handle')).toBe('drop-01');
     // (The simulated browser may run Shopify's own script, which replaces the template.)
     expect(p.document.getElementById('hfp-pieces')!.innerHTML).not.toContain('Add to cart');
-    expect(p.document.querySelector('.hf-drop-button')!.getAttribute('href')).toBe('#hfp-pieces');
+    // The pieces sit inside the drop's box, under the image and text, so there is no button to them.
+    expect(p.document.querySelector('.hf-drop')!.lastElementChild!.id).toBe('hfp-pieces');
     expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
   });
 });

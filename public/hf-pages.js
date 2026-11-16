@@ -940,11 +940,9 @@
       found ? grid(found.products, found.status === 'live') : collectionGrid(m[1], upcoming),
     ]);
     var hero = document.querySelector('.hf-drop');
-    hero ? hero.insertAdjacentElement('afterend', box) : (document.querySelector('footer') || document.body).insertAdjacentElement('beforebegin', box);
+    // Inside the drop's box, full width under the image and text (.hf-drop wraps).
+    if (hero) { box.style.cssText = 'flex:1 1 100%;margin:0'; hero.appendChild(box); } else { (document.querySelector('footer') || document.body).insertAdjacentElement('beforebegin', box); }
     editionLabels(box);
-    // The hero's button now jumps to the pieces instead of leaving the page.
-    var b = document.querySelector('.hf-drop-button');
-    if (b) { b.textContent = 'See the pieces'; b.setAttribute('href', '#hfp-pieces'); }
   }
   function hideIfEmpty(sec) {
     // An empty collection: hide the section once Shopify has answered (or after 6 seconds).
@@ -1035,21 +1033,23 @@
       var facts = [];
       if (cur.status === 'live' && cur.left !== null && cur.quantity) facts.push(cur.left + ' of ' + cur.quantity + ' left');
       if (cur.pledges && cur.pledges.made > 0) facts.push(cur.pledges.made + ' ' + plural(cur.pledges.made, 'pledge', 'pledges') + ' made, ' + cur.pledges.kept + ' kept');
-      var drop = el('section', { class: 'hfp-shop-section', id: 'hfp-shop-drop', 'aria-labelledby': 'hfp-shop-drop-h' }, [
-        el('p', { class: 'hf-drop-label', text: cur.status === 'upcoming' ? 'Coming soon' : cur.status === 'live' ? 'Out now' : '' }),
+      // The drop and its pieces sit in one box, apart from any other products below.
+      var drop = el('section', { class: 'hfp-shop-section hf-box', id: 'hfp-shop-drop', style: 'margin-top:0', 'aria-labelledby': 'hfp-shop-drop-h' }, [
+        cur.status === 'live' ? el('p', { class: 'hf-drop-label', text: 'Out now' }) : null,
         el('h2', { id: 'hfp-shop-drop-h', style: 'margin-top:0', text: cur.name }),
         cur.statement ? el('p', { class: 'hf-drop-quote', text: cur.statement }) : null,
         el('p', { class: 'hfp-muted', id: 'hfp-shop-drop-details', text: cur.detailsLine }),
         facts.length ? el('p', { class: 'hfp-muted', text: facts.join(' · ') }) : null,
         el('p', null, [el('a', { class: 'hf-story-link', href: '/drops/' + cur.drop, text: 'About this drop →' })]),
-        cur.products.length ? grid(cur.products, cur.status === 'live') : null,
+        // Before launch the pieces are shown on the drop page only; the shop lists them once the drop is out.
+        cur.products.length && cur.status === 'live' ? grid(cur.products, true) : null,
       ]);
       root.appendChild(drop);
       wait(function () { return $('hfb-notify'); }, 8000).then(function (found) {
         if (!found) return;
         var f = $('hfb-notify');
         var lab = f.querySelector('label');
-        if (lab) lab.textContent = lab.textContent.indexOf('account address') >= 0 ? 'Get an email at your account address when ' + cur.name + ' goes live.' : 'Get an email when ' + cur.name + ' goes live.';
+        if (lab) lab.textContent = 'Get an email when the drop goes live.'; // the same for members and visitors
         $('hfp-shop-drop-details').insertAdjacentElement('afterend', f);
       });
     }

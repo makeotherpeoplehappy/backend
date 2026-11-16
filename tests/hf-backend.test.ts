@@ -26,6 +26,18 @@ const el = (id?: string, text = ''): FakeEl => ({
   },
 });
 
+// The footer's hidden "Site wording" block, as built in Webflow.
+export const SITE_WORDING: Record<string, string> = {
+  'notify-drop': 'Get an email when this drop goes live.',
+  'notify-product': 'This piece goes live with the next drop on {date} ET. Get an email when it does.',
+  'notify-next': 'The next drop goes live on {date} ET. Get an email when it does.',
+  'notify-email-phrase': 'Get an email',
+  'notify-email-phrase-member': 'Get an email at your account address',
+  'notify-button': 'Notify me',
+  'notify-placeholder': 'you@example.com',
+  'error-offline': 'We could not reach the server. Please check your connection and try again.',
+};
+
 function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: string; pathname?: string; elements?: FakeEl[]; home?: Record<string, string> }) {
   const elements = new Map((opts.elements || []).map((e) => [e.id!, e]));
   const storage = new Map<string, string>();
@@ -68,6 +80,10 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
         return null;
       },
       body: { appendChild: () => undefined },
+      querySelector: (sel: string) => {
+        const m = /^\[data-hf-copy="([^"]+)"\]$/.exec(sel);
+        return m && m[1] in SITE_WORDING ? { textContent: SITE_WORDING[m[1]] } : null;
+      },
     },
     CustomEvent: class {
       type: string;

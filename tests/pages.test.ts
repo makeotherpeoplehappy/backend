@@ -8,12 +8,27 @@ import { describe, expect, it } from 'vitest';
 
 const SOURCE = readFileSync(new URL('../public/hf-pages.js', import.meta.url), 'utf8');
 
+// The footer's hidden "Site wording" block, as built in Webflow (on every page).
+const WORDING: Record<string, string> = {
+  'card-details': 'Details',
+  'card-add': 'Add to cart',
+  'card-sold-out': '{price} · Sold out',
+  'label-pieces': '{name} · {size} pieces',
+  'label-left': '{name} · {left} of {size} left',
+  'label-sold-out': '{name} · Sold out',
+  'label-edition': 'Limited edition',
+  'facts-left': '{left} of {quantity} left',
+  'pledges-one': '{made} pledge made, {kept} kept',
+  'pledges-many': '{made} pledges made, {kept} kept',
+};
+const FOOTER = '<footer><div data-hf-wording="site">' + Object.entries(WORDING).map(([k, v]) => `<p data-hf-copy="${k}">${v}</p>`).join('') + '</div></footer>';
+
 type Handler = (method: string, path: string, body: unknown) => { status?: number; data: unknown } | undefined;
 
 async function page(path: string, html: string, handler: Handler, opts: { signedIn?: boolean } = {}) {
   const window = new Window({ url: `https://site.test${path}` });
   const document = window.document;
-  document.body.innerHTML = html + '<div data-hf-pages hidden></div>';
+  document.body.innerHTML = html + FOOTER + '<div data-hf-pages hidden></div>';
   const calls: { method: string; path: string; body: unknown }[] = [];
   const signIns: unknown[] = [];
   const w = window as unknown as Record<string, unknown>;
@@ -318,5 +333,54 @@ describe('Drop hero', () => {
     expect(p.document.getElementById('hfp-drop-facts')!.textContent).toBe('100 pledges made, 81 kept');
     // Not upcoming: the pieces' line shows.
     expect(on(p.document.querySelector('#hfp-pieces [data-hf-show="live"]'))).toBe(true);
+  });
+});
+
+describe('Wording from Webflow', () => {
+  it('words product labels, card buttons and sold-out prices with the footer texts', async () => {
+    const tee = { handle: 'tee', title: 'Tee', image: null, price: { amount: '45.0', currencyCode: 'USD' }, available: true, label: { name: 'Drop 02', size: 100, left: 64, soldOut: false } };
+    const mug = { ...tee, handle: 'mug', title: 'Mug', available: false, label: { name: null, size: 250, left: null, soldOut: true } };
+    const cup = { ...tee, handle: 'cup', title: 'Cup', label: { name: 'Drop 02', size: 50, left: null, soldOut: false } };
+    const data = {
+      current: { drop: 'drop-02', name: 'Drop 02', statement: null, status: 'live', detailsLine: '150 pieces.', left: 64, quantity: 150, pledges: { made: 1, kept: 0 }, products: [tee, mug, cup] },
+      availableNow: [],
+      past: [],
+    };
+    const p = await page('/shop', SHOP_WEBFLOW, (_m, path) => (path === '/api/shop' ? { data } : undefined));
+    const box = p.document.getElementById('hfp-shop-drop')!;
+    const labels = [...box.querySelectorAll('.hfp-edition')].map((e) => e.textContent);
+    expect(labels).toEqual(['Drop 02 · 64 of 100 left', 'Limited edition · Sold out', 'Drop 02 · 50 pieces']);
+    expect(box.querySelector('[data-hf-fill="facts"]')!.textContent).toBe('64 of 150 left · 1 pledge made, 0 kept');
+    expect(box.textContent).toContain('· Sold out');
+    expect([...box.querySelectorAll('a.hf-button-light')].map((a) => a.textContent)).toEqual(['Details', 'Details', 'Details']);
+    expect(box.innerHTML).toContain('>Add to cart</button>');
+  });
+});
+
+describe('Drop hero script (Webflow)', () => {
+  const HERO = readFileSync(new URL('../site/drop-hero-state.js', import.meta.url), 'utf8');
+  function hero(status: string, date: string) {
+    const window = new Window({ url: 'https://site.test/' });
+    const document = window.document;
+    document.body.innerHTML = `<div class="hf-drop-body"><p class="hf-drop-details">100 pieces. Drops December 5 at 12:00 ET.</p>
+      <p class="hf-drop-count" data-hf-show="live">Out now</p><p class="hf-drop-count" data-hf-show="sold_out">Sold out. {qty} pledges made.</p>
+      <p id="hf-drop-count" class="hf-drop-count" data-hf-show="upcoming" data-hf-fill="countdown">Coming soon</p>
+      <a class="hf-drop-button" data-hf-show="upcoming live" href="/shop">See the drop</a><a class="hf-drop-button" data-hf-show="sold_out" href="/actions">Find an action</a>
+      <div id="hf-drop-status">${status}</div><div id="hf-drop-qty">100</div><div id="hf-drop-date">${date}</div><div id="hf-drop-lead">tee</div><div id="hf-drop-slug">drop-01</div></div>`;
+    new Function('document', HERO)(document);
+    const shown = [...document.querySelectorAll('[data-hf-on]')].map((e) => e.textContent!.trim());
+    window.happyDOM.abort();
+    return { document, shown };
+  }
+  it('counts down before the drop and points the button at the drop page', () => {
+    const { document, shown } = hero('Upcoming', 'December 5, 2099');
+    expect(shown).toHaveLength(2);
+    expect(shown[0]).toMatch(/^\d+d \d+h \d+m \d+s$/);
+    expect(shown[1]).toBe('See the drop');
+    expect(document.querySelector('a[data-hf-show="upcoming live"]')!.getAttribute('href')).toBe('/drops/drop-01');
+  });
+  it('shows "Out now" once the date has passed, and the sold-out wording with the pledge count', () => {
+    expect(hero('Upcoming', 'December 5, 2020').shown).toEqual(['Out now', 'See the drop']);
+    expect(hero('Sold out', 'December 5, 2020').shown).toEqual(['Sold out. 100 pledges made.', 'Find an action']);
   });
 });

@@ -224,6 +224,13 @@ describe('Suggest an action', () => {
   });
 });
 
+// The shop's sections as they are built in Webflow (the wording lives there).
+const SHOP_WEBFLOW = `<h1>Shop</h1><div id="hf-shop"></div>
+<div id="hfp-shop-drop" class="hf-box" data-hf-show="drop"><p class="hf-drop-label" data-hf-show="live">Out now</p><h2 id="hfp-shop-drop-h" data-hf-fill="name">Drop name</h2><p class="hf-drop-quote" data-hf-fill="statement">Statement</p><p id="hfp-shop-drop-details" data-hf-fill="details">Details line</p><p data-hf-fill="facts">Pieces left and pledges</p><div><a class="hf-story-link" data-hf-fill="link" href="/shop">See the pieces →</a></div><p data-hf-copy="notify-label">Get an email when the drop goes live.</p><div data-hf-fill="grid"></div></div>
+<div id="hfp-shop-now" data-hf-show="now"><h2 id="hfp-shop-now-h">Available now</h2><p>Every piece comes with a pledge: take an action that makes someone else happy.</p><div data-hf-fill="grid"></div></div>
+<div id="hfp-shop-past" data-hf-show="past"><h2 id="hfp-shop-past-h">Past drops</h2><div data-hf-template="past-drop"><h3 data-hf-fill="name">Drop name</h3><p class="hf-drop-quote" data-hf-fill="statement">Statement</p><p data-hf-fill="pledges">Sold out</p><div data-hf-fill="grid"></div></div></div>`;
+const on = (e: Element | null) => !!e && e.hasAttribute('data-hf-on');
+
 describe('Shop', () => {
   it('draws the current drop, "Available now" and past drops at once from one call, and leaves out empty sections', async () => {
     const tee = { handle: 'tee', title: 'Tee', image: { url: 'https://cdn.shopify.com/tee.jpg', alt: 'Tee' }, price: { amount: '45.0', currencyCode: 'USD' }, available: true, label: 'Drop 02 · 50 pieces' };
@@ -233,41 +240,81 @@ describe('Shop', () => {
       availableNow: now,
       past: [{ drop: 'drop-01', name: 'Drop 01', statement: 'Happiness is felt by making other people happy.', status: 'sold_out', pledges: { made: 100, kept: 81 }, products: [old] }],
     });
-    const p = await page('/shop', '<h1>Shop</h1><div id="hf-shop"></div>', (_m, path) => (path === '/api/shop' ? { data: shop([]) } : undefined));
-    const text = p.document.body.textContent;
+    const p = await page('/shop', SHOP_WEBFLOW, (_m, path) => (path === '/api/shop' ? { data: shop([]) } : undefined));
+    const d = p.document;
     expect(p.calls.filter((c) => c.path === '/api/shop')).toHaveLength(1);
-    expect(p.document.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02: Jane Doe');
-    expect(p.document.querySelector('#hfp-shop-drop .hf-drop-quote')!.textContent).toBe('Be the reason.');
-    // Before launch the drop's pieces are left to the drop page.
-    expect(p.document.querySelector('#hfp-shop-drop .hfp-grid')).toBeNull();
-    expect(text).not.toContain('Available now'); // empty: never shown
-    expect(text).toContain('Past drops');
-    expect(text).toContain('100 pledges made, 81 kept');
-    expect(text).toContain('Sold out');
+    expect(on(d.getElementById('hfp-shop-drop'))).toBe(true);
+    expect(d.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02: Jane Doe');
+    expect(d.querySelector('#hfp-shop-drop .hf-drop-quote')!.textContent).toBe('Be the reason.');
+    expect(d.querySelector('#hfp-shop-drop [data-hf-fill="link"]')!.getAttribute('href')).toBe('/drops/drop-02');
+    // Before launch: no "Out now", and the drop's pieces are left to the drop page.
+    expect(on(d.querySelector('#hfp-shop-drop [data-hf-show="live"]'))).toBe(false);
+    expect(d.querySelector('#hfp-shop-drop .hfp-grid')).toBeNull();
+    expect(on(d.getElementById('hfp-shop-now'))).toBe(false); // empty: never shown
+    expect(on(d.getElementById('hfp-shop-past'))).toBe(true);
+    const pastItems = d.querySelectorAll('#hfp-shop-past > div');
+    expect(pastItems).toHaveLength(1);
+    expect(pastItems[0].textContent).toContain('100 pledges made, 81 kept');
+    expect(d.querySelector('[data-hf-template]')).toBeNull();
     // Before launch: no Add to cart on the drop's pieces.
     expect(p.document.querySelector('#hfp-shop-drop')!.innerHTML).not.toContain('Add to cart');
     expect(p.document.documentElement.getAttribute('data-hfp-shop')).toBe('ready');
 
-    const q = await page('/shop', '<div id="hf-shop"></div>', (_m, path) => (path === '/api/shop' ? { data: shop([{ ...tee, handle: 'mug', title: 'Mug', label: null }]) } : undefined));
-    expect(q.document.body.textContent).toContain('Available now');
-    expect(q.document.body.innerHTML).toContain('handle="mug"');
+    const q = await page('/shop', SHOP_WEBFLOW, (_m, path) => (path === '/api/shop' ? { data: shop([{ ...tee, handle: 'mug', title: 'Mug', label: null }]) } : undefined));
+    expect(on(q.document.getElementById('hfp-shop-now'))).toBe(true);
+    expect(q.document.getElementById('hfp-shop-now')!.innerHTML).toContain('handle="mug"');
+  });
+
+  it('keeps Webflow\'s "Sold out" for a past drop without pledges, and shows "Out now" once live', async () => {
+    const tee = { handle: 'tee', title: 'Tee', image: null, price: { amount: '45.0', currencyCode: 'USD' }, available: true, label: null };
+    const data = {
+      current: { drop: 'drop-02', name: 'Drop 02', statement: null, status: 'live', detailsLine: '50 pieces.', left: 10, quantity: 50, pledges: { made: 0, kept: 0 }, products: [tee] },
+      availableNow: [],
+      past: [{ drop: 'drop-01', name: 'Drop 01', statement: null, status: 'sold_out', pledges: { made: 0, kept: 0 }, products: [{ ...tee, handle: 'old' }] }],
+    };
+    const p = await page('/shop', SHOP_WEBFLOW, (_m, path) => (path === '/api/shop' ? { data } : undefined));
+    const d = p.document;
+    expect(on(d.querySelector('#hfp-shop-drop [data-hf-show="live"]'))).toBe(true);
+    expect(d.querySelector('#hfp-shop-drop [data-hf-fill="facts"]')!.textContent).toBe('10 of 50 left');
+    expect(d.querySelector('#hfp-shop-drop [data-hf-fill="statement"]')).toBeNull(); // no statement: removed
+    expect(d.querySelector('#hfp-shop-drop .hfp-grid')).toBeTruthy();
+    expect(d.querySelector('#hfp-shop-past [data-hf-fill="pledges"]')!.textContent).toBe('Sold out');
   });
 });
+
+// The drop page's hero and "The pieces" block as built in Webflow.
+const DROP_WEBFLOW = `<div class="hf-drop"><div class="hf-drop-body"><p class="hf-drop-count" data-hf-show="live">Out now</p><p class="hf-drop-count" data-hf-show="sold_out">Sold out</p><p id="hf-drop-count" class="hf-drop-count" data-hf-show="upcoming">Coming soon</p><div id="hf-drop-status">Upcoming</div></div><div id="hfp-pieces"><h2 id="hfp-pieces-h">The pieces</h2><p data-hf-show="live">Every piece comes with a pledge: take an action that makes someone else happy.</p></div></div>`;
 
 describe('Drop page', () => {
   it('shows every piece of the drop on the page, without "Add to cart" before launch', async () => {
     // The real Shopify script is not loaded in tests.
-    const p = await page('/drops/drop-01', '<script type="text/plain" src="https://cdn.shopify.com/storefront/web-components.js"></script><div class="hf-drop"></div><footer></footer>', (_m, path) =>
+    const p = await page('/drops/drop-01', '<script type="text/plain" src="https://cdn.shopify.com/storefront/web-components.js"></script>' + DROP_WEBFLOW + '<footer></footer>', (_m, path) =>
       path.startsWith('/api/drops/state') ? { data: { drop: 'drop-01', status: 'upcoming' } } : path === '/api/products/labels' ? { data: { labels: {} } } : path === '/api/shop' ? { data: { current: null, past: [] } } : undefined,
     );
     expect(p.document.getElementById('hfp-pieces')!.textContent).toContain('The pieces');
     expect(p.document.querySelector('#hfp-pieces shopify-context')!.getAttribute('handle')).toBe('drop-01');
     // (The simulated browser may run Shopify's own script, which replaces the template.)
     expect(p.document.getElementById('hfp-pieces')!.innerHTML).not.toContain('Add to cart');
-    // Before launch there is no line under the heading.
-    expect(p.document.getElementById('hfp-pieces')!.textContent).not.toContain('On sale when the drop goes live');
+    // Before launch the line under the heading stays hidden, and the hero says "Coming soon".
+    expect(on(p.document.querySelector('#hfp-pieces [data-hf-show="live"]'))).toBe(false);
+    expect(on(p.document.querySelector('.hf-drop-body [data-hf-show="upcoming"]'))).toBe(true);
+    expect(on(p.document.querySelector('.hf-drop-body [data-hf-show="live"]'))).toBe(false);
     // The pieces sit inside the drop's box, under the image and text, so there is no button to them.
     expect(p.document.querySelector('.hf-drop')!.lastElementChild!.id).toBe('hfp-pieces');
     expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
+  });
+});
+
+describe('Drop hero', () => {
+  it('shows the Webflow label for the state the backend reports', async () => {
+    const p = await page('/drops/drop-01', DROP_WEBFLOW, (_m, path) =>
+      path.startsWith('/api/drops/state') ? { data: { drop: 'drop-01', status: 'sold_out', left: 0, quantity: 100, pledges: { made: 100, kept: 81 } } } : path === '/api/shop' ? { data: { current: null, past: [] } } : undefined,
+    );
+    const hero = p.document.querySelector('.hf-drop-body')!;
+    expect(on(hero.querySelector('[data-hf-show="sold_out"]'))).toBe(true);
+    expect(on(hero.querySelector('[data-hf-show="upcoming"]'))).toBe(false);
+    expect(p.document.getElementById('hfp-drop-facts')!.textContent).toBe('100 pledges made, 81 kept');
+    // Not upcoming: the pieces' line shows.
+    expect(on(p.document.querySelector('#hfp-pieces [data-hf-show="live"]'))).toBe(true);
   });
 });

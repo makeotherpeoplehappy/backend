@@ -22,6 +22,7 @@ export interface Drop {
   dropDate: string | null;
   quantity: number | null;
   detailsLine: string;
+  statement: string;
   leadProductItemId: string | null;
   productItemIds: string[];
 }
@@ -49,6 +50,7 @@ export async function listDrops(env: Env, deps: Deps): Promise<Drop[]> {
     dropDate: typeof i.fieldData['drop-date'] === 'string' ? (i.fieldData['drop-date'] as string) : null,
     quantity: typeof i.fieldData.quantity === 'number' ? (i.fieldData.quantity as number) : null,
     detailsLine: String(i.fieldData['details-line'] || ''),
+    statement: String(i.fieldData.statement || ''),
     leadProductItemId: typeof i.fieldData['lead-product'] === 'string' ? (i.fieldData['lead-product'] as string) : null,
     productItemIds: [
       ...new Set([
@@ -311,4 +313,34 @@ async function scheduleReleases(env: Env, deps: Deps) {
     }
   }
   return { scheduled };
+}
+
+/**
+ * Every drop for the shop page: the current one first, then past (sold out)
+ * drops, newest first. Each drop's products are the Shopify collection with
+ * the drop's address as its handle (for example "drop-01").
+ */
+export async function shopDrops(env: Env, deps: Deps) {
+  const drops = await listDrops(env, deps);
+  const out = [];
+  for (const d of drops) {
+    const left = await piecesLeft(env, deps, d).catch(() => null);
+    const status = await effectiveStatus(env, deps, d, left);
+    out.push({
+      drop: d.slug,
+      name: d.name,
+      statement: d.statement,
+      status,
+      dropDate: d.dropDate,
+      quantity: d.quantity,
+      left,
+      detailsLine: detailsLineFor(d, status) || d.detailsLine,
+      onFrontPage: d.onFrontPage,
+      collection: d.slug,
+      pledges: await dropPledges(env, d.slug),
+    });
+  }
+  const current = out.find((d) => d.onFrontPage && d.status !== 'sold_out') || out.find((d) => d.status === 'upcoming' || d.status === 'live') || null;
+  const past = out.filter((d) => d !== current && d.status === 'sold_out').sort((a, b) => String(b.dropDate).localeCompare(String(a.dropDate)));
+  return { current, past };
 }

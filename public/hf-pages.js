@@ -93,14 +93,43 @@
     input.focus();
   }
 
-  async function invite(actionId, kind, anchor, note) {
-    var r = await HFB.call('/api/invites', { method: 'POST', body: { actionId: actionId, kind: kind } });
+  /** A short personal note before sharing, then the share sheet. */
+  function drop(n) { if (n && n.parentNode) n.parentNode.removeChild(n); }
+
+  function compose(actionId, kind, anchor, note) {
+    drop($('hfp-compose'));
+    var form = el('form', { id: 'hfp-compose', class: 'hfp-card' });
+    var ta = el('textarea', { id: 'hfp-note', class: 'hf-form-input is-textarea w-input', maxlength: '280', rows: '3', 'aria-describedby': 'hfp-note-count',
+      placeholder: kind === 'with_me' ? 'For example: Want to do this with me on Saturday?' : 'For example: This made my day. Your turn!' });
+    var countEl = el('p', { id: 'hfp-note-count', class: 'hfp-muted hfp-small', text: '280 characters left' });
+    ta.addEventListener('input', function () { countEl.textContent = (280 - ta.value.length) + ' characters left'; });
+    var go = el('button', { type: 'submit', class: 'hf-button', text: kind === 'with_me' ? 'Share invite' : 'Share' });
+    var cancel = el('button', { type: 'button', class: 'hf-button-light', text: 'Cancel' });
+    cancel.addEventListener('click', function () { drop(form); });
+    form.appendChild(el('label', { for: 'hfp-note', class: 'hf-form-label', text: 'Add a short note (optional)' }));
+    form.appendChild(ta);
+    form.appendChild(countEl);
+    form.appendChild(el('div', { class: 'hfp-row' }, [go, cancel]));
+    form.addEventListener('submit', async function (e) {
+      e.preventDefault();
+      go.disabled = true;
+      var ok = await invite(actionId, kind, form, note, ta.value);
+      go.disabled = false;
+      if (ok) drop(form);
+    });
+    anchor.insertAdjacentElement('afterend', form);
+    ta.focus();
+  }
+
+  async function invite(actionId, kind, anchor, note, text) {
+    var r = await HFB.call('/api/invites', { method: 'POST', body: { actionId: actionId, kind: kind, note: text || '' } });
     if (r.status === 409 && r.data && r.data.error === 'need_first_name') {
-      askName(anchor, function () { invite(actionId, kind, anchor, note); });
-      return;
+      askName(anchor, function () { invite(actionId, kind, anchor, note, text); });
+      return false;
     }
-    if (!r.ok) { note.textContent = msgOf(r); return; }
+    if (!r.ok) { note.textContent = msgOf(r); return false; }
     await share({ title: document.title, text: r.data.text, url: r.data.url }, note);
+    return true;
   }
 
   // ---------------------------------------------------------------------------
@@ -212,7 +241,7 @@
       card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: 'I made someone happy today' }));
       if (ripple > 0) card.appendChild(el('p', { text: 'Your actions have led to ' + ripple + ' more.' }));
       var pass = el('button', { type: 'button', class: 'hf-button', text: 'Pass it on' });
-      pass.addEventListener('click', function () { invite(id, 'pass_it_on', card, shareNote); });
+      pass.addEventListener('click', function () { compose(id, 'pass_it_on', card, shareNote); });
       card.appendChild(el('div', { class: 'hfp-row' }, [pass]));
       card.style.display = '';
     }
@@ -292,7 +321,7 @@
     withMe.addEventListener('click', function () {
       if (!id) return;
       if (!signedIn()) return HFB.requireSignIn({ kind: 'return', actionId: id });
-      invite(id, 'with_me', withMe.parentNode, shareNote);
+      compose(id, 'with_me', withMe.parentNode, shareNote);
     });
 
     document.addEventListener('hfb:resumed', function () { load(); });
@@ -742,6 +771,8 @@
         return;
       }
       titleEl.textContent = v.kind === 'with_me' ? who + ' wants to do this with you' : who + ' is passing this on to you';
+      var noteBox = $('hfp-invite-note');
+      if (v.note && !noteBox) titleEl.insertAdjacentElement('afterend', el('blockquote', { id: 'hfp-invite-note', class: 'hf-lead', style: 'margin:0 0 16px;padding-left:16px;border-left:3px solid #222', text: '“' + v.note + '” – ' + who }));
       if (v.me && v.me.joined) {
         inBtn.textContent = "You're in";
         inBtn.setAttribute('aria-disabled', 'true');

@@ -76,6 +76,27 @@ describe('Action page', () => {
     expect(btn.textContent).toBe('I did this');
   });
 
+  it('"Do this with me" asks for a short note, then shares it', async () => {
+    const p = await page('/action/cook-a-meal', ACTION_HTML, (m, path, body) => {
+      if (path.endsWith('/state')) return { data: { actionId: 'a1', canDoWithOthers: true, stories: [], me: { done: false } } };
+      if (m === 'POST' && path === '/api/invites') return { status: 201, data: { code: 'AbCdEfGh23', url: 'https://site.test/join/AbCdEfGh23', text: (body as { note: string }).note } };
+    });
+    const shared: unknown[] = [];
+    Object.defineProperty(p.window.navigator, 'share', { value: async (d: unknown) => void shared.push(d), configurable: true });
+    const withMe = [...p.document.querySelectorAll('button')].find((b) => b.textContent === 'Do this with me')!;
+    withMe.click();
+    await p.settle();
+    const ta = p.document.getElementById('hfp-note') as unknown as HTMLTextAreaElement;
+    expect(ta).toBeTruthy();
+    ta.value = 'Saturday?';
+    p.document.getElementById('hfp-compose')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
+    await p.settle();
+    expect(p.calls.find((c) => c.path === '/api/invites')!.body).toEqual({ actionId: 'a1', kind: 'with_me', note: 'Saturday?' });
+    expect(shared).toEqual([expect.objectContaining({ text: 'Saturday?', url: 'https://site.test/join/AbCdEfGh23' })]);
+    await p.settle();
+    expect(p.document.querySelectorAll('#hfp-compose').length, p.document.body.innerHTML.slice(-600)).toBe(0);
+  });
+
   it('asks a signed-out visitor to sign in and remembers the click', async () => {
     const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [] } } : undefined), { signedIn: false });
     p.document.getElementById('hf-did-this')!.click();
@@ -101,10 +122,11 @@ describe('Invite page', () => {
   it("shows who it is from and joins on \"I'm in\"", async () => {
     let joined = false;
     const p = await page('/do-this-with-me?i=AbCdEfGh23', INVITE_HTML, (m, path) => {
-      if (m === 'GET' && path === '/api/invites/AbCdEfGh23') return { data: { kind: 'with_me', inviterName: 'Ana', action: { title: 'Cook a meal', shortAnswer: 'Cook for someone', slug: 'cook', live: true }, alternatives: [], me: { isMine: false, joined } } };
+      if (m === 'GET' && path === '/api/invites/AbCdEfGh23') return { data: { kind: 'with_me', inviterName: 'Ana', note: 'Saturday?', action: { title: 'Cook a meal', shortAnswer: 'Cook for someone', slug: 'cook', live: true }, alternatives: [], me: { isMine: false, joined } } };
       if (m === 'POST') { joined = true; return { data: { joined: true } }; }
     });
     expect(p.document.getElementById('hf-join-title')!.textContent).toBe('Ana wants to do this with you');
+    expect(p.document.getElementById('hfp-invite-note')!.textContent).toBe('“Saturday?” – Ana');
     p.document.getElementById('hf-join-in')!.click();
     await p.settle();
     expect(p.document.getElementById('hf-join-in')!.textContent).toBe("You're in");

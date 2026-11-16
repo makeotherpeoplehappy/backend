@@ -72,7 +72,9 @@ export function templateFor(spec: Spec, w: Wording, from: string) {
 export async function setUpEmailTemplates(env: Env, deps: Deps) {
   const w = await siteWording(env, deps);
   const api = 'https://api.resend.com/templates';
-  const headers = { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' };
+  // Templates need a full-access key; the site's own key only sends. A temporary
+  // RESEND_SETUP_KEY is used when set, so the sending key stays sending-only.
+  const headers = { Authorization: `Bearer ${env.RESEND_SETUP_KEY || env.RESEND_API_KEY}`, 'Content-Type': 'application/json' };
   const done: { alias: string; action: 'created' | 'updated' }[] = [];
   const failed: { alias: string; status: number; message: string }[] = [];
   for (const spec of MEMBER_TEMPLATES) {

@@ -477,6 +477,20 @@ describe('Phase 3: stock and drop state', () => {
     expect(b).toMatchObject({ status: 'sold_out', left: 0, detailsLine: '100 pieces. All gone. Thank you.' });
   });
 
+  it('lists the current drop and past drops for the shop, each with its collection', async () => {
+    await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
+    h.fake.inventory.set(PRODUCT, 0);
+    h.fake.collection(CMS.drops.id).push({
+      id: h.fake.newId(),
+      isDraft: false,
+      live: true,
+      fieldData: { name: 'Drop 02', slug: 'drop-02', statement: 'Be the reason.', 'drop-date': '2026-12-20T17:00:00.000Z', quantity: 50 },
+    });
+    const shop = await (await h.request('GET', '/api/drops')).json();
+    expect(shop.current).toMatchObject({ drop: 'drop-02', status: 'upcoming', collection: 'drop-02', statement: 'Be the reason.' });
+    expect(shop.past).toEqual([expect.objectContaining({ drop: 'drop-01', status: 'sold_out', collection: 'drop-01' })]);
+  });
+
   it('hides the line when inventory is not tracked', async () => {
     await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, null);

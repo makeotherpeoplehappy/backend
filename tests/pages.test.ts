@@ -190,3 +190,27 @@ describe('Suggest an action', () => {
     expect(p.document.body.textContent).toContain('Thank you. Your idea is with us.');
   });
 });
+
+describe('Shop', () => {
+  it('shows the current drop, "Always available" and past drops, each from its Shopify collection', async () => {
+    const p = await page('/shop', '<h1>Shop</h1><div id="hf-shop"></div>', (_m, path) =>
+      path === '/api/drops'
+        ? {
+            data: {
+              current: { drop: 'drop-02', name: 'Drop 02', statement: 'Be the reason.', status: 'upcoming', detailsLine: '50 pieces. Drops December 20 at 12:00 ET.', collection: 'drop-02', left: 50, quantity: 50, pledges: { made: 0, kept: 0 } },
+              past: [{ drop: 'drop-01', name: 'Drop 01', statement: 'Happiness is felt by making other people happy.', status: 'sold_out', collection: 'drop-01', pledges: { made: 100, kept: 81 } }],
+            },
+          }
+        : undefined,
+    );
+    const text = p.document.body.textContent;
+    expect(text).toContain('Drop 02 · Coming soon');
+    expect(text).toContain('Be the reason.');
+    expect(text).toContain('Always available');
+    expect(text).toContain('Past drops');
+    expect(text).toContain('100 pledges made, 81 kept');
+    const handles = [...p.document.querySelectorAll('shopify-context')].map((e) => e.getAttribute('handle'));
+    expect(handles).toEqual(['drop-02', 'always-available', 'drop-01']);
+    expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
+  });
+});

@@ -872,11 +872,83 @@
     footer ? footer.parentNode.insertBefore(box, footer) : document.body.appendChild(box);
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Shop: the current drop, then "Always available", then past drops. Each
+  // section shows a Shopify collection: the drop's address (drop-01) or
+  // "always-available". Empty sections hide themselves.
+  // ---------------------------------------------------------------------------
+  var STORE = 'r40e0y-zs.myshopify.com';
+  var CARD = '<div class="hf-product"><shopify-media query="product.selectedOrFirstAvailableVariant.image" width="320" height="320"></shopify-media>' +
+    '<h3><shopify-data query="product.title"></shopify-data></h3><p><shopify-money query="product.selectedOrFirstAvailableVariant.price"></shopify-money></p>' +
+    '<button type="button" class="hf-button-light" shopify-attr--data-handle="product.handle" onclick="location.href=\'/products/\'+this.dataset.handle">Details</button> ' +
+    '<button type="button" class="hf-button" onclick="document.getElementById(\'hf-cart\').addLine(event).showModal()" shopify-attr--disabled="!product.selectedOrFirstAvailableVariant.availableForSale">Add to cart</button></div>';
+  function collectionGrid(handle) {
+    var g = el('div', { class: 'hfp-grid' });
+    g.innerHTML = '<shopify-context type="collection" handle="' + handle + '"><template><shopify-list-context type="product" query="collection.products" first="48"><template>' + CARD + '</template></shopify-list-context></template></shopify-context>';
+    return g;
+  }
+  function hideIfEmpty(sec) {
+    setTimeout(function () { if (!sec.querySelector('.hf-product')) sec.style.display = 'none'; }, 6000);
+  }
+
+  async function shopPage() {
+    var root = $('hf-shop');
+    if (location.pathname !== '/shop' || !root || root.getAttribute('data-hfp')) return;
+    root.setAttribute('data-hfp', '1');
+    await wait(function () { return window.HFB; }, 10000);
+    var r = await HFB.call('/api/drops', { auth: false });
+    if (!r.ok) return; // keep the page's own list of every product
+    var cur = r.data.current;
+    var past = r.data.past || [];
+    document.head.appendChild(el('style', { text: '.hfp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:28px;margin:20px 0 8px}' +
+      '.hfp-grid shopify-context,.hfp-grid shopify-list-context{display:contents}.hfp-grid .hf-product h3{font-size:20px;margin:12px 0 4px}' +
+      '.hfp-grid shopify-media img{width:100%;height:auto;border-radius:8px;background:#eee}.hfp-shop-section{margin:0 0 56px}.hfp-past{opacity:.85}' }));
+    root.innerHTML = '<shopify-store store-domain="' + STORE + '" country="US" language="en"></shopify-store><shopify-cart id="hf-cart"></shopify-cart>';
+    if (cur) {
+      var facts = [];
+      if (cur.status === 'live' && cur.left !== null && cur.quantity) facts.push(cur.left + ' of ' + cur.quantity + ' left');
+      if (cur.pledges && cur.pledges.made > 0) facts.push(cur.pledges.made + ' ' + plural(cur.pledges.made, 'pledge', 'pledges') + ' made, ' + cur.pledges.kept + ' kept');
+      var drop = el('section', { class: 'hfp-shop-section', id: 'hfp-shop-drop', 'aria-labelledby': 'hfp-shop-drop-h' }, [
+        el('p', { class: 'hf-drop-label', text: cur.name + (cur.status === 'upcoming' ? ' · Coming soon' : cur.status === 'live' ? ' · Out now' : '') }),
+        el('h2', { id: 'hfp-shop-drop-h', style: 'margin-top:0', text: cur.statement || cur.name }),
+        el('p', { class: 'hfp-muted', id: 'hfp-shop-drop-details', text: cur.detailsLine }),
+        facts.length ? el('p', { class: 'hfp-muted', text: facts.join(' · ') }) : null,
+        el('p', null, [el('a', { class: 'hf-story-link', href: '/drops/' + cur.drop, text: 'About this drop →' })]),
+        collectionGrid(cur.collection),
+      ]);
+      root.appendChild(drop);
+      // "Notify me" (added by hf-backend.js) belongs with the drop.
+      wait(function () { return $('hfb-notify'); }, 8000).then(function (found) {
+        if (found) $('hfp-shop-drop-details').insertAdjacentElement('afterend', $('hfb-notify'));
+      });
+    }
+    var always = el('section', { class: 'hfp-shop-section', 'aria-labelledby': 'hfp-shop-always-h' }, [
+      el('h2', { id: 'hfp-shop-always-h', style: cur ? '' : 'margin-top:0', text: 'Always available' }),
+      el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
+      collectionGrid('always-available'),
+    ]);
+    root.appendChild(always);
+    hideIfEmpty(always);
+    if (past.length) {
+      var pastBox = el('section', { class: 'hfp-shop-section hfp-past', 'aria-labelledby': 'hfp-shop-past-h' }, [el('h2', { id: 'hfp-shop-past-h', text: 'Past drops' })]);
+      past.forEach(function (d) {
+        var line = d.pledges && d.pledges.made ? d.pledges.made + ' ' + plural(d.pledges.made, 'pledge', 'pledges') + ' made, ' + d.pledges.kept + ' kept' : 'Sold out';
+        pastBox.appendChild(el('div', null, [
+          el('h3', { text: d.name + (d.statement ? ': ' + d.statement : '') }),
+          el('p', { class: 'hfp-muted', text: line }),
+          collectionGrid(d.collection),
+        ]));
+      });
+      root.appendChild(pastBox);
+    }
+  }
+
   function start() {
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [invitePage, storiesPage, dropHero, mostDone];
+    var parts = [invitePage, storiesPage, dropHero, mostDone, shopPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

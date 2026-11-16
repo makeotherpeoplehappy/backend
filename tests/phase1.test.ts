@@ -191,13 +191,13 @@ describe('Check 3: a double click on any button creates one record', () => {
 
   it('send story', async () => {
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
-    await doubleClick('POST', '/api/stories', { actionId: actionA, text: 'She smiled all day.' });
+    await doubleClick('POST', '/api/stories', { actionId: actionA, consent: true, text: 'She smiled all day.' });
     expect(await h.db('SELECT * FROM stories')).toHaveLength(1);
   });
 
   it('delete story', async () => {
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
-    const s = await (await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: actionA, text: 'Lovely.' } })).json();
+    const s = await (await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: actionA, consent: true, text: 'Lovely.' } })).json();
     const { a, b } = await doubleClick('DELETE', `/api/stories/${s.id}`);
     expect([a.status, b.status]).toContain(200);
     expect(await h.db(`SELECT * FROM outbox WHERE op = 'webflow.delete'`)).toHaveLength(1);
@@ -210,6 +210,7 @@ describe('Check 3: a double click on any button creates one record', () => {
 
   it('different clicks with different keys are separate records', async () => {
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
+    h.clock.advance(24 * 60 * 60 * 1000); // "again" is allowed once a day
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
     expect(await h.db('SELECT * FROM done_marks')).toHaveLength(2);
   });
@@ -348,8 +349,9 @@ describe('Check 5: the sixth suggestion in a day is refused with a clear message
   it('limits each member separately, and applies the done and story limits too', async () => {
     h.fake.signIn('shcat_ana');
     h.fake.signIn('shcat_ben', { firstName: 'Ben' });
-    for (let i = 0; i < 10; i++) expect((await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' })).status).toBe(201);
-    const eleventh = await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
+    const many = Array.from({ length: 11 }, (_, i) => h.fake.addAction(`daily-${i}`, `Daily ${i}`));
+    for (let i = 0; i < 10; i++) expect((await h.request('POST', `/api/actions/${many[i]}/done`, { token: 'shcat_ana' })).status).toBe(201);
+    const eleventh = await h.request('POST', `/api/actions/${many[10]}/done`, { token: 'shcat_ana' });
     expect(eleventh.status).toBe(429);
     expect((await eleventh.json()).message).toMatch(/10 actions/);
     expect((await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ben' })).status).toBe(201);
@@ -432,7 +434,7 @@ describe('Check 7: deleting a test member removes their stories and name; counts
     }
     h.fake.signIn('shcat_tess', { id: 'gid://shopify/Customer/7002', firstName: 'Tess', email: 'tess@example.com' });
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_tess' });
-    await h.request('POST', '/api/stories', { token: 'shcat_tess', body: { actionId: actionA, text: 'We laughed a lot.' } });
+    await h.request('POST', '/api/stories', { token: 'shcat_tess', body: { actionId: actionA, consent: true, text: 'We laughed a lot.' } });
     await h.request('POST', '/api/suggestions', { token: 'shcat_tess', body: { text: 'Shovel snow for a neighbour' } });
     await drainAll();
     // The story was approved and published on the site.
@@ -440,7 +442,7 @@ describe('Check 7: deleting a test member removes their stories and name; counts
     h.fake.collection(CMS.stories.id).forEach((i) => (i.live = true));
     const before = await (await h.request('GET', `/api/actions/${actionA}/state`)).json();
     expect(before.count).toBe(11);
-    expect(before.stories).toEqual([expect.objectContaining({ first_name: 'Tess', text: 'We laughed a lot.' })]);
+    expect(before.stories).toEqual([expect.objectContaining({ name: 'Tess', text: 'We laughed a lot.' })]);
   }
 
   async function verifyRemoved() {
@@ -497,7 +499,7 @@ describe('Check 7: deleting a test member removes their stories and name; counts
     h.fake.signIn('shcat_ana');
     h.fake.webflowDown = true;
     await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_ana' });
-    const s = await (await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: actionA, text: 'Oops' } })).json();
+    const s = await (await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: actionA, consent: true, text: 'Oops' } })).json();
     await h.request('DELETE', `/api/stories/${s.id}`, { token: 'shcat_ana' });
     h.fake.webflowDown = false;
     h.clock.advance(minutes(60));

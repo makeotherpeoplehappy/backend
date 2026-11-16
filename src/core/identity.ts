@@ -1,5 +1,6 @@
 import type { Deps, Env } from './env';
 import { HttpError, UpstreamError, bearer, callUpstream, iso, sha256Hex } from './http';
+import { linkGuestPledges } from './features/pledges';
 
 export interface Customer {
   /** gid://shopify/Customer/123 */
@@ -18,6 +19,10 @@ export interface Member {
   notify_suggestion_live: number;
   notify_pledge_reminder: number;
   created_at: string;
+  share_name?: string | null;
+  inviter_id?: number | null;
+  inviter_joined_at?: string | null;
+  deleted_at?: string | null;
 }
 
 // Verified tokens are remembered briefly so a page making several calls does
@@ -98,6 +103,8 @@ export async function upsertMember(env: Env, deps: Deps, customer: Customer): Pr
     .bind(customer.id, customer.firstName, customer.email, now)
     .first<Member>();
   if (!row) throw new Error('member upsert returned nothing');
+  // Orders placed without an account join the member when that email signs in.
+  if (row.email) await linkGuestPledges(env, row);
   return row;
 }
 

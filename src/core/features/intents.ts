@@ -7,14 +7,15 @@ import type { Deps, Env } from '../env';
 import { HttpError, iso, randomId, safeReturnTo } from '../http';
 import type { Member } from '../identity';
 import { assertActionId, markDone, setLike } from './actions';
-import { sendStory, sendSuggestion } from './submissions';
+import { sendSuggestion } from './submissions';
+import { joinInvite } from './ripple';
 
 const TTL_SECONDS = 2 * 3600;
 
-// These are completed by the backend. "join" (Phase 4) is saved and handed
-// back so the page can finish it itself until invites exist.
-const COMPLETABLE = ['done', 'like', 'suggestion', 'story'] as const;
-const KINDS = [...COMPLETABLE, 'join', 'return'] as const;
+// These are completed by the backend. A story is handed back with its text,
+// so the story form opens again with the draft (it needs a consent tick).
+const COMPLETABLE = ['done', 'like', 'suggestion', 'join'] as const;
+const KINDS = [...COMPLETABLE, 'story', 'return'] as const;
 type Kind = (typeof KINDS)[number];
 
 export interface Intent {
@@ -45,6 +46,7 @@ export async function createIntent(env: Env, deps: Deps, body: Record<string, un
       ...(typeof data.showName === 'boolean' ? { showName: data.showName } : {}),
     };
   }
+  if (kind === 'join' && !intent.inviteCode) throw new HttpError(400, 'invalid_intent', 'That invite cannot be saved for later.');
   if ((kind === 'done' || kind === 'like' || kind === 'story') && !intent.actionId) {
     throw new HttpError(400, 'invalid_intent', 'That action cannot be saved for later.');
   }
@@ -65,10 +67,16 @@ export async function completeIntent(env: Env, deps: Deps, member: Member, id: s
   let result: unknown = null;
   let completed = false;
   if ((COMPLETABLE as readonly string[]).includes(intent.kind)) {
-    if (intent.kind === 'done') result = await markDone(env, deps, member, intent.actionId!);
-    if (intent.kind === 'like') result = await setLike(env, deps, member, intent.actionId!, true);
-    if (intent.kind === 'suggestion') result = await sendSuggestion(env, deps, member, { text: intent.data?.text });
-    if (intent.kind === 'story') result = await sendStory(env, deps, member, { actionId: intent.actionId, text: intent.data?.text, showName: intent.data?.showName });
+    try {
+      if (intent.kind === 'done') result = await markDone(env, deps, member, intent.actionId!);
+      if (intent.kind === 'like') result = await setLike(env, deps, member, intent.actionId!, true);
+      if (intent.kind === 'suggestion') result = await sendSuggestion(env, deps, member, { text: intent.data?.text });
+      if (intent.kind === 'join') result = await joinInvite(env, deps, member, intent.inviteCode || '');
+    } catch (e) {
+      // Already done today, or it is the member's own invite: nothing more to do.
+      if (!(e instanceof HttpError) || !['done_today', 'own_invite'].includes(e.code)) throw e;
+      result = { note: e.code, message: e.message };
+    }
     completed = true;
   }
   await env.CACHE.delete(`intent:${id}`);

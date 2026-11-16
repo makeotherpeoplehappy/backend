@@ -140,3 +140,47 @@ export async function unpublishItem(env: Env, deps: Deps, collectionId: string, 
   const res = await request(env, deps, 'PATCH', `/collections/${collectionId}/items/${itemId}`, { isDraft: true, fieldData: {} });
   if (!res.ok && res.status !== 404) await fail(res, 'mark item as draft');
 }
+
+/** One item as stored in the CMS (drafts included), or null if there is none. */
+export async function getItem(env: Env, deps: Deps, collectionId: string, itemId: string): Promise<WebflowItem | null> {
+  const res = await request(env, deps, 'GET', `/collections/${collectionId}/items/${itemId}`);
+  if (res.status === 404 || res.status === 400) return null;
+  if (!res.ok) return fail(res, 'get item');
+  return (await res.json()) as WebflowItem;
+}
+
+/** Publishes items as they are in the CMS. */
+export async function publishItems(env: Env, deps: Deps, collectionId: string, itemIds: string[]): Promise<void> {
+  if (!itemIds.length) return;
+  const res = await request(env, deps, 'POST', `/collections/${collectionId}/items/publish`, { itemIds });
+  if (!res.ok) await fail(res, 'publish items');
+}
+
+/** Takes an item off the live site; the CMS copy is kept as it is. */
+export async function removeFromLive(env: Env, deps: Deps, collectionId: string, itemId: string): Promise<void> {
+  const res = await request(env, deps, 'DELETE', `/collections/${collectionId}/items/${itemId}/live`);
+  if (!res.ok && res.status !== 404 && res.status !== 409 && res.status !== 400) await fail(res, 'unpublish item');
+}
+
+/**
+ * Changes fields on a published item without publishing anything else that
+ * is waiting in the CMS (such as Mickey's unpublished edits to the text).
+ */
+export async function updateLiveItem(env: Env, deps: Deps, collectionId: string, itemId: string, fieldData: Record<string, unknown>): Promise<void> {
+  const res = await request(env, deps, 'PATCH', `/collections/${collectionId}/items/${itemId}/live`, { fieldData });
+  if (res.status === 404) return;
+  if (!res.ok) await fail(res, 'update live item');
+}
+
+export interface WebflowField {
+  slug: string;
+  type: string;
+  validations?: Record<string, unknown> | null;
+}
+
+/** A collection's field definitions. */
+export async function getCollectionFields(env: Env, deps: Deps, collectionId: string): Promise<WebflowField[]> {
+  const res = await request(env, deps, 'GET', `/collections/${collectionId}`);
+  if (!res.ok) return fail(res, 'get collection');
+  return ((await res.json()) as { fields?: WebflowField[] }).fields || [];
+}

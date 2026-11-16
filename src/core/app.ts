@@ -6,14 +6,18 @@ import { HttpError, UpstreamError, base64url, errorResponse, hmac, iso, json, re
 import { optionalMember, requireMember, type Member } from './identity';
 import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
-import { actionState, markDone, resolveActionRef, setLike, syncActions } from './features/actions';
+import { actionState, markDone, mostDone, resolveActionRef, setLike, syncActions, undoDone, writeCountsToCms } from './features/actions';
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
-import { signUpForDrop } from './features/drops';
+import { dropState, scheduleDropReleases, signUpForDrop, updateDropsInCms } from './features/drops';
+import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
+import { reviewAll } from './features/review';
+import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
+import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
-import { deleteStory, sendStory, sendSuggestion } from './features/submissions';
+import { deleteStory, sendSuggestion } from './features/submissions';
 import { customerGid } from './shopify';
 
 type Params = Record<string, string>;
@@ -77,6 +81,10 @@ route('GET', '/api/actions/:id/state', true, async ({ req, env, deps, params }) 
 
 route('POST', '/api/actions/:id/done', true, memberWrite('done', async ({ env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id)), 201));
 
+route('DELETE', '/api/actions/:id/done', true, memberWrite('undo', async ({ env, deps, params }, m) => undoDone(env, deps, m, await resolveActionRef(env, deps, params.id))));
+
+route('GET', '/api/most-done', true, async ({ env }) => json(await mostDone(env), 200, { 'Cache-Control': 'public, max-age=60' }));
+
 route(
   'PUT',
   '/api/actions/:id/like',
@@ -95,7 +103,64 @@ route(
   memberWrite('suggestion', async ({ req, env, deps }, m) => sendSuggestion(env, deps, m, await readJson(req)), 201),
 );
 
-route('POST', '/api/stories', true, memberWrite('story', async ({ req, env, deps }, m) => sendStory(env, deps, m, await readJson(req)), 201));
+// Stories: send or edit, the member's own story, photos, the public list, reports.
+route(
+  'POST',
+  '/api/stories',
+  true,
+  memberWrite(
+    'story',
+    async ({ req, env, deps, baseUrl }, m) => {
+      const body = await readJson<Record<string, unknown>>(req);
+      if (typeof body.actionId === 'string') body.actionId = await resolveActionRef(env, deps, body.actionId);
+      return saveStory(env, deps, m, body, baseUrl);
+    },
+    201,
+  ),
+);
+
+route('GET', '/api/stories/mine', true, async ({ req, env, deps }) => {
+  const member = await requireMember(req, env, deps);
+  const ref = new URL(req.url).searchParams.get('action') || '';
+  return json(await myStory(env, member, await resolveActionRef(env, deps, ref)));
+});
+
+route('POST', '/api/stories/photo', true, async ({ req, env, deps }) => json(await uploadPhoto(env, deps, await requireMember(req, env, deps), req), 201));
+
+route('GET', '/api/stories', true, async ({ req, env }) => {
+  const u = new URL(req.url);
+  const page = Math.max(1, Number(u.searchParams.get('page') || '1') || 1);
+  return json({ page, stories: await storiesFor(env, { limit: 20, offset: (page - 1) * 20 }) }, 200, { 'Cache-Control': 'public, max-age=60' });
+});
+
+route('POST', '/api/stories/:id/report', true, async ({ req, env, deps, params, ctx }) => {
+  const body = await readJson<{ reason?: unknown; turnstileToken?: unknown }>(req);
+  await requireHuman(req, env, deps, body.turnstileToken);
+  const out = await reportStory(env, deps, Number(params.id), body.reason);
+  ctx.waitUntil(drain(env, deps, { limit: 3, deadlineMs: 10_000 }).catch(() => undefined));
+  return json(out);
+});
+
+route('GET', '/media/stories/:key', false, async ({ env, params }) => servePhoto(env, `stories/${params.key}`));
+
+// Drops: the hero's live state (status, stock, pledges).
+route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
+  const slug = new URL(req.url).searchParams.get('drop');
+  return json(await dropState(env, deps, slug && /^[a-z0-9-]{1,100}$/.test(slug) ? slug : null), 200, { 'Cache-Control': 'public, max-age=30' });
+});
+
+// Ripple: invites and "I'm in".
+route('POST', '/api/invites', true, memberWrite('invite', async ({ req, env, deps, baseUrl }, m) => {
+  const body = await readJson<{ actionId?: unknown; kind?: unknown }>(req);
+  if (typeof body.actionId === 'string') body.actionId = await resolveActionRef(env, deps, body.actionId);
+  return createInvite(env, deps, m, body, baseUrl);
+}, 201));
+
+route('GET', '/api/invites/:code', true, async ({ req, env, deps, params }) => json(await getInvite(env, deps, params.code, await optionalMember(req, env, deps))));
+
+route('POST', '/api/invites/:code/join', true, memberWrite('invite-join', async ({ env, deps, params }, m) => joinInvite(env, deps, m, params.code)));
+
+route('DELETE', '/api/invites/:code/join', true, memberWrite('invite-leave', async ({ env, deps, params }, m) => leaveInvite(env, deps, m, params.code)));
 
 route(
   'DELETE',
@@ -203,6 +268,16 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     // Keeps Shopify's product and customer-deletion webhooks pointed here.
     ['shopify-webhooks', 'shopifyWebhooks', 24 * HOUR, () => ensureShopifyWebhooks(env, deps, `${baseUrl}/api/webhooks/shopify`)],
     ['backup', 'backup', 24 * HOUR, () => backupDatabase(env, deps)],
+    // Phase 2: review in the CMS (the Webflow webhook is the fast path).
+    ['review', 'review', 15 * 60 * 1000, () => reviewAll(env, deps, baseUrl)],
+    // Phase 3: drops, counts and pledges.
+    ['drops', 'drops', 0, () => updateDropsInCms(env, deps)],
+    ['drop-releases', 'dropReleases', HOUR, () => scheduleDropReleases(env, deps)],
+    ['write-counts', 'writeCounts', 24 * HOUR, () => writeCountsToCms(env, deps)],
+    ['sync-orders', 'syncOrders', 6 * HOUR, () => syncRecentOrders(env, deps, { days: 3 })],
+    ['pledge-reminders', 'pledgeReminders', HOUR, () => pledgeReminders(env, deps, baseUrl)],
+    // Phase 4: one summary email a day per inviter.
+    ['invite-summaries', 'inviteSummaries', 24 * HOUR, () => inviteSummaries(env, deps, baseUrl)],
   ];
   for (const [job, key, every, run] of jobs) {
     const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = ?1`).bind(job).first<{ last_run_at: string }>();
@@ -249,6 +324,12 @@ route('POST', '/api/admin/import', false, async ({ req, env, deps }) => {
 // the jobs timer: a full pass now, and one more a day later to catch anything
 // written by pages that were still open during the switch. Safe to repeat.
 const IMPORT_PASSES = 2;
+
+// The shared invite link: /join/<code>. Registered last so it never shadows other routes.
+route('GET', '/:code', false, async ({ env, deps, params, baseUrl }) => {
+  if (!isInviteCode(params.code)) return json({ error: 'not_found', message: 'Not found.' }, 404);
+  return invitePreview(env, deps, params.code, baseUrl);
+});
 async function importJob(env: Env, deps: Deps): Promise<unknown> {
   const state = ((await env.CACHE.get('import:state', 'json')) as { passes: number; cursor: string | null; lastFinished: string | null } | null) || {
     passes: 0,
@@ -290,9 +371,11 @@ async function importJob(env: Env, deps: Deps): Promise<unknown> {
 
 // --- Incoming webhooks ------------------------------------------------------
 
-route('POST', '/api/webhooks/webflow', false, async ({ req, env, deps }) => {
+route('POST', '/api/webhooks/webflow', false, async ({ req, env, deps, baseUrl, ctx }) => {
   const body = await readJson(req);
-  return json(await handleWebflowWebhook(env, deps, body));
+  const out = await handleWebflowWebhook(env, deps, body, baseUrl);
+  ctx.waitUntil(drain(env, deps, { limit: 5, deadlineMs: 10_000 }).catch(() => undefined));
+  return json(out);
 });
 
 route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
@@ -318,7 +401,11 @@ route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
       if (!body.id) return json({ ok: true, ignored: 'no product id' });
       return json({ ok: true, ...(await syncOneProduct(env, deps, String(body.id), topic === 'products/delete')) });
     }
-    // Order webhooks arrive in Phase 3.
+    if (topic === 'orders/create' || topic === 'orders/updated' || topic === 'orders/cancelled' || topic === 'orders/paid') {
+      const order = orderFromWebhook(body);
+      return json({ ok: true, ...(order ? await ingestOrder(env, deps, order) : { ignored: 'no order' }) });
+    }
+    if (topic === 'refunds/create') return json({ ok: true, ...(await refundOrder(env, deps, body.order_id)) });
     return json({ ok: true, ignored: topic });
   });
 });

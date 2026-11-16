@@ -52,7 +52,8 @@
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
     '.hfp-photo{display:block;width:100%;max-width:640px;border-radius:8px;margin:0 0 12px}' +
     '.hfp-list{list-style:none;padding:0;margin:8px 0 16px}.hfp-list li{padding:10px 0;border-bottom:1px solid #e5e5e5}' +
-    '.hfp-field{margin:0 0 16px}.hfp-check{display:flex;gap:10px;align-items:flex-start;margin:0 0 12px}.hfp-check input{margin-top:5px}' +
+    '.hfp-field{margin:0 0 16px}.hfp-check{display:flex;gap:10px;align-items:flex-start;margin:0 0 12px}.hfp-check input{margin-top:5px;width:18px;height:18px;flex:none}' +
+    '.hfp-check label{font-size:17px;font-weight:400;line-height:1.5;margin:0;cursor:pointer}' +
     '.hfp-pill{display:inline-block;font-size:13px;padding:2px 10px;border-radius:999px;border:1px solid #bbb;margin-left:8px}' +
     '[aria-disabled=true].hf-button,[aria-disabled=true].hf-button-light,button[disabled]{opacity:.55;cursor:default}';
   document.head.appendChild(el('style', { text: css }));
@@ -462,12 +463,12 @@
       box.appendChild(el('h2', { text: 'Settings' }));
       box.appendChild(el('div', { class: 'hfp-field' }, [el('label', { for: 'hfp-share-name', class: 'hf-form-label', text: 'First name shown when you share' }), nameIn, nameSave, nameMsg]));
       var labels = {
-        invite_summary: 'A daily email when someone joins your invite',
-        story_approved: 'An email when your story is on the site',
-        suggestion_live: 'An email when your suggested action is live',
-        pledge_reminder: 'One reminder if a pledge is still open after a week',
+        invite_summary: 'When someone joins your invite',
+        story_approved: 'When your story is published on the site',
+        suggestion_live: 'When your suggested action is live',
+        pledge_reminder: 'If a pledge is still open after a week',
       };
-      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:0 0 16px' }, [el('legend', { class: 'hf-form-label', text: 'Emails' })]);
+      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:0 0 16px' }, [el('legend', { class: 'hf-form-label', text: 'Email me' })]);
       var setMsg = status();
       Object.keys(labels).forEach(function (kind) {
         var cb = el('input', { type: 'checkbox', id: 'hfp-n-' + kind, checked: me.settings[kind] ? true : false });

@@ -491,6 +491,17 @@ describe('Phase 3: stock and drop state', () => {
     expect(shop.past).toEqual([expect.objectContaining({ drop: 'drop-01', status: 'sold_out', collection: 'drop-01' })]);
   });
 
+  it('labels products truthfully: drop pieces with the drop, limited editions with their size, the rest with nothing', async () => {
+    await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
+    const base = { status: 'ACTIVE' as const, descriptionHtml: '', description: '' };
+    h.fake.products.push({ ...base, id: PRODUCT, handle: 'tee', title: 'Tee' });
+    h.fake.products.push({ ...base, id: 'gid://shopify/Product/801', handle: 'print', title: 'Print', editionSize: 250 });
+    h.fake.products.push({ ...base, id: 'gid://shopify/Product/802', handle: 'mug', title: 'Mug' });
+    h.fake.inventory.set('gid://shopify/Product/801', 12);
+    const { labels } = await (await h.request('GET', '/api/products/labels')).json();
+    expect(labels).toEqual({ tee: 'Drop 01 · 100 pieces', print: 'Limited edition · 12 of 250 left' });
+  });
+
   it('hides the line when inventory is not tracked', async () => {
     await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, null);

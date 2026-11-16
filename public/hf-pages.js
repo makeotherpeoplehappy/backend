@@ -874,22 +874,90 @@
 
 
   // ---------------------------------------------------------------------------
-  // Shop: the current drop, then "Always available", then past drops. Each
+  // Shop: the current drop, then "Available now", then past drops. Each
   // section shows a Shopify collection: the drop's address (drop-01) or
-  // "always-available". Empty sections hide themselves.
+  // "available-now". Empty sections hide themselves. Every product card and
+  // product page shows its edition label ("Drop 01 · 100 pieces").
   // ---------------------------------------------------------------------------
   var STORE = 'r40e0y-zs.myshopify.com';
   var CARD = '<div class="hf-product"><shopify-media query="product.selectedOrFirstAvailableVariant.image" width="320" height="320"></shopify-media>' +
     '<h3><shopify-data query="product.title"></shopify-data></h3><p><shopify-money query="product.selectedOrFirstAvailableVariant.price"></shopify-money></p>' +
     '<button type="button" class="hf-button-light" shopify-attr--data-handle="product.handle" onclick="location.href=\'/products/\'+this.dataset.handle">Details</button> ' +
     '<button type="button" class="hf-button" onclick="document.getElementById(\'hf-cart\').addLine(event).showModal()" shopify-attr--disabled="!product.selectedOrFirstAvailableVariant.availableForSale">Add to cart</button></div>';
-  function collectionGrid(handle) {
+  var CARD_PREVIEW = CARD.replace(/ <button type="button" class="hf-button" onclick[^]*?<\/button>/, '');
+  function collectionGrid(handle, previewOnly) {
     var g = el('div', { class: 'hfp-grid' });
-    g.innerHTML = '<shopify-context type="collection" handle="' + handle + '"><template><shopify-list-context type="product" query="collection.products" first="48"><template>' + CARD + '</template></shopify-list-context></template></shopify-context>';
+    g.innerHTML = '<shopify-context type="collection" handle="' + handle + '"><template><shopify-list-context type="product" query="collection.products" first="48"><template>' + (previewOnly ? CARD_PREVIEW : CARD) + '</template></shopify-list-context></template></shopify-context>';
     return g;
+  }
+  var GRID_CSS = '.hfp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:28px;margin:20px 0 8px}' +
+    '.hfp-grid shopify-context,.hfp-grid shopify-list-context{display:contents}.hfp-grid .hf-product h3{font-size:20px;margin:12px 0 4px}' +
+    '.hfp-grid shopify-media img{width:100%;height:auto;border-radius:8px;background:#eee}.hfp-shop-section{margin:0 0 56px}.hfp-past{opacity:.85}';
+  function ensureShopify() {
+    if (!document.querySelector('script[src*="storefront/web-components"]')) {
+      document.head.appendChild(el('script', { type: 'module', src: 'https://cdn.shopify.com/storefront/web-components.js' }));
+    }
+    if (!document.querySelector('shopify-store')) document.body.appendChild(el('shopify-store', { 'store-domain': STORE, country: 'US', language: 'en' }));
+    if (!$('hf-cart')) document.body.appendChild(el('shopify-cart', { id: 'hf-cart' }));
+  }
+
+  /** A drop's own page: every piece in the drop, right there. */
+  async function dropPage() {
+    var m = /^\/drops\/([a-z0-9-]+)\/?$/.exec(location.pathname);
+    if (!m || $('hfp-pieces')) return;
+    await wait(function () { return window.HFB; }, 10000);
+    var r = await HFB.call('/api/drops/state?drop=' + m[1], { auth: false });
+    var upcoming = r.ok && r.data.status === 'upcoming';
+    document.head.appendChild(el('style', { text: GRID_CSS }));
+    ensureShopify();
+    var box = el('section', { id: 'hfp-pieces', class: 'hfp-shop-section', 'aria-labelledby': 'hfp-pieces-h' }, [
+      el('h2', { id: 'hfp-pieces-h', text: 'The pieces' }),
+      upcoming ? el('p', { class: 'hfp-muted', text: 'On sale when the drop goes live. Every piece comes with a pledge: take an action that makes someone else happy.' }) : el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
+      collectionGrid(m[1], upcoming),
+    ]);
+    var hero = document.querySelector('.hf-drop');
+    hero ? hero.insertAdjacentElement('afterend', box) : (document.querySelector('footer') || document.body).insertAdjacentElement('beforebegin', box);
+    editionLabels(box);
+    // The hero's button now jumps to the pieces instead of leaving the page.
+    var b = document.querySelector('.hf-drop-button');
+    if (b) { b.textContent = 'See the pieces'; b.setAttribute('href', '#hfp-pieces'); }
   }
   function hideIfEmpty(sec) {
     setTimeout(function () { if (!sec.querySelector('.hf-product')) sec.style.display = 'none'; }, 6000);
+  }
+
+  var labelsPromise = null;
+  function loadLabels() {
+    if (!labelsPromise) labelsPromise = HFB.call('/api/products/labels', { auth: false }).then(function (r) { return r.ok ? r.data.labels : {}; });
+    return labelsPromise;
+  }
+  /** Adds "Drop 01 · 100 pieces" or "Limited edition · 250 pieces" to each product card as it renders. */
+  function editionLabels(root) {
+    function paint(labels) {
+      root.querySelectorAll('.hf-product').forEach(function (card) {
+        if (card.querySelector('.hfp-edition')) return;
+        var b = card.querySelector('button[data-handle]');
+        var label = b && labels[b.getAttribute('data-handle')];
+        if (!label) return;
+        var h = card.querySelector('h3') || card.firstChild;
+        card.insertBefore(el('p', { class: 'hfp-edition hf-drop-label', style: 'margin:12px 0 0', text: label }), h);
+      });
+    }
+    loadLabels().then(function (labels) {
+      paint(labels);
+      new MutationObserver(function () { paint(labels); }).observe(root, { childList: true, subtree: true });
+    });
+  }
+
+  async function productLabel() {
+    var m = /^\/products\/([^\/]+)/.exec(location.pathname);
+    var target = $('hf-product');
+    if (!m || !target || $('hfp-product-edition')) return;
+    await wait(function () { return window.HFB; }, 10000);
+    var labels = await loadLabels();
+    if (!labels[m[1]]) return;
+    var h1 = document.querySelector('h1');
+    (h1 || target).insertAdjacentElement(h1 ? 'beforebegin' : 'beforebegin', el('p', { id: 'hfp-product-edition', class: 'hf-drop-label', text: labels[m[1]] }));
   }
 
   async function shopPage() {
@@ -901,9 +969,7 @@
     if (!r.ok) return; // keep the page's own list of every product
     var cur = r.data.current;
     var past = r.data.past || [];
-    document.head.appendChild(el('style', { text: '.hfp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:28px;margin:20px 0 8px}' +
-      '.hfp-grid shopify-context,.hfp-grid shopify-list-context{display:contents}.hfp-grid .hf-product h3{font-size:20px;margin:12px 0 4px}' +
-      '.hfp-grid shopify-media img{width:100%;height:auto;border-radius:8px;background:#eee}.hfp-shop-section{margin:0 0 56px}.hfp-past{opacity:.85}' }));
+    document.head.appendChild(el('style', { text: GRID_CSS }));
     root.innerHTML = '<shopify-store store-domain="' + STORE + '" country="US" language="en"></shopify-store><shopify-cart id="hf-cart"></shopify-cart>';
     if (cur) {
       var facts = [];
@@ -920,16 +986,21 @@
       root.appendChild(drop);
       // "Notify me" (added by hf-backend.js) belongs with the drop.
       wait(function () { return $('hfb-notify'); }, 8000).then(function (found) {
-        if (found) $('hfp-shop-drop-details').insertAdjacentElement('afterend', $('hfb-notify'));
+        if (!found) return;
+        var f = $('hfb-notify');
+        var lab = f.querySelector('label');
+        if (lab) lab.textContent = lab.textContent.indexOf('account address') >= 0 ? 'Get an email at your account address when ' + cur.name + ' goes live.' : 'Get an email when ' + cur.name + ' goes live.';
+        $('hfp-shop-drop-details').insertAdjacentElement('afterend', f);
       });
     }
     var always = el('section', { class: 'hfp-shop-section', 'aria-labelledby': 'hfp-shop-always-h' }, [
-      el('h2', { id: 'hfp-shop-always-h', style: cur ? '' : 'margin-top:0', text: 'Always available' }),
+      el('h2', { id: 'hfp-shop-always-h', style: cur ? '' : 'margin-top:0', text: 'Available now' }),
       el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
-      collectionGrid('always-available'),
+      collectionGrid('available-now'),
     ]);
     root.appendChild(always);
     hideIfEmpty(always);
+    editionLabels(root);
     if (past.length) {
       var pastBox = el('section', { class: 'hfp-shop-section hfp-past', 'aria-labelledby': 'hfp-shop-past-h' }, [el('h2', { id: 'hfp-shop-past-h', text: 'Past drops' })]);
       past.forEach(function (d) {
@@ -948,7 +1019,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [invitePage, storiesPage, dropHero, mostDone, shopPage];
+    var parts = [invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

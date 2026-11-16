@@ -206,11 +206,26 @@ describe('Shop', () => {
     const text = p.document.body.textContent;
     expect(text).toContain('Drop 02 · Coming soon');
     expect(text).toContain('Be the reason.');
-    expect(text).toContain('Always available');
+    expect(text).toContain('Available now');
     expect(text).toContain('Past drops');
     expect(text).toContain('100 pledges made, 81 kept');
     const handles = [...p.document.querySelectorAll('shopify-context')].map((e) => e.getAttribute('handle'));
-    expect(handles).toEqual(['drop-02', 'always-available', 'drop-01']);
+    expect(handles).toEqual(['drop-02', 'available-now', 'drop-01']);
+    expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
+  });
+});
+
+describe('Drop page', () => {
+  it('shows every piece of the drop on the page, without "Add to cart" before launch', async () => {
+    // The real Shopify script is not loaded in tests.
+    const p = await page('/drops/drop-01', '<script type="text/plain" src="https://cdn.shopify.com/storefront/web-components.js"></script><div class="hf-drop"><a class="hf-drop-button" href="/products/tee">See the piece</a></div><footer></footer>', (_m, path) =>
+      path.startsWith('/api/drops/state') ? { data: { drop: 'drop-01', status: 'upcoming' } } : path === '/api/products/labels' ? { data: { labels: {} } } : undefined,
+    );
+    expect(p.document.getElementById('hfp-pieces')!.textContent).toContain('The pieces');
+    expect(p.document.querySelector('#hfp-pieces shopify-context')!.getAttribute('handle')).toBe('drop-01');
+    // (The simulated browser may run Shopify's own script, which replaces the template.)
+    expect(p.document.getElementById('hfp-pieces')!.innerHTML).not.toContain('Add to cart');
+    expect(p.document.querySelector('.hf-drop-button')!.getAttribute('href')).toBe('#hfp-pieces');
     expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
   });
 });

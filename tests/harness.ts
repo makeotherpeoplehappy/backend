@@ -29,6 +29,7 @@ export interface FakeProduct {
   description: string;
   seoDescription?: string | null;
   imageUrl?: string | null;
+  editionSize?: number;
 }
 
 export interface FakeItem {
@@ -181,6 +182,17 @@ export class FakeServices {
         return j({ data: { webhookSubscriptionCreate: { webhookSubscription: { id: sub.id }, userErrors: [] } } });
       }
       if (q.query.includes('webhookSubscriptions')) return j({ data: { webhookSubscriptions: { nodes: this.webhookSubs } } });
+      if (q.query.includes('edition_size')) {
+        return j({
+          data: {
+            products: {
+              nodes: this.products
+                .filter((p) => p.status === 'ACTIVE')
+                .map((p) => ({ id: p.id, handle: p.handle, tracksInventory: this.inventory.get(p.id) !== null && this.inventory.has(p.id), totalInventory: this.inventory.get(p.id) ?? 0, edition: p.editionSize ? { value: String(p.editionSize) } : null })),
+            },
+          },
+        });
+      }
       if (q.query.includes('tracksInventory')) {
         const inv = this.inventory.get(String(q.variables.id));
         return j({ data: { product: inv === undefined && !this.inventory.has(String(q.variables.id)) ? null : { tracksInventory: inv !== null, totalInventory: inv ?? 0 } } });

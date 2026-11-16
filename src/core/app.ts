@@ -11,7 +11,7 @@ import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings 
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
-import { dropState, scheduleDropReleases, shopDrops, signUpForDrop, updateDropsInCms } from './features/drops';
+import { dropState, productLabels, scheduleDropReleases, shopDrops, signUpForDrop, updateDropsInCms } from './features/drops';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { reviewAll } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
@@ -148,6 +148,8 @@ route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
   const slug = new URL(req.url).searchParams.get('drop');
   return json(await dropState(env, deps, slug && /^[a-z0-9-]{1,100}$/.test(slug) ? slug : null), 200, { 'Cache-Control': 'public, max-age=30' });
 });
+
+route('GET', '/api/products/labels', true, async ({ env, deps }) => json({ labels: await productLabels(env, deps) }, 200, { 'Cache-Control': 'public, max-age=30' }));
 
 route('GET', '/api/drops', true, async ({ env, deps }) => json(await shopDrops(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 

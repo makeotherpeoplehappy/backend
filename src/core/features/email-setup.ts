@@ -98,5 +98,5 @@ export async function setUpEmailTemplates(env: Env, deps: Deps) {
       failed.push({ alias: spec.alias, status: 0, message: (e as Error).message });
     }
   }
-  return { done, failed };
+  return { done, failed, key: env.RESEND_SETUP_KEY ? 'RESEND_SETUP_KEY' : 'RESEND_API_KEY (sending only)' };
 }

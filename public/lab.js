@@ -172,7 +172,7 @@
       var r = await window.HFB.call('/api/lab/email-templates', { method: 'POST' });
       b.disabled = false;
       if (!r.ok) { msg.textContent = (r.data && r.data.message) || 'That did not work.'; return; }
-      msg.textContent = r.data.done.map(function (d) { return d.alias + ': ' + d.action + ' and published'; }).concat(r.data.failed.map(function (f) { return f.alias + ': failed (' + f.status + ') ' + f.message; })).join('\n');
+      msg.textContent = 'Key used: ' + r.data.key + '\n' + r.data.done.map(function (d) { return d.alias + ': ' + d.action + ' and published'; }).concat(r.data.failed.map(function (f) { return f.alias + ': failed (' + f.status + ') ' + f.message; })).join('\n');
     };
     return el('div', {}, [el('h2', { text: 'Email templates' }), el('div', { class: 'panel' }, [b, msg])]);
   }

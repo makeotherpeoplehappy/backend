@@ -538,33 +538,37 @@ describe('Foundation: email', () => {
     h.fake.signIn('shcat_ana', { firstName: 'Ana', email: 'ana@example.com' });
     await h.request('GET', '/api/me', { token: 'shcat_ana' });
     const [m] = await h.db<never>('SELECT * FROM members');
-    const msg = await memberEmail(h.env, siteDeps(), m, 'story_approved', { actionTitle: 'Compliment a stranger' }, `${SITE}/join`);
-    expect(msg!.text).toContain('Hi Ana,');
+    const msg = await memberEmail(h.env, m, 'story_approved', { actionTitle: 'Compliment a stranger' }, `${SITE}/join`);
+    expect(msg!.template).toMatchObject({ id: 'hf-story-live', variables: { GREETING_NAME: 'Ana', ACTION_TITLE: 'Compliment a stranger' } });
     expect(msg!.headers!['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
-    const link = /To stop these emails: (\S+)/.exec(msg!.text)![1];
+    const link = String(msg!.template!.variables.UNSUB_URL);
+    expect(msg!.headers!['List-Unsubscribe']).toBe(`<${link}>`);
     const off = await h.app.handle(new Request(link, { method: 'POST' }), h.env, { waitUntil: () => undefined });
     expect(off.status).toBe(200);
     const [after] = await h.db<never>('SELECT * FROM members');
-    expect(await memberEmail(h.env, siteDeps(), after, 'story_approved', {}, `${SITE}/join`)).toBeNull();
+    expect(await memberEmail(h.env, after, 'story_approved', {}, `${SITE}/join`)).toBeNull();
     // Other kinds are still on.
-    expect(await memberEmail(h.env, siteDeps(), after, 'suggestion_live', {}, `${SITE}/join`)).not.toBeNull();
+    expect(await memberEmail(h.env, after, 'suggestion_live', {}, `${SITE}/join`)).not.toBeNull();
     // A tampered link does nothing.
     const bad = await h.app.handle(new Request(link.replace('story_approved', 'pledge_reminder')), h.env, { waitUntil: () => undefined });
     expect(bad.status).toBe(400);
   });
 
-  it('the four member emails read as plain text', async () => {
+  it('each member email picks its Resend template and fills in the details', async () => {
     const { memberEmail } = await import('../src/core/email');
     h.fake.signIn('shcat_ana', { firstName: 'Ana', email: 'ana@example.com' });
     await h.request('GET', '/api/me', { token: 'shcat_ana' });
     const [m] = await h.db<never>('SELECT * FROM members');
-    const summary = await memberEmail(h.env, siteDeps(), m, 'invite_summary', { joinedNames: ['Ben', 'Cleo', 'Dan'], actionTitle: 'Bake for a neighbour' }, `${SITE}/join`);
-    expect(summary!.subject).toBe('3 people joined your invite');
-    expect(summary!.text).toContain('Ben, Cleo and Dan are in for "Bake for a neighbour".');
-    for (const kind of ['suggestion_live', 'pledge_reminder'] as const) {
-      const e = await memberEmail(h.env, siteDeps(), m, kind, {}, `${SITE}/join`);
-      expect(e!.text).not.toMatch(/<[a-z]/i);
-    }
+    const summary = await memberEmail(h.env, m, 'invite_summary', { joinedNames: ['Ben', 'Cleo', 'Dan'], actionTitle: 'Bake for a neighbour' }, `${SITE}/join`);
+    expect(summary!.template).toMatchObject({ id: 'hf-invite-joined-many', variables: { NAMES: 'Ben, Cleo and Dan', COUNT: 3, ACTION_TITLE: 'Bake for a neighbour' } });
+    expect(summary!.tags).toEqual([{ name: 'kind', value: 'invite_summary' }]);
+    const one = await memberEmail(h.env, m, 'invite_summary', { joinedNames: ['Ben'] }, `${SITE}/join`);
+    expect(one!.template).toMatchObject({ id: 'hf-invite-joined-one-untitled', variables: { NAME: 'Ben' } });
+    expect((await memberEmail(h.env, m, 'suggestion_live', {}, `${SITE}/join`))!.template!.id).toBe('hf-suggestion-live-untitled');
+    expect((await memberEmail(h.env, m, 'pledge_reminder', { actionUrl: `${SITE}/actions` }, `${SITE}/join`))!.template).toMatchObject({ id: 'hf-pledge-reminder', variables: { LINK_URL: `${SITE}/actions` } });
+    // No subject or text alongside a template: Resend refuses that.
+    expect(summary!.subject).toBeUndefined();
+    expect(summary!.text).toBeUndefined();
   });
 });
 

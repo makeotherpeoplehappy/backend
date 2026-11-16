@@ -24,10 +24,6 @@ export interface Env {
   WEBFLOW_API_TOKEN: string;
 
   RESEND_API_KEY: string;
-
-  /** Optional, temporary: a Resend full-access key used only by the one-time email template setup on /lab. Delete it after. */
-
-  RESEND_SETUP_KEY?: string;
   /** e.g. Happiness Foundation <hello@happiness.foundation> */
   EMAIL_FROM: string;
   /** Where error reports go. */

@@ -139,7 +139,7 @@ export async function notifySuggestionsLive(env: Env, deps: Deps, baseUrl: strin
   for (const d of due.results) {
     const stmts = [env.DB.prepare(`UPDATE suggestions SET live_notified_at = ?2 WHERE id = ?1`).bind(d.id, iso(deps.now()))];
     const member = await memberById(env, d.memberId);
-    const msg = member ? await memberEmail(env, deps, member, 'suggestion_live', { actionTitle: d.title, actionUrl: `${site}/action/${d.slug}` }, baseUrl) : null;
+    const msg = member ? await memberEmail(env, member, 'suggestion_live', { actionTitle: d.title, actionUrl: `${site}/action/${d.slug}` }, baseUrl) : null;
     if (msg) {
       stmts.push(enqueue(env, deps, `suggestion-live:${d.id}`, { op: 'email.send', message: msg }, d.memberId));
       sent++;
@@ -170,7 +170,7 @@ export async function applyStory(env: Env, deps: Deps, id: number, cmsId: string
       const action = await env.DB.prepare(`SELECT title, slug, status FROM actions WHERE cms_item_id = ?1`).bind(row.action_id).first<{ title: string; slug: string; status: string }>();
       const site = baseUrl.replace(/\/join$/, '');
       const msg = member
-        ? await memberEmail(env, deps, member, 'story_approved', { actionTitle: action?.title, actionUrl: action?.status === 'published' ? `${site}/action/${action.slug}` : `${site}/stories` }, baseUrl)
+        ? await memberEmail(env, member, 'story_approved', { actionTitle: action?.title, actionUrl: action?.status === 'published' ? `${site}/action/${action.slug}` : `${site}/stories` }, baseUrl)
         : null;
       if (msg) stmts.push(enqueue(env, deps, `story-approved:${id}:v${row.version}`, { op: 'email.send', message: msg }, row.member_id));
     }

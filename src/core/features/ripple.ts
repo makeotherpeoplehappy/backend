@@ -223,7 +223,7 @@ export async function inviteSummaries(env: Env, deps: Deps, baseUrl: string) {
     const inviter = await env.DB.prepare(`SELECT * FROM members WHERE id = ?1 AND deleted_at IS NULL`).bind(inviterId).first<Member>();
     const names = [...new Set(joins.map((j) => j.name || 'Someone'))];
     const titles = [...new Set(joins.map((j) => j.title).filter(Boolean))] as string[];
-    const msg = inviter ? await memberEmail(env, deps, inviter, 'invite_summary', { joinedNames: names, actionTitle: titles.length === 1 ? titles[0] : undefined, actionUrl: `${site}/account` }, baseUrl) : null;
+    const msg = inviter ? await memberEmail(env, inviter, 'invite_summary', { joinedNames: names, actionTitle: titles.length === 1 ? titles[0] : undefined, actionUrl: `${site}/account` }, baseUrl) : null;
     if (msg) {
       stmts.push(enqueue(env, deps, `invite-summary:${inviterId}:${now}`, { op: 'email.send', message: msg }, inviterId));
       sent++;

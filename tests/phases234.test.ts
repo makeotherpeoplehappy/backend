@@ -97,7 +97,7 @@ describe('Phase 2: suggestions', () => {
     await h.request('POST', '/api/webhooks/webflow', { origin: null, key: null, body: { triggerType: 'collection_item_changed', payload: { collectionId: CMS.actions.id, id: draft.id } } });
     await h.request('POST', '/api/webhooks/webflow', { origin: null, key: null, body: { triggerType: 'collection_item_changed', payload: { collectionId: CMS.actions.id, id: draft.id } } });
     await flush();
-    const live = h.fake.emails.filter((e) => e.subject === 'Your suggested action is live');
+    const live = h.fake.emails.filter((e) => e.template?.id === 'hf-suggestion-live');
     expect(live).toHaveLength(1);
     expect(live[0].to).toEqual(['ana@example.com']);
     const st = await (await h.request('GET', `/api/actions/${draft.id}/state`)).json();
@@ -205,11 +205,11 @@ describe('Phase 2: stories', () => {
     expect(item.live).toBe(true);
     expect((await (await h.request('GET', '/api/stories')).json()).stories).toHaveLength(1);
     expect((await (await h.request('GET', `/api/actions/${actionA}/state`)).json()).stories[0]).toMatchObject({ name: 'Ana', text: 'She smiled all day.' });
-    expect(h.fake.emails.filter((e) => e.subject === 'Your story is on the site')).toHaveLength(1);
+    expect(h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-story-live'))).toHaveLength(1);
     h.clock.advance(16 * 60 * 1000);
     await tick();
     await flush();
-    expect(h.fake.emails.filter((e) => e.subject === 'Your story is on the site')).toHaveLength(1);
+    expect(h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-story-live'))).toHaveLength(1);
 
     const edit = await send('shcat_ana', { actionId: actionA, text: 'She smiled all week.' });
     expect((await edit.json()).edited).toBe(true);
@@ -433,7 +433,7 @@ describe('Phase 3: pledges', () => {
     h.clock.advance(6 * DAY);
     await tick();
     await flush();
-    expect(h.fake.emails.filter((e) => e.subject === 'Your pledge is still open')).toHaveLength(0);
+    expect(h.fake.emails.filter((e) => e.template?.id === 'hf-pledge-reminder')).toHaveLength(0);
     h.clock.advance(DAY + 2 * 60 * 60 * 1000);
     await tick();
     await flush();
@@ -443,7 +443,7 @@ describe('Phase 3: pledges', () => {
     h.clock.advance(10 * DAY);
     await tick();
     await flush();
-    expect(h.fake.emails.filter((e) => e.subject === 'Your pledge is still open')).toHaveLength(1);
+    expect(h.fake.emails.filter((e) => e.template?.id === 'hf-pledge-reminder')).toHaveLength(1);
   });
 
   it('the timer picks up orders that a webhook missed', async () => {
@@ -652,12 +652,12 @@ describe('Phase 4: ripple', () => {
     }
     await tick();
     await flush();
-    const mails = h.fake.emails.filter((e) => e.subject.includes('joined your invite'));
+    const mails = h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-invite-joined'));
     expect(mails).toHaveLength(1);
-    expect(mails[0].subject).toBe('20 people joined your invite');
+    expect(mails[0].template).toMatchObject({ id: 'hf-invite-joined-many', variables: { COUNT: 20 } });
     await tick();
     await flush();
-    expect(h.fake.emails.filter((e) => e.subject.includes('joined your invite'))).toHaveLength(1);
+    expect(h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-invite-joined'))).toHaveLength(1);
   });
 
   it('A invites B and B invites A: totals are counted once', async () => {
@@ -754,7 +754,7 @@ describe('Reviewing from /lab', () => {
     expect(story.fieldData.status).toBe(CMS.stories.status.approved);
     expect(story.live).toBe(true);
     expect(items(CMS.suggestions.id)[0].fieldData.status).toBe(CMS.suggestions.status.rejected);
-    expect(h.fake.emails.filter((e) => e.subject === 'Your story is on the site')).toHaveLength(1);
+    expect(h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-story-live'))).toHaveLength(1);
     expect(await h.db(`SELECT reviewed_by FROM stories`)).toEqual([{ reviewed_by: 'boss@example.com' }]);
     const again = await h.request('POST', '/api/lab/review', { token: 'shcat_boss', body: { type: 'story', id: 1, decision: 'rejected' } });
     expect((await again.json()).error).toBe('already_reviewed');

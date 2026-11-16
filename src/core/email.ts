@@ -2,16 +2,18 @@ import { EMAIL_KINDS, type EmailKind } from './config';
 import type { Deps, Env } from './env';
 import { UpstreamError, base64url, callUpstream, hmac, retryAfterSeconds, timingSafeEqual } from './http';
 import type { Member } from './identity';
-import { siteWording, word, type Wording } from './wording';
-
 export interface EmailMessage {
   to: string;
-  subject: string;
-  text: string;
+  /** A plain-text email (staff emails), or... */
+  subject?: string;
+  text?: string;
+  /** ...a published Resend template (member emails), by alias, with its variables. */
+  template?: { id: string; variables: Record<string, string | number> };
   headers?: Record<string, string>;
+  tags?: { name: string; value: string }[];
 }
 
-/** Sends one email through Resend. Plain text only, so it reads well anywhere. */
+/** Sends one email through Resend: plain text, or a Resend template (its wording is edited in Resend). */
 export async function sendEmail(env: Env, deps: Deps, msg: EmailMessage, idempotencyKey?: string): Promise<void> {
   const res = await callUpstream(deps.fetch, 'email', 'https://api.resend.com/emails', {
     method: 'POST',
@@ -20,7 +22,11 @@ export async function sendEmail(env: Env, deps: Deps, msg: EmailMessage, idempot
       'Content-Type': 'application/json',
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey.slice(0, 256) } : {}),
     },
-    body: JSON.stringify({ from: env.EMAIL_FROM, to: [msg.to], subject: msg.subject, text: msg.text, headers: msg.headers }),
+    body: JSON.stringify(
+      msg.template
+        ? { from: env.EMAIL_FROM, to: [msg.to], template: msg.template, headers: msg.headers, tags: msg.tags }
+        : { from: env.EMAIL_FROM, to: [msg.to], subject: msg.subject, text: msg.text, headers: msg.headers, tags: msg.tags },
+    ),
   });
   if (!res.ok) {
     const text = await res.text().catch(() => '');
@@ -29,8 +35,10 @@ export async function sendEmail(env: Env, deps: Deps, msg: EmailMessage, idempot
 }
 
 // ---------------------------------------------------------------------------
-// The four member emails. Later phases call memberEmail() and queue the
-// result; Phase 1 provides the templates, the on/off settings and the links.
+// The member emails. Their wording and design live in Resend, as published
+// templates (Resend > Templates); the backend picks the template for the
+// case and fills in the details. Variables: GREETING_NAME (Resend falls back
+// to "there"), LINK_URL, UNSUB_URL, and NAME / NAMES / COUNT / ACTION_TITLE.
 // ---------------------------------------------------------------------------
 
 export interface MemberEmailVars {
@@ -40,29 +48,35 @@ export interface MemberEmailVars {
   actionUrl?: string;
 }
 
-// Every word of these emails is in the site's wording block in Webflow
-// ("email-..." keys); {name}-style parts are filled in here.
-function render(kind: EmailKind, member: Member, v: MemberEmailVars, w: Wording): { subject: string; body: string } {
-  const hi = member.first_name ? word(w, 'email-hi', { name: member.first_name }) : word(w, 'email-hi-anon');
-  const link = v.actionUrl ? `\n\n${v.actionUrl}` : '';
-  const action = v.actionTitle;
-  const pick = (key: string) => word(w, action ? key : `${key}-untitled`, { action });
+// "Ben, Cleo and Dan" (British style, no comma before "and", as the emails always had).
+const listOf = (names: string[]) => new Intl.ListFormat('en-GB', { style: 'long', type: 'conjunction' }).format(names);
+
+/** The Resend template alias and variables for one member email. */
+export function memberTemplate(kind: EmailKind, member: Member, v: MemberEmailVars): { id: string; variables: Record<string, string | number> } {
+  const variables: Record<string, string | number> = { LINK_URL: v.actionUrl || '' };
+  if (member.first_name) variables.GREETING_NAME = member.first_name;
+  const titled = (alias: string) => {
+    if (!v.actionTitle) return `${alias}-untitled`;
+    variables.ACTION_TITLE = v.actionTitle;
+    return alias;
+  };
   switch (kind) {
     case 'invite_summary': {
-      const names = v.joinedNames || [];
-      const one = names.length <= 1;
-      const who = one ? names[0] || word(w, 'email-someone') : `${names.slice(0, -1).join(', ')} ${word(w, 'email-and')} ${names[names.length - 1]}`;
-      return {
-        subject: one ? word(w, 'email-invite-subject-one', { name: who }) : word(w, 'email-invite-subject-many', { n: names.length }),
-        body: `${hi}\n\n${word(w, `email-invite-body-${one ? 'one' : 'many'}${action ? '' : '-untitled'}`, { name: who, names: who, action })}${link}`,
-      };
+      const names = (v.joinedNames || []).filter(Boolean);
+      if (names.length > 1) {
+        variables.NAMES = listOf(names);
+        variables.COUNT = names.length;
+        return { id: titled('hf-invite-joined-many'), variables };
+      }
+      variables.NAME = names[0] || '';
+      return { id: titled('hf-invite-joined-one'), variables };
     }
     case 'story_approved':
-      return { subject: word(w, 'email-story-subject'), body: `${hi}\n\n${pick('email-story-body')}${link}` };
+      return { id: titled('hf-story-live'), variables };
     case 'suggestion_live':
-      return { subject: word(w, 'email-suggestion-subject'), body: `${hi}\n\n${pick('email-suggestion-body')}${link}` };
+      return { id: titled('hf-suggestion-live'), variables };
     case 'pledge_reminder':
-      return { subject: word(w, 'email-pledge-subject'), body: `${hi}\n\n${word(w, 'email-pledge-body')}${link}` };
+      return { id: 'hf-pledge-reminder', variables };
   }
 }
 
@@ -71,15 +85,15 @@ export function wantsEmail(member: Member, kind: EmailKind): boolean {
 }
 
 /** Builds a member email with a one-click unsubscribe link, or null if the member turned it off. */
-export async function memberEmail(env: Env, deps: Deps, member: Member, kind: EmailKind, vars: MemberEmailVars, baseUrl: string): Promise<EmailMessage | null> {
+export async function memberEmail(env: Env, member: Member, kind: EmailKind, vars: MemberEmailVars, baseUrl: string): Promise<EmailMessage | null> {
   if (!wantsEmail(member, kind)) return null;
-  const w = await siteWording(env, deps);
-  const { subject, body } = render(kind, member, vars, w);
   const offUrl = `${baseUrl}/api/notifications/off?t=${await signUnsubscribe(env, member.id, kind)}`;
+  const template = memberTemplate(kind, member, vars);
+  template.variables.UNSUB_URL = offUrl;
   return {
     to: member.email!,
-    subject,
-    text: `${body}\n\n${word(w, 'email-signoff')}\n${word(w, 'email-signoff-name')}\n\n${word(w, 'email-unsubscribe', { url: offUrl })}`,
+    template,
+    tags: [{ name: 'kind', value: kind }],
     headers: { 'List-Unsubscribe': `<${offUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
   };
 }

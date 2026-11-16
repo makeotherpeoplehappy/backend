@@ -264,6 +264,8 @@ describe('Drop page', () => {
     expect(p.document.querySelector('#hfp-pieces shopify-context')!.getAttribute('handle')).toBe('drop-01');
     // (The simulated browser may run Shopify's own script, which replaces the template.)
     expect(p.document.getElementById('hfp-pieces')!.innerHTML).not.toContain('Add to cart');
+    // Before launch there is no line under the heading.
+    expect(p.document.getElementById('hfp-pieces')!.textContent).not.toContain('On sale when the drop goes live');
     // The pieces sit inside the drop's box, under the image and text, so there is no button to them.
     expect(p.document.querySelector('.hf-drop')!.lastElementChild!.id).toBe('hfp-pieces');
     expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();

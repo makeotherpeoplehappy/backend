@@ -204,27 +204,31 @@ describe('Suggest an action', () => {
 });
 
 describe('Shop', () => {
-  it('shows the current drop, "Always available" and past drops, each from its Shopify collection', async () => {
-    const p = await page('/shop', '<h1>Shop</h1><div id="hf-shop"></div>', (_m, path) =>
-      path === '/api/drops'
-        ? {
-            data: {
-              current: { drop: 'drop-02', name: 'Drop 02', statement: 'Be the reason.', status: 'upcoming', detailsLine: '50 pieces. Drops December 20 at 12:00 ET.', collection: 'drop-02', left: 50, quantity: 50, pledges: { made: 0, kept: 0 } },
-              past: [{ drop: 'drop-01', name: 'Drop 01', statement: 'Happiness is felt by making other people happy.', status: 'sold_out', collection: 'drop-01', pledges: { made: 100, kept: 81 } }],
-            },
-          }
-        : undefined,
-    );
+  it('draws the current drop, "Available now" and past drops at once from one call, and leaves out empty sections', async () => {
+    const tee = { handle: 'tee', title: 'Tee', image: { url: 'https://cdn.shopify.com/tee.jpg', alt: 'Tee' }, price: { amount: '45.0', currencyCode: 'USD' }, available: true, label: 'Drop 02 · 50 pieces' };
+    const old = { ...tee, handle: 'old-tee', title: 'Old tee', available: false, label: 'Drop 01 · Sold out' };
+    const shop = (now: unknown[]) => ({
+      current: { drop: 'drop-02', name: 'Drop 02: Jane Doe', statement: 'Be the reason.', status: 'upcoming', detailsLine: '50 pieces. Drops December 20 at 12:00 ET.', left: 50, quantity: 50, pledges: { made: 0, kept: 0 }, products: [tee] },
+      availableNow: now,
+      past: [{ drop: 'drop-01', name: 'Drop 01', statement: 'Happiness is felt by making other people happy.', status: 'sold_out', pledges: { made: 100, kept: 81 }, products: [old] }],
+    });
+    const p = await page('/shop', '<h1>Shop</h1><div id="hf-shop"></div>', (_m, path) => (path === '/api/shop' ? { data: shop([]) } : undefined));
     const text = p.document.body.textContent;
-    expect(text).toContain('Coming soon');
-    expect(p.document.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02');
+    expect(p.calls.filter((c) => c.path === '/api/shop')).toHaveLength(1);
+    expect(p.document.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02: Jane Doe');
     expect(p.document.querySelector('#hfp-shop-drop .hf-drop-quote')!.textContent).toBe('Be the reason.');
-    expect(text).toContain('Available now');
+    expect(text).toContain('Drop 02 · 50 pieces');
+    expect(text).not.toContain('Available now'); // empty: never shown
     expect(text).toContain('Past drops');
     expect(text).toContain('100 pledges made, 81 kept');
-    const handles = [...p.document.querySelectorAll('shopify-context')].map((e) => e.getAttribute('handle'));
-    expect(handles).toEqual(['drop-02', 'available-now', 'drop-01']);
-    expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
+    expect(text).toContain('Sold out');
+    // Before launch: no Add to cart on the drop's pieces.
+    expect(p.document.querySelector('#hfp-shop-drop')!.innerHTML).not.toContain('Add to cart');
+    expect(p.document.documentElement.getAttribute('data-hfp-shop')).toBe('ready');
+
+    const q = await page('/shop', '<div id="hf-shop"></div>', (_m, path) => (path === '/api/shop' ? { data: shop([{ ...tee, handle: 'mug', title: 'Mug', label: null }]) } : undefined));
+    expect(q.document.body.textContent).toContain('Available now');
+    expect(q.document.body.innerHTML).toContain('handle="mug"');
   });
 });
 
@@ -232,7 +236,7 @@ describe('Drop page', () => {
   it('shows every piece of the drop on the page, without "Add to cart" before launch', async () => {
     // The real Shopify script is not loaded in tests.
     const p = await page('/drops/drop-01', '<script type="text/plain" src="https://cdn.shopify.com/storefront/web-components.js"></script><div class="hf-drop"><a class="hf-drop-button" href="/products/tee">See the piece</a></div><footer></footer>', (_m, path) =>
-      path.startsWith('/api/drops/state') ? { data: { drop: 'drop-01', status: 'upcoming' } } : path === '/api/products/labels' ? { data: { labels: {} } } : undefined,
+      path.startsWith('/api/drops/state') ? { data: { drop: 'drop-01', status: 'upcoming' } } : path === '/api/products/labels' ? { data: { labels: {} } } : path === '/api/shop' ? { data: { current: null, past: [] } } : undefined,
     );
     expect(p.document.getElementById('hfp-pieces')!.textContent).toContain('The pieces');
     expect(p.document.querySelector('#hfp-pieces shopify-context')!.getAttribute('handle')).toBe('drop-01');

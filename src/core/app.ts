@@ -11,7 +11,7 @@ import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings 
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
-import { dropState, productLabels, scheduleDropReleases, shopDrops, signUpForDrop, updateDropsInCms } from './features/drops';
+import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, updateDropsInCms } from './features/drops';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { reviewAll } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
@@ -150,6 +150,8 @@ route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
 });
 
 route('GET', '/api/products/labels', true, async ({ env, deps }) => json({ labels: await productLabels(env, deps) }, 200, { 'Cache-Control': 'public, max-age=30' }));
+
+route('GET', '/api/shop', true, async ({ env, deps }) => json(await shopCatalog(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 
 route('GET', '/api/drops', true, async ({ env, deps }) => json(await shopDrops(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 
@@ -403,6 +405,7 @@ route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
     }
     if (topic === 'products/create' || topic === 'products/update' || topic === 'products/delete') {
       if (!body.id) return json({ ok: true, ignored: 'no product id' });
+      await forgetShop(env);
       return json({ ok: true, ...(await syncOneProduct(env, deps, String(body.id), topic === 'products/delete')) });
     }
     if (topic === 'orders/create' || topic === 'orders/updated' || topic === 'orders/cancelled' || topic === 'orders/paid') {

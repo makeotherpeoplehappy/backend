@@ -502,6 +502,16 @@ describe('Phase 3: stock and drop state', () => {
     expect(labels).toEqual({ tee: 'Drop 01 · 100 pieces', print: 'Limited edition · 12 of 250 left' });
   });
 
+  it('answers the whole shop in one call, leaving out empty sections', async () => {
+    await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
+    h.fake.products.push({ id: PRODUCT, handle: 'tee', title: 'Tee', status: 'ACTIVE', descriptionHtml: '', description: '' });
+    h.fake.shopCollections.set('drop-01', [PRODUCT]);
+    const shop = await (await h.request('GET', '/api/shop')).json();
+    expect(shop.current).toMatchObject({ drop: 'drop-01', status: 'upcoming', products: [{ handle: 'tee', title: 'Tee', available: true, label: 'Drop 01 · 100 pieces' }] });
+    expect(shop.availableNow).toEqual([]);
+    expect(shop.past).toEqual([]);
+  });
+
   it('hides the line when inventory is not tracked', async () => {
     await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, null);

@@ -65,6 +65,8 @@ export async function listDrops(env: Env, deps: Deps): Promise<Drop[]> {
 
 export async function forgetDrops(env: Env): Promise<void> {
   await env.CACHE.delete(CACHE_KEY);
+  await env.CACHE.delete('shop:catalog');
+  await env.CACHE.delete('product-labels');
 }
 
 /** The drop named by its address, or the one shown on the front page. */
@@ -387,4 +389,86 @@ export async function productLabels(env: Env, deps: Deps): Promise<Record<string
   }
   await env.CACHE.put('product-labels', JSON.stringify(labels), { expirationTtl: 60 });
   return labels;
+}
+
+// ---------------------------------------------------------------------------
+// The whole shop in one answer, so the page can draw it at once: the current
+// drop, "Available now" and past drops, each with its products (from the
+// Shopify collection with the drop's address, or "available-now"), labels
+// included. Empty sections are left out. Cached for 60 seconds, and cleared
+// when a product or drop changes.
+// ---------------------------------------------------------------------------
+
+export const SHOP_CACHE = 'shop:catalog';
+export const AVAILABLE_NOW = 'available-now';
+
+interface ShopProduct {
+  handle: string;
+  title: string;
+  image: { url: string; alt: string } | null;
+  price: { amount: string; currencyCode: string } | null;
+  available: boolean;
+  label: string | null;
+}
+
+async function collectionProducts(env: Env, deps: Deps, handle: string): Promise<Omit<ShopProduct, 'label'>[]> {
+  const r = await adminGraphql<{
+    collections: {
+      nodes: {
+        products: {
+          nodes: {
+            handle: string;
+            title: string;
+            status: string;
+            featuredMedia: { preview: { image: { url: string; altText: string | null } | null } | null } | null;
+            priceRangeV2: { minVariantPrice: { amount: string; currencyCode: string } } | null;
+            variants: { nodes: { availableForSale: boolean }[] };
+          }[];
+        };
+      }[];
+    };
+  }>(
+    env,
+    deps,
+    `query ($q: String!) { collections(first: 1, query: $q) { nodes { products(first: 48, sortKey: COLLECTION_DEFAULT) { nodes {
+       handle title status featuredMedia { preview { image { url altText } } } priceRangeV2 { minVariantPrice { amount currencyCode } }
+       variants(first: 20) { nodes { availableForSale } } } } } } }`,
+    { q: `handle:${handle}` },
+  );
+  const c = r.collections.nodes[0];
+  if (!c) return [];
+  return c.products.nodes
+    .filter((p) => p.status === 'ACTIVE')
+    .map((p) => ({
+      handle: p.handle,
+      title: p.title,
+      image: p.featuredMedia?.preview?.image ? { url: p.featuredMedia.preview.image.url, alt: p.featuredMedia.preview.image.altText || p.title } : null,
+      price: p.priceRangeV2?.minVariantPrice || null,
+      available: p.variants.nodes.some((v) => v.availableForSale),
+    }));
+}
+
+export async function shopCatalog(env: Env, deps: Deps) {
+  const cached = await env.CACHE.get(SHOP_CACHE, 'json');
+  if (cached) return cached;
+  const { current, past } = await shopDrops(env, deps);
+  const labels = await productLabels(env, deps).catch(() => ({}) as Record<string, string>);
+  const withLabels = (list: Omit<ShopProduct, 'label'>[]): ShopProduct[] => list.map((p) => ({ ...p, label: (labels as Record<string, string>)[p.handle] || null }));
+  const out = {
+    current: current ? { ...current, products: withLabels(await collectionProducts(env, deps, current.collection)) } : null,
+    availableNow: withLabels(await collectionProducts(env, deps, AVAILABLE_NOW)),
+    past: [] as unknown[],
+  };
+  for (const d of past) {
+    const products = withLabels(await collectionProducts(env, deps, d.collection));
+    out.past.push({ ...d, products });
+  }
+  await env.CACHE.put(SHOP_CACHE, JSON.stringify(out), { expirationTtl: 60 });
+  return out;
+}
+
+/** A product or drop changed: the shop and labels are worked out again on the next visit. */
+export async function forgetShop(env: Env): Promise<void> {
+  await env.CACHE.delete(SHOP_CACHE);
+  await env.CACHE.delete('product-labels');
 }

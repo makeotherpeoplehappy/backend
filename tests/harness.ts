@@ -209,9 +209,15 @@ export class FakeServices {
         const inv = this.inventory.get(String(q.variables.id));
         return j({ data: { product: inv === undefined && !this.inventory.has(String(q.variables.id)) ? null : { tracksInventory: inv !== null, totalInventory: inv ?? 0 } } });
       }
-      if (q.query.includes('publications(')) {
-        if (!this.publicationsAllowed) return j({ errors: [{ message: 'Access denied for publications field. Required access: `read_publications` access scope.' }] });
-        return j({ data: { publications: { nodes: this.publications.map((id) => ({ id })) } } });
+      if (q.query.includes('resourcePublications(')) {
+        if (!this.publicationsAllowed) return j({ errors: [{ message: 'Access denied for resourcePublications field. Required access: `read_publications` access scope.' }] });
+        const rec = this.published.get(String(q.variables.id));
+        // By default a product is on the first channel only.
+        const nodes = this.publications.map((id, i) => {
+          const date = rec ? rec[id] : i === 0 ? '2026-11-01T00:00:00Z' : null;
+          return { isPublished: !!date, publishDate: date ?? null, publication: { id } };
+        });
+        return j({ data: { product: { resourcePublications: { nodes } } } });
       }
       if (q.query.includes('publishableUnpublish')) {
         const rec = this.published.get(String(q.variables.id)) || {};

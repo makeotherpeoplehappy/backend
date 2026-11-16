@@ -30,6 +30,9 @@ async function drainAll() {
 }
 
 // ---------------------------------------------------------------------------
+/** Deps for calling backend functions directly: the fake services and the site's address. */
+const siteDeps = () => ({ fetch: h.fake.fetch as typeof fetch, now: () => h.clock.now, site: SITE });
+
 describe('Check 1: a call with a forged or expired token is refused', () => {
   it('refuses a forged token', async () => {
     const res = await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_forged' });
@@ -535,16 +538,16 @@ describe('Foundation: email', () => {
     h.fake.signIn('shcat_ana', { firstName: 'Ana', email: 'ana@example.com' });
     await h.request('GET', '/api/me', { token: 'shcat_ana' });
     const [m] = await h.db<never>('SELECT * FROM members');
-    const msg = await memberEmail(h.env, m, 'story_approved', { actionTitle: 'Compliment a stranger' }, `${SITE}/join`);
+    const msg = await memberEmail(h.env, siteDeps(), m, 'story_approved', { actionTitle: 'Compliment a stranger' }, `${SITE}/join`);
     expect(msg!.text).toContain('Hi Ana,');
     expect(msg!.headers!['List-Unsubscribe-Post']).toBe('List-Unsubscribe=One-Click');
     const link = /To stop these emails: (\S+)/.exec(msg!.text)![1];
     const off = await h.app.handle(new Request(link, { method: 'POST' }), h.env, { waitUntil: () => undefined });
     expect(off.status).toBe(200);
     const [after] = await h.db<never>('SELECT * FROM members');
-    expect(await memberEmail(h.env, after, 'story_approved', {}, `${SITE}/join`)).toBeNull();
+    expect(await memberEmail(h.env, siteDeps(), after, 'story_approved', {}, `${SITE}/join`)).toBeNull();
     // Other kinds are still on.
-    expect(await memberEmail(h.env, after, 'suggestion_live', {}, `${SITE}/join`)).not.toBeNull();
+    expect(await memberEmail(h.env, siteDeps(), after, 'suggestion_live', {}, `${SITE}/join`)).not.toBeNull();
     // A tampered link does nothing.
     const bad = await h.app.handle(new Request(link.replace('story_approved', 'pledge_reminder')), h.env, { waitUntil: () => undefined });
     expect(bad.status).toBe(400);
@@ -555,11 +558,11 @@ describe('Foundation: email', () => {
     h.fake.signIn('shcat_ana', { firstName: 'Ana', email: 'ana@example.com' });
     await h.request('GET', '/api/me', { token: 'shcat_ana' });
     const [m] = await h.db<never>('SELECT * FROM members');
-    const summary = await memberEmail(h.env, m, 'invite_summary', { joinedNames: ['Ben', 'Cleo', 'Dan'], actionTitle: 'Bake for a neighbour' }, `${SITE}/join`);
+    const summary = await memberEmail(h.env, siteDeps(), m, 'invite_summary', { joinedNames: ['Ben', 'Cleo', 'Dan'], actionTitle: 'Bake for a neighbour' }, `${SITE}/join`);
     expect(summary!.subject).toBe('3 people joined your invite');
     expect(summary!.text).toContain('Ben, Cleo and Dan are in for "Bake for a neighbour".');
     for (const kind of ['suggestion_live', 'pledge_reminder'] as const) {
-      const e = await memberEmail(h.env, m, kind, {}, `${SITE}/join`);
+      const e = await memberEmail(h.env, siteDeps(), m, kind, {}, `${SITE}/join`);
       expect(e!.text).not.toMatch(/<[a-z]/i);
     }
   });

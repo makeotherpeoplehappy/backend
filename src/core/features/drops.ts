@@ -11,6 +11,7 @@ import type { Member } from '../identity';
 import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
 import * as webflow from '../webflow';
+import { siteWording, word, type Wording } from '../wording';
 import { dropPledges } from './pledges';
 
 export interface Drop {
@@ -81,12 +82,12 @@ export const dropTag = (slug: string) => `notify-drop-${slug}`.slice(0, 40);
 export async function signUpForDrop(env: Env, deps: Deps, input: { drop?: unknown; email?: unknown }, member: Member | null) {
   const slug = typeof input.drop === 'string' && /^[a-z0-9-]{1,100}$/.test(input.drop) ? input.drop : null;
   const drop = await findDrop(env, deps, slug);
-  if (!drop) throw new HttpError(404, 'drop_not_found', 'This drop could not be found.');
+  if (!drop) throw new HttpError(404, 'drop_not_found', 'err-drop-not-found');
   if ((await effectiveStatus(env, deps, drop)) !== 'upcoming') {
-    throw new HttpError(409, 'drop_not_upcoming', drop.status === 'live' ? 'This drop is live now. Have a look in the shop.' : 'This drop is no longer taking sign-ups.');
+    throw new HttpError(409, 'drop_not_upcoming', drop.status === 'live' ? 'err-drop-live' : 'err-drop-closed');
   }
   const email = (member?.email || (typeof input.email === 'string' ? input.email : '')).trim().toLowerCase();
-  if (!EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'Please enter a valid email address.');
+  if (!EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'err-invalid-email');
 
   const hash = await sha256Hex(`drop-signup|${env.LINK_SECRET}|${email}`);
   const now = iso(deps.now());
@@ -222,22 +223,20 @@ export async function effectiveStatus(env: Env, deps: Deps, drop: Drop, left?: n
 
 const ET = 'America/New_York';
 
-/** "100 pieces. Drops December 5 at 12:00 ET. Gone when they're gone." */
-export function detailsLineFor(drop: Pick<Drop, 'quantity' | 'dropDate'>, status: Drop['status']): string | null {
+/** "100 pieces. Drops December 5 at 12:00 ET. Gone when they're gone.", worded in Webflow ("details-..." keys). */
+export function detailsLineFor(drop: Pick<Drop, 'quantity' | 'dropDate'>, status: Drop['status'], w: Wording): string | null {
   if (!drop.quantity || !drop.dropDate) return null;
   const d = new Date(drop.dropDate);
   const day = new Intl.DateTimeFormat('en-US', { timeZone: ET, month: 'long', day: 'numeric' }).format(d);
   const time = new Intl.DateTimeFormat('en-US', { timeZone: ET, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
-  const pieces = `${drop.quantity} pieces.`;
-  if (status === 'sold_out') return `${pieces} All gone. Thank you.`;
-  if (status === 'live') return `${pieces} Out now. Gone when they're gone.`;
-  return `${pieces} Drops ${day} at ${time} ET. Gone when they're gone.`;
+  const key = status === 'sold_out' ? 'details-sold-out' : status === 'live' ? 'details-live' : 'details-upcoming';
+  return word(w, key, { n: drop.quantity, day, time }) || null;
 }
 
 /** What the drop hero needs: status, countdown target, stock and pledges. */
 export async function dropState(env: Env, deps: Deps, slug: string | null) {
   const drop = await findDrop(env, deps, slug);
-  if (!drop) throw new HttpError(404, 'drop_not_found', 'This drop could not be found.');
+  if (!drop) throw new HttpError(404, 'drop_not_found', 'err-drop-not-found');
   const { quantity, left } = await dropStock(env, deps, drop).catch(() => NO_STOCK(drop));
   const status = await effectiveStatus(env, deps, drop, left);
   return {
@@ -247,7 +246,7 @@ export async function dropState(env: Env, deps: Deps, slug: string | null) {
     dropDate: drop.dropDate,
     quantity,
     left,
-    detailsLine: detailsLineFor({ quantity, dropDate: drop.dropDate }, status) || drop.detailsLine,
+    detailsLine: detailsLineFor({ quantity, dropDate: drop.dropDate }, status, await siteWording(env, deps)) || drop.detailsLine,
     pledges: await dropPledges(env, drop.slug),
   };
 }
@@ -272,7 +271,7 @@ export async function updateDropsInCms(env: Env, deps: Deps) {
     const { quantity, left } = await dropStock(env, deps, d).catch(() => NO_STOCK(d));
     const status = await effectiveStatus(env, deps, d, left);
     if (status === 'unknown') continue;
-    const line = detailsLineFor({ quantity, dropDate: d.dropDate }, status);
+    const line = detailsLineFor({ quantity, dropDate: d.dropDate }, status, await siteWording(env, deps));
     const fieldData: Record<string, unknown> = {};
     if (d.status !== status) fieldData.status = STATUS_ID[status];
     if (line && line !== d.detailsLine) fieldData['details-line'] = line;
@@ -372,7 +371,7 @@ export async function shopDrops(env: Env, deps: Deps) {
       dropDate: d.dropDate,
       quantity,
       left,
-      detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status) || d.detailsLine,
+      detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status, await siteWording(env, deps)) || d.detailsLine,
       onFrontPage: d.onFrontPage,
       collection: d.slug,
       pledges: await dropPledges(env, d.slug),

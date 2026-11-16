@@ -154,7 +154,7 @@ export async function listLabAccess(env: Env) {
 
 export async function addLabAccess(env: Env, deps: Deps, by: string, input: { email?: unknown }, baseUrl: string) {
   const email = (typeof input.email === 'string' ? input.email : '').trim().toLowerCase();
-  if (!LAB_EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'Please enter a valid email address.');
+  if (!LAB_EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'err-invalid-email');
   if (labOwners(env).includes(email)) return { ...(await listLabAccess(env)), added: false };
   const res = await env.DB.prepare(`INSERT INTO lab_access (email, added_by, added_at) VALUES (?1, ?2, ?3) ON CONFLICT (email) DO NOTHING`)
     .bind(email, by, iso(deps.now()))

@@ -32,7 +32,7 @@ const ID_PATTERN = /^[A-Za-z0-9_-]{22}$/;
 
 export async function createIntent(env: Env, deps: Deps, body: Record<string, unknown>, origins: Set<string>) {
   const kind = body.kind as Kind;
-  if (!KINDS.includes(kind)) throw new HttpError(400, 'invalid_intent', 'That action cannot be saved for later.');
+  if (!KINDS.includes(kind)) throw new HttpError(400, 'invalid_intent', 'err-invalid-intent');
   const intent: Intent = { kind, returnTo: safeReturnTo(body.returnTo, origins), createdAt: iso(deps.now()) };
   if (typeof body.actionId === 'string') {
     assertActionId(body.actionId);
@@ -46,9 +46,9 @@ export async function createIntent(env: Env, deps: Deps, body: Record<string, un
       ...(typeof data.showName === 'boolean' ? { showName: data.showName } : {}),
     };
   }
-  if (kind === 'join' && !intent.inviteCode) throw new HttpError(400, 'invalid_intent', 'That invite cannot be saved for later.');
+  if (kind === 'join' && !intent.inviteCode) throw new HttpError(400, 'invalid_intent', 'err-invalid-intent-invite');
   if ((kind === 'done' || kind === 'like' || kind === 'story') && !intent.actionId) {
-    throw new HttpError(400, 'invalid_intent', 'That action cannot be saved for later.');
+    throw new HttpError(400, 'invalid_intent', 'err-invalid-intent');
   }
   const id = randomId(16);
   await env.CACHE.put(`intent:${id}`, JSON.stringify(intent), { expirationTtl: TTL_SECONDS });
@@ -63,7 +63,7 @@ export async function readIntent(env: Env, id: string): Promise<Intent | null> {
 /** Completes the saved action as the member. Run through once() by the router. */
 export async function completeIntent(env: Env, deps: Deps, member: Member, id: string) {
   const intent = await readIntent(env, id);
-  if (!intent) throw new HttpError(410, 'intent_expired', 'That was saved too long ago. Please try again.');
+  if (!intent) throw new HttpError(410, 'intent_expired', 'err-intent-expired');
   let result: unknown = null;
   let completed = false;
   if ((COMPLETABLE as readonly string[]).includes(intent.kind)) {

@@ -23,7 +23,7 @@ export function requestOrigin(req: Request): string | null {
 export function checkOrigin(req: Request, allowed: Set<string>): void {
   const origin = requestOrigin(req);
   if (origin ? allowed.has(origin) : req.headers.get('Sec-Fetch-Site') === 'same-origin') return;
-  throw new HttpError(403, 'origin_not_allowed', 'This request is not allowed from here.');
+  throw new HttpError(403, 'origin_not_allowed', 'err-origin-not-allowed');
 }
 
 // ---------------------------------------------------------------------------
@@ -32,7 +32,7 @@ export function checkOrigin(req: Request, allowed: Set<string>): void {
 
 export async function requireHuman(req: Request, env: Env, deps: Deps, bodyToken?: unknown): Promise<void> {
   const token = req.headers.get('CF-Turnstile-Response') || (typeof bodyToken === 'string' ? bodyToken : '');
-  if (!token) throw new HttpError(403, 'bot_check_required', 'Please confirm you are not a robot and try again.');
+  if (!token) throw new HttpError(403, 'bot_check_required', 'err-bot-check-required');
   const form = new FormData();
   form.append('secret', env.TURNSTILE_SECRET_KEY);
   form.append('response', token);
@@ -43,7 +43,7 @@ export async function requireHuman(req: Request, env: Env, deps: Deps, bodyToken
     body: form,
   });
   const body = (await res.json().catch(() => ({}))) as { success?: boolean };
-  if (!body.success) throw new HttpError(403, 'bot_check_failed', 'We could not confirm you are not a robot. Please try again.');
+  if (!body.success) throw new HttpError(403, 'bot_check_failed', 'err-bot-check-failed');
 }
 
 // ---------------------------------------------------------------------------
@@ -82,7 +82,7 @@ const KEY_PATTERN = /^[A-Za-z0-9_.:-]{8,128}$/;
 export function idempotencyKey(req: Request): string {
   const key = req.headers.get('Idempotency-Key') || '';
   if (!KEY_PATTERN.test(key)) {
-    throw new HttpError(400, 'idempotency_key_required', 'This request is missing its one-time key. Please reload the page and try again.');
+    throw new HttpError(400, 'idempotency_key_required', 'err-idempotency-key-required');
   }
   return key;
 }
@@ -111,7 +111,7 @@ export async function once(
       .bind(scope, key)
       .first<{ route: string; status: string; response_status: number | null; response_body: string | null }>();
     if (prior && prior.route !== route) {
-      throw new HttpError(422, 'idempotency_key_reused', 'This one-time key was already used for something else.');
+      throw new HttpError(422, 'idempotency_key_reused', 'err-idempotency-key-reused');
     }
     if (prior?.status === 'done' && prior.response_status !== null) {
       return new Response(prior.response_body, {
@@ -119,7 +119,7 @@ export async function once(
         headers: { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', 'Idempotent-Replay': 'true' },
       });
     }
-    return json({ error: 'in_progress', message: 'This is already being saved.' }, 409, { 'Retry-After': '1' });
+    return json({ error: 'in_progress' }, 409, { 'Retry-After': '1' }); // the site retries; nothing is shown
   }
 
   let res: Response;

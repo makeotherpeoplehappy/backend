@@ -105,16 +105,16 @@ export function stripJpegMetadata(bytes: Uint8Array): Uint8Array | null {
 
 export async function uploadPhoto(env: Env, deps: Deps, member: Member, req: Request) {
   const type = (req.headers.get('Content-Type') || '').split(';')[0].trim().toLowerCase();
-  if (type !== 'image/jpeg') throw new HttpError(415, 'photo_type', 'Please choose a photo (JPEG, PNG, HEIC or WebP).');
+  if (type !== 'image/jpeg') throw new HttpError(415, 'photo_type', 'err-photo-type');
   const declared = Number(req.headers.get('Content-Length') || '0');
-  if (declared > MAX_PHOTO_BYTES) throw new HttpError(413, 'photo_too_large', 'That photo is larger than 10 MB. Please choose a smaller one.');
+  if (declared > MAX_PHOTO_BYTES) throw new HttpError(413, 'photo_too_large', 'err-photo-too-large');
   const raw = new Uint8Array(await req.arrayBuffer());
-  if (raw.length > MAX_PHOTO_BYTES) throw new HttpError(413, 'photo_too_large', 'That photo is larger than 10 MB. Please choose a smaller one.');
+  if (raw.length > MAX_PHOTO_BYTES) throw new HttpError(413, 'photo_too_large', 'err-photo-too-large');
   const clean = stripJpegMetadata(raw);
-  if (!clean) throw new HttpError(415, 'photo_type', 'That file could not be read as a photo. Please try another.');
+  if (!clean) throw new HttpError(415, 'photo_type', 'err-photo-unreadable');
   const dayKey = `uploads:${member.id}:${iso(deps.now()).slice(0, 10)}`;
   const used = Number((await env.CACHE.get(dayKey)) || '0');
-  if (used >= 30) throw new HttpError(429, 'daily_limit', 'You have uploaded a lot of photos today. Please try again tomorrow.');
+  if (used >= 30) throw new HttpError(429, 'daily_limit', 'err-limit-photos');
   await env.CACHE.put(dayKey, String(used + 1), { expirationTtl: 2 * 86_400 });
   const key = `stories/${base64url(crypto.getRandomValues(new Uint8Array(18)))}.jpg`;
   await env.MEDIA.put(key, clean, { httpMetadata: { contentType: 'image/jpeg', cacheControl: 'public, max-age=31536000, immutable' } });
@@ -170,32 +170,32 @@ interface StoryRow {
 export async function saveStory(env: Env, deps: Deps, member: Member, body: StoryInput, baseUrl: string) {
   const actionId = typeof body.actionId === 'string' ? body.actionId : '';
   const action = actionId ? await getAction(env, deps, actionId) : null;
-  if (!action) throw new HttpError(404, 'action_not_found', 'This action is no longer available.');
+  if (!action) throw new HttpError(404, 'action_not_found', 'err-action-not-found');
   const done = await env.DB.prepare(`SELECT 1 AS ok FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first();
-  if (!done) throw new HttpError(403, 'not_done', 'You can share a story once you have marked this action as done.');
+  if (!done) throw new HttpError(403, 'not_done', 'err-story-needs-done');
 
   const text = cleanText(body.text, MAX_STORY);
   const video = body.videoUrl ? parseVideo(body.videoUrl) : null;
   if (body.videoUrl && String(body.videoUrl).trim() && !video) {
-    throw new HttpError(400, 'invalid_video', 'Please use a link from YouTube, TikTok, Instagram or Vimeo.');
+    throw new HttpError(400, 'invalid_video', 'err-invalid-video');
   }
   const existing = await env.DB.prepare(`SELECT * FROM stories WHERE member_id = ?1 AND action_id = ?2`).bind(member.id, actionId).first<StoryRow>();
   let photoKey: string | null = existing?.photo_key ?? null;
   if (body.photoKey === null || body.photoKey === '') photoKey = null;
   else if (typeof body.photoKey === 'string' && body.photoKey !== existing?.photo_key) {
     const owner = await env.CACHE.get(`upload:${body.photoKey}`);
-    if (owner !== String(member.id)) throw new HttpError(400, 'invalid_photo', 'That photo could not be found. Please add it again.');
+    if (owner !== String(member.id)) throw new HttpError(400, 'invalid_photo', 'err-invalid-photo');
     photoKey = body.photoKey;
   }
-  if (!text && !photoKey && !video) throw new HttpError(400, 'empty_story', 'Please add some text, a photo or a video link.');
-  if (body.consent !== true) throw new HttpError(400, 'consent_required', 'Please confirm that everyone shown has agreed to this.');
+  if (!text && !photoKey && !video) throw new HttpError(400, 'empty_story', 'err-empty-story');
+  if (body.consent !== true) throw new HttpError(400, 'consent_required', 'err-consent-required');
   const showName = body.showName !== false;
   const name = member.share_name || member.first_name || '';
   const description = cleanText(body.photoDescription, MAX_DESCRIPTION) || (photoKey ? `Photo from ${showName && name ? `${name}'s` : 'a'} story` : '');
 
   const allowed = new Set((await withCandidates(env, member.id, actionId)).map((c) => c.id));
   const withIds = Array.isArray(body.withMemberIds) ? [...new Set(body.withMemberIds.map(Number))] : [];
-  for (const id of withIds) if (!allowed.has(id)) throw new HttpError(400, 'invalid_with', 'Only people who joined your invite for this action can be named.');
+  for (const id of withIds) if (!allowed.has(id)) throw new HttpError(400, 'invalid_with', 'err-invalid-with');
 
   const now = iso(deps.now());
   const fieldData: Record<string, unknown> = {
@@ -265,7 +265,7 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
   } catch (e) {
     if (id !== null) await env.DB.batch([env.DB.prepare(`DELETE FROM story_with WHERE story_id = ?1`).bind(id), env.DB.prepare(`DELETE FROM stories WHERE id = ?1`).bind(id)]);
     await refundDaily(env, deps, member.id, 'story');
-    if (String((e as Error).message).includes('UNIQUE')) throw new HttpError(409, 'story_exists', 'You have already shared a story for this action.');
+    if (String((e as Error).message).includes('UNIQUE')) throw new HttpError(409, 'story_exists', 'err-story-exists');
     throw e;
   }
 }
@@ -291,7 +291,7 @@ export async function deleteStory(env: Env, deps: Deps, member: Member, storyId:
   const story = await env.DB.prepare(`SELECT id, member_id, cms_item_id, photo_key FROM stories WHERE id = ?1`)
     .bind(storyId)
     .first<{ id: number; member_id: number; cms_item_id: string | null; photo_key: string | null }>();
-  if (!story || story.member_id !== member.id) throw new HttpError(404, 'story_not_found', 'That story could not be found.');
+  if (!story || story.member_id !== member.id) throw new HttpError(404, 'story_not_found', 'err-story-not-found');
   await env.DB.batch(storyRemovalStatements(env, deps, story));
   if (story.photo_key) await env.MEDIA.delete(story.photo_key);
   return { deleted: true };
@@ -343,7 +343,7 @@ export async function storiesFor(env: Env, opts: { actionId?: string; limit?: nu
     out.push({
       id: r.id,
       text: r.text || '',
-      photo: r.photoKey ? { key: r.photoKey, description: r.photoDescription || 'Photo from a story' } : null,
+      photo: r.photoKey ? { key: r.photoKey, description: r.photoDescription || null } : null, // the site words a missing description
       video: r.videoUrl ? parseVideo(r.videoUrl) : null,
       name: r.name || null,
       with: withNames,
@@ -357,7 +357,7 @@ export async function storiesFor(env: Env, opts: { actionId?: string; limit?: nu
 /** "Report this story": emails Mickey, at most once an hour per story. */
 export async function reportStory(env: Env, deps: Deps, storyId: number, reason: unknown) {
   const s = await env.DB.prepare(`SELECT id, cms_item_id, text, status FROM stories WHERE id = ?1`).bind(storyId).first<{ id: number; cms_item_id: string | null; text: string; status: string }>();
-  if (!s || s.status !== 'approved') throw new HttpError(404, 'story_not_found', 'That story could not be found.');
+  if (!s || s.status !== 'approved') throw new HttpError(404, 'story_not_found', 'err-story-not-found');
   const key = `report:${storyId}:${iso(deps.now()).slice(0, 13)}`;
   if (await env.CACHE.get(key)) return { reported: true };
   await env.CACHE.put(key, '1', { expirationTtl: 3600 });

@@ -139,7 +139,7 @@ export async function notifySuggestionsLive(env: Env, deps: Deps, baseUrl: strin
   for (const d of due.results) {
     const stmts = [env.DB.prepare(`UPDATE suggestions SET live_notified_at = ?2 WHERE id = ?1`).bind(d.id, iso(deps.now()))];
     const member = await memberById(env, d.memberId);
-    const msg = member ? await memberEmail(env, member, 'suggestion_live', { actionTitle: d.title, actionUrl: `${site}/action/${d.slug}` }, baseUrl) : null;
+    const msg = member ? await memberEmail(env, deps, member, 'suggestion_live', { actionTitle: d.title, actionUrl: `${site}/action/${d.slug}` }, baseUrl) : null;
     if (msg) {
       stmts.push(enqueue(env, deps, `suggestion-live:${d.id}`, { op: 'email.send', message: msg }, d.memberId));
       sent++;
@@ -170,7 +170,7 @@ export async function applyStory(env: Env, deps: Deps, id: number, cmsId: string
       const action = await env.DB.prepare(`SELECT title, slug, status FROM actions WHERE cms_item_id = ?1`).bind(row.action_id).first<{ title: string; slug: string; status: string }>();
       const site = baseUrl.replace(/\/join$/, '');
       const msg = member
-        ? await memberEmail(env, member, 'story_approved', { actionTitle: action?.title, actionUrl: action?.status === 'published' ? `${site}/action/${action.slug}` : `${site}/stories` }, baseUrl)
+        ? await memberEmail(env, deps, member, 'story_approved', { actionTitle: action?.title, actionUrl: action?.status === 'published' ? `${site}/action/${action.slug}` : `${site}/stories` }, baseUrl)
         : null;
       if (msg) stmts.push(enqueue(env, deps, `story-approved:${id}:v${row.version}`, { op: 'email.send', message: msg }, row.member_id));
     }
@@ -257,9 +257,9 @@ export async function labDecide(env: Env, deps: Deps, reviewer: string, body: { 
   if (!type || !decision || !Number.isInteger(id)) throw new HttpError(400, 'invalid_review', 'That decision could not be read.');
   const table = type === 'story' ? 'stories' : 'suggestions';
   const row = await env.DB.prepare(`SELECT id, status, cms_item_id FROM ${table} WHERE id = ?1`).bind(id).first<{ id: number; status: string; cms_item_id: string | null }>();
-  if (!row) throw new HttpError(404, 'not_found', 'This has been removed.');
+  if (!row) throw new HttpError(404, 'not_found', 'err-not-found');
   if (row.status !== 'new') throw new HttpError(409, 'already_reviewed', 'Someone has already reviewed this.');
-  if (!row.cms_item_id) throw new HttpError(409, 'not_ready', 'This is still being saved. Try again in a minute.');
+  if (!row.cms_item_id) throw new HttpError(409, 'not_ready', 'err-not-ready');
   const collection = type === 'story' ? CMS.stories : CMS.suggestions;
   await webflow.updateItem(env, deps, collection.id, row.cms_item_id, { status: collection.status[decision] });
   if (type === 'story') await applyStory(env, deps, id, row.cms_item_id, decision, baseUrl);

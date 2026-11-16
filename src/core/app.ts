@@ -1,6 +1,7 @@
 import { allowedOrigins, defaultDeps, missingEnv, type Ctx, type Deps, type Env } from './env';
 import { reportError } from './errors';
 import { verifyUnsubscribe } from './email';
+import { siteWording, word } from './wording';
 import { EMAIL_KINDS } from './config';
 import { HttpError, UpstreamError, base64url, errorResponse, hmac, iso, json, readJson, requireSecret, timingSafeEqual } from './http';
 import { optionalMember, requireMember, type Member } from './identity';
@@ -91,7 +92,7 @@ route(
   true,
   memberWrite('like', async ({ req, env, deps, params }, m) => {
     const body = await readJson<{ liked?: unknown }>(req);
-    if (typeof body.liked !== 'boolean') throw new HttpError(400, 'invalid_like', 'That could not be saved.');
+    if (typeof body.liked !== 'boolean') throw new HttpError(400, 'invalid_like', 'err-invalid-like');
     return setLike(env, deps, m, await resolveActionRef(env, deps, params.id), body.liked);
   }),
 );
@@ -174,7 +175,7 @@ route(
   true,
   memberWrite('story-delete', ({ env, deps, params }, m) => {
     const id = Number(params.id);
-    if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'story_not_found', 'That story could not be found.');
+    if (!Number.isInteger(id) || id <= 0) throw new HttpError(404, 'story_not_found', 'err-story-not-found');
     return deleteStory(env, deps, m, id);
   }),
 );
@@ -199,7 +200,7 @@ route('POST', '/api/intents', true, async ({ req, env, deps }) => {
 
 route('GET', '/api/intents/:id', true, async ({ env, params }) => {
   const intent = await readIntent(env, params.id);
-  if (!intent) throw new HttpError(404, 'intent_expired', 'That was saved too long ago. Please try again.');
+  if (!intent) throw new HttpError(404, 'intent_expired', 'err-intent-expired');
   return json(intent);
 });
 
@@ -263,9 +264,10 @@ route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) 
 async function unsubscribe({ req, env, deps }: Call): Promise<Response> {
   const token = new URL(req.url).searchParams.get('t') || '';
   const parsed = await verifyUnsubscribe(env, token);
-  if (!parsed) return new Response('This link is not valid.', { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  const w = await siteWording(env, deps);
+  if (!parsed) return new Response(word(w, 'unsub-invalid'), { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   await env.DB.prepare(`UPDATE members SET ${EMAIL_KINDS[parsed.kind]} = 0, updated_at = ?2 WHERE id = ?1`).bind(parsed.memberId, iso(deps.now())).run();
-  return new Response('You will not get these emails any more. You can turn them back on from your account page.', {
+  return new Response(word(w, 'unsub-done'), {
     status: 200,
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
@@ -460,13 +462,15 @@ export interface AppOptions {
 
 export function createApp(opts: AppOptions = {}) {
   const base = (opts.basePath ?? '/join').replace(/\/+$/, '');
-  const deps: Deps = { ...defaultDeps(), ...opts.deps };
+  const appDeps: Deps = { ...defaultDeps(), ...opts.deps };
 
   async function handle(req: Request, env: Env, ctx: Ctx): Promise<Response> {
     const url = new URL(req.url);
     let path = url.pathname;
     if (base && path.startsWith(base)) path = path.slice(base.length) || '/';
     const baseUrl = `${url.origin}${base}`;
+    // This request's own deps carry the site's address, for reading the site's wording.
+    const deps: Deps = { ...appDeps, site: url.origin };
 
     const match = routes
       .map((r) => ({ r, m: r.pattern.exec(path) }))
@@ -494,18 +498,19 @@ export function createApp(opts: AppOptions = {}) {
       const res = await found.r.handler({ req, env, deps, ctx, params, baseUrl });
       return withHeaders(res, found.r.site ? cors : {});
     } catch (e) {
-      if (e instanceof HttpError) return withHeaders(errorResponse(e), found.r.site ? cors : {});
+      const w = await siteWording(env, deps).catch(() => ({}) as Record<string, string>);
+      if (e instanceof HttpError) return withHeaders(errorResponse(e, w), found.r.site ? cors : {});
       if (e instanceof UpstreamError) {
         ctx.waitUntil(reportError(env, deps, { where: `${req.method} ${path}`, error: e, details: { service: e.service, status: e.status } }));
         return withHeaders(
-          json({ error: 'service_unavailable', message: 'We could not finish this right now. Please try again in a moment.' }, 503, { 'Retry-After': '5' }),
+          json({ error: 'service_unavailable', message: word(w, 'error-unavailable') }, 503, { 'Retry-After': '5' }),
           found.r.site ? cors : {},
         );
       }
       ctx.waitUntil(reportError(env, deps, { where: `${req.method} ${path}`, error: e, details: { url: `${url.origin}${url.pathname}` } }));
-      return withHeaders(json({ error: 'server_error', message: 'Something went wrong. Please try again.' }, 500), found.r.site ? cors : {});
+      return withHeaders(json({ error: 'server_error', message: word(w, 'error-something') }, 500), found.r.site ? cors : {});
     }
   }
 
-  return { handle, deps };
+  return { handle, deps: appDeps };
 }

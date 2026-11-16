@@ -11,7 +11,7 @@ import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings 
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
-import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, updateDropsInCms } from './features/drops';
+import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, updateDropsInCms, warmShop } from './features/drops';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { reviewAll } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
@@ -151,7 +151,7 @@ route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
 
 route('GET', '/api/products/labels', true, async ({ env, deps }) => json({ labels: await productLabels(env, deps) }, 200, { 'Cache-Control': 'public, max-age=30' }));
 
-route('GET', '/api/shop', true, async ({ env, deps }) => json(await shopCatalog(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
+route('GET', '/api/shop', true, async ({ env, deps, ctx }) => json(await shopCatalog(env, deps, (p) => ctx.waitUntil(p)), 200, { 'Cache-Control': 'public, max-age=30' }));
 
 route('GET', '/api/drops', true, async ({ env, deps }) => json(await shopDrops(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 
@@ -278,6 +278,7 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['review', 'review', 15 * 60 * 1000, () => reviewAll(env, deps, baseUrl)],
     // Phase 3: drops, counts and pledges.
     ['drops', 'drops', 0, () => updateDropsInCms(env, deps)],
+    ['warm-shop', 'warmShop', 0, () => warmShop(env, deps)],
     ['drop-releases', 'dropReleases', HOUR, () => scheduleDropReleases(env, deps)],
     ['write-counts', 'writeCounts', HOUR, () => writeCountsToCms(env, deps)],
     ['sync-orders', 'syncOrders', 6 * HOUR, () => syncRecentOrders(env, deps, { days: 3 })],

@@ -448,9 +448,9 @@ async function collectionProducts(env: Env, deps: Deps, handle: string): Promise
     }));
 }
 
-export async function shopCatalog(env: Env, deps: Deps) {
-  const cached = await env.CACHE.get(SHOP_CACHE, 'json');
-  if (cached) return cached;
+const SHOP_FRESH_MS = 60_000;
+
+async function buildShopCatalog(env: Env, deps: Deps) {
   const { current, past } = await shopDrops(env, deps);
   const labels = await productLabels(env, deps).catch(() => ({}) as Record<string, string>);
   const withLabels = (list: Omit<ShopProduct, 'label'>[]): ShopProduct[] => list.map((p) => ({ ...p, label: (labels as Record<string, string>)[p.handle] || null }));
@@ -459,12 +459,34 @@ export async function shopCatalog(env: Env, deps: Deps) {
     availableNow: withLabels(await collectionProducts(env, deps, AVAILABLE_NOW)),
     past: [] as unknown[],
   };
-  for (const d of past) {
-    const products = withLabels(await collectionProducts(env, deps, d.collection));
-    out.past.push({ ...d, products });
-  }
-  await env.CACHE.put(SHOP_CACHE, JSON.stringify(out), { expirationTtl: 60 });
+  for (const d of past) out.past.push({ ...d, products: withLabels(await collectionProducts(env, deps, d.collection)) });
+  await env.CACHE.put(SHOP_CACHE, JSON.stringify({ at: deps.now().getTime(), data: out }), { expirationTtl: 86_400 });
   return out;
+}
+
+/**
+ * The shop, always answered at once: a copy younger than a minute is served
+ * as it is; an older copy is served too while a fresh one is made in the
+ * background (`later`). Only the very first visit, or the first after a
+ * product or drop changed, waits for Shopify.
+ */
+export async function shopCatalog(env: Env, deps: Deps, later?: (p: Promise<unknown>) => void) {
+  const cached = (await env.CACHE.get(SHOP_CACHE, 'json')) as { at: number; data: unknown } | null;
+  if (cached && cached.data) {
+    if (deps.now().getTime() - cached.at > SHOP_FRESH_MS) {
+      const refresh = buildShopCatalog(env, deps).catch(() => undefined);
+      if (later) later(refresh);
+      else await refresh;
+    }
+    return cached.data;
+  }
+  return buildShopCatalog(env, deps);
+}
+
+/** Run by the timer so the stored copy stays fresh even when nobody visits. */
+export async function warmShop(env: Env, deps: Deps) {
+  await buildShopCatalog(env, deps);
+  return { warmed: true };
 }
 
 /** A product or drop changed: the shop and labels are worked out again on the next visit. */

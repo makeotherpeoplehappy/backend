@@ -3,7 +3,7 @@
 name = "hf-timer"
 main = "index.js"
 compatibility_date = "2026-11-01"
-workers_dev = true
+workers_dev = false
 
 [triggers]
 crons = ["*/5 * * * *"]

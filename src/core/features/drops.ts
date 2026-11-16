@@ -265,7 +265,7 @@ export async function scheduleDropReleases(env: Env, deps: Deps) {
   } catch (e) {
     // Until the Shopify app has the publications scopes, say so plainly (in
     // the jobs result and /lab) instead of failing every hour.
-    if (/access denied|ACCESS_DENIED|publications/i.test((e as Error).message)) {
+    if (/access denied|ACCESS_DENIED/i.test((e as Error).message)) {
       await env.CACHE.put('drop-releases:needs-scopes', '1', { expirationTtl: 2 * 3600 });
       return { scheduled: [], needsScopes: ['read_publications', 'write_publications'] };
     }
@@ -277,7 +277,6 @@ async function scheduleReleases(env: Env, deps: Deps) {
   const drops = await listDrops(env, deps);
   const now = deps.now().getTime();
   const scheduled: string[] = [];
-  let publications: string[] | null = null;
   for (const d of drops) {
     const at = d.dropDate ? Date.parse(d.dropDate) : NaN;
     if (!Number.isFinite(at) || at <= now) continue;
@@ -287,10 +286,16 @@ async function scheduleReleases(env: Env, deps: Deps) {
       if (!productId) continue;
       const done = await env.DB.prepare(`SELECT release_at FROM drop_releases WHERE product_id = ?1`).bind(productId).first<{ release_at: string }>();
       if (done?.release_at === releaseAt) continue;
-      if (!publications) {
-        const r = await adminGraphql<{ publications: { nodes: { id: string }[] } }>(env, deps, `query { publications(first: 20) { nodes { id } } }`);
-        publications = r.publications.nodes.map((n) => n.id);
-      }
+      // Only the channels the product is on (or scheduled for) today: a drop
+      // must never put a product on a channel Mickey has not chosen.
+      const pubs = await adminGraphql<{ product: { resourcePublications: { nodes: { isPublished: boolean; publishDate: string | null; publication: { id: string } }[] } } | null }>(
+        env,
+        deps,
+        `query ($id: ID!) { product(id: $id) { resourcePublications(first: 20, onlyPublished: false) { nodes { isPublished publishDate publication { id } } } } }`,
+        { id: productId },
+      );
+      const publications = (pubs.product?.resourcePublications.nodes || []).filter((n) => n.isPublished || n.publishDate).map((n) => n.publication.id);
+      if (!publications.length) continue;
       const un = await adminGraphql<{ publishableUnpublish: { userErrors: { message: string }[] } }>(
         env,
         deps,

@@ -544,7 +544,8 @@ describe('Phase 3: stock and drop state', () => {
     await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
     const out = await (await tick()).json();
     expect(out.dropReleases.scheduled).toEqual([PRODUCT]);
-    expect(h.fake.published.get(PRODUCT)).toEqual({ 'gid://shopify/Publication/1': '2026-12-05T17:00:00.000Z', 'gid://shopify/Publication/2': '2026-12-05T17:00:00.000Z' });
+    // Only the channel it was on; never a channel it was not on.
+    expect(h.fake.published.get(PRODUCT)).toEqual({ 'gid://shopify/Publication/1': '2026-12-05T17:00:00.000Z' });
     h.clock.advance(61 * 60 * 1000);
     expect((await (await tick()).json()).dropReleases.scheduled).toEqual([]);
   });

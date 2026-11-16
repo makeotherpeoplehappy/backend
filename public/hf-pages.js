@@ -34,7 +34,6 @@
     return e;
   }
   function status(cls) { return el('p', { class: cls || 'hfp-status', role: 'status', 'aria-live': 'polite' }); }
-  function plural(n, one, many) { return n === 1 ? one : many; }
   // Text kept in Webflow. [data-hf-show="x"] is shown once the script turns it on
   // (the site head hides it until then), [data-hf-fill="x"] receives data, and
   // [data-hf-copy="x"] holds wording the script reads but never shows.
@@ -63,6 +62,17 @@
     if (vars) Object.keys(vars).forEach(function (k) { t = t.split('{' + k + '}').join(vars[k] == null ? '' : String(vars[k])); });
     return t;
   }
+  /** Worded line with elements inside, e.g. "Kept with {action} on {date}": a list of nodes. */
+  function copyNodes(key, parts) {
+    var out = [];
+    copyText(key).split(/(\{\w+\})/).forEach(function (bit) {
+      var m = /^\{(\w+)\}$/.exec(bit);
+      if (!m) { if (bit) out.push(document.createTextNode(bit)); return; }
+      var v = parts[m[1]];
+      if (v !== null && v !== undefined) out.push(typeof v === 'string' ? document.createTextNode(v) : v);
+    });
+    return out;
+  }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   // "64 of 100 left" and "100 pledges made, 81 kept", worded in Webflow's footer.
   function leftText(left, quantity) { return copyText('facts-left', { left: left, quantity: quantity }); }
@@ -83,7 +93,7 @@
     return new Promise(function (r) { var t0 = Date.now(); (function c() { if (test()) return r(true); if (Date.now() - t0 > ms) return r(false); setTimeout(c, 50); })(); });
   }
   function slugFromPath() { return location.pathname.split('/').filter(Boolean).pop() || ''; }
-  function msgOf(r, fallback) { return (r && r.data && r.data.message) || fallback || 'Something went wrong. Please try again.'; }
+  function msgOf(r, fallback) { return (r && r.data && r.data.message) || fallback || copyText('error-something'); }
 
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
@@ -109,7 +119,7 @@
     }
     try {
       await navigator.clipboard.writeText(data.url);
-      if (note) note.textContent = 'Link copied. Paste it in a message to the person you want to invite.';
+      if (note) note.textContent = copyText('share-copied');
     } catch (e) {
       if (note) note.textContent = data.url;
     }
@@ -121,9 +131,9 @@
     var box = el('form', { class: 'hfp-card' });
     var input = el('input', { class: 'hf-form-input w-input', id: 'hfp-name', autocomplete: 'given-name', maxlength: '40', required: true });
     var msg = status();
-    box.appendChild(el('label', { for: 'hfp-name', class: 'hf-form-label', text: 'Your first name, so they know who the invite is from' }));
+    box.appendChild(el('label', { for: 'hfp-name', class: 'hf-form-label', text: copyText('name-label') }));
     box.appendChild(input);
-    box.appendChild(el('button', { type: 'submit', class: 'hf-button', text: 'Save and share' }));
+    box.appendChild(el('button', { type: 'submit', class: 'hf-button', text: copyText('name-save-share') }));
     box.appendChild(msg);
     box.addEventListener('submit', async function (e) {
       e.preventDefault();
@@ -143,13 +153,13 @@
     drop($('hfp-compose'));
     var form = el('form', { id: 'hfp-compose', class: 'hfp-card' });
     var ta = el('textarea', { id: 'hfp-note', class: 'hf-form-input is-textarea w-input', maxlength: '280', rows: '3', 'aria-describedby': 'hfp-note-count',
-      placeholder: kind === 'with_me' ? 'For example: Want to do this with me on Saturday?' : 'For example: This made my day. Your turn!' });
-    var countEl = el('p', { id: 'hfp-note-count', class: 'hfp-muted hfp-small', text: '280 characters left' });
-    ta.addEventListener('input', function () { countEl.textContent = (280 - ta.value.length) + ' characters left'; });
-    var go = el('button', { type: 'submit', class: 'hf-button', text: kind === 'with_me' ? 'Share invite' : 'Share' });
-    var cancel = el('button', { type: 'button', class: 'hf-button-light', text: 'Cancel' });
+      placeholder: copyText(kind === 'with_me' ? 'note-example-with' : 'note-example-pass') });
+    var countEl = el('p', { id: 'hfp-note-count', class: 'hfp-muted hfp-small', text: copyText('note-left', { n: 280 }) });
+    ta.addEventListener('input', function () { countEl.textContent = copyText('note-left', { n: 280 - ta.value.length }); });
+    var go = el('button', { type: 'submit', class: 'hf-button', text: copyText(kind === 'with_me' ? 'note-share-invite' : 'note-share') });
+    var cancel = el('button', { type: 'button', class: 'hf-button-light', text: copyText('note-cancel') });
     cancel.addEventListener('click', function () { drop(form); });
-    form.appendChild(el('label', { for: 'hfp-note', class: 'hf-form-label', text: 'Add a short note (optional)' }));
+    form.appendChild(el('label', { for: 'hfp-note', class: 'hf-form-label', text: copyText('note-label') }));
     form.appendChild(ta);
     form.appendChild(countEl);
     form.appendChild(el('div', { class: 'hfp-row' }, [go, cancel]));
@@ -180,13 +190,13 @@
   // ---------------------------------------------------------------------------
   function reportLink(id) {
     var note = status('hfp-status hfp-small');
-    var b = el('button', { type: 'button', class: 'hfp-link hfp-small hfp-muted', text: 'Report this story' });
+    var b = el('button', { type: 'button', class: 'hfp-link hfp-small hfp-muted', text: copyText('report') });
     b.addEventListener('click', async function () {
-      var reason = window.prompt('What is wrong with this story? (optional)');
+      var reason = window.prompt(copyText('report-ask'));
       if (reason === null) return;
       b.disabled = true;
       var r = await HFB.call('/api/stories/' + id + '/report', { method: 'POST', body: { reason: reason }, turnstile: true, auth: false });
-      note.textContent = r.ok ? 'Thank you. We will look at it.' : msgOf(r);
+      note.textContent = r.ok ? copyText('report-thanks') : msgOf(r);
       b.disabled = false;
     });
     return el('span', null, [b, note]);
@@ -197,14 +207,16 @@
     if (s.photo) kids.push(el('img', { class: 'hfp-photo', src: HFB.base + '/media/' + s.photo.key, alt: s.photo.description, loading: 'lazy' }));
     if (s.video) {
       kids.push(el('div', { class: 'hfp-video' + (s.video.vertical ? ' is-vertical' : '') }, [
-        el('iframe', { src: s.video.embed, title: 'Video from ' + (s.name || 'a member') + "'s story", loading: 'lazy', allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true }),
+        el('iframe', { src: s.video.embed, title: copyText('story-video-title', { name: s.name || copyText('member-anon') }), loading: 'lazy', allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true }),
       ]));
     }
     if (s.text) kids.push(el('p', { class: 'hf-story-text', text: s.text }));
-    var who = (s.name || 'A member') + (s.with && s.with.length ? ', with ' + s.with.join(', ') : '') + ' · ' + day(s.createdAt);
+    var who = s.with && s.with.length
+      ? copyText('story-by-with', { name: s.name || copyText('member-anon'), with: s.with.join(', '), date: day(s.createdAt) })
+      : copyText('story-by', { name: s.name || copyText('member-anon'), date: day(s.createdAt) });
     kids.push(el('p', { class: 'hf-story-meta', text: who }));
     if (withAction && s.action && s.action.title) {
-      kids.push(s.action.slug ? el('p', null, [el('a', { class: 'hf-story-link', href: '/action/' + s.action.slug, text: 'The action: ' + s.action.title + ' →' })]) : el('p', { class: 'hf-story-meta', text: 'The action: ' + s.action.title }));
+      kids.push(s.action.slug ? el('p', null, [el('a', { class: 'hf-story-link', href: '/action/' + s.action.slug, text: copyText('story-action-link', { title: s.action.title }) })]) : el('p', { class: 'hf-story-meta', text: copyText('story-action', { title: s.action.title }) }));
     }
     kids.push(reportLink(s.id));
     return el('article', { class: 'hf-story' }, kids);
@@ -229,18 +241,18 @@
     btn.parentNode.insertBefore(count, btn);
     btn.parentNode.insertBefore(row, btn);
     row.appendChild(btn);
-    var save = el('button', { type: 'button', class: 'hf-button-light', 'aria-pressed': 'false', text: '♡ Save' });
-    var withMe = el('button', { type: 'button', class: 'hf-button-light', style: 'display:none', text: 'Do this with me' });
-    var story = el('a', { class: 'hf-button-light', style: 'display:none', href: '/share-your-story?action=' + encodeURIComponent(slug), text: 'Share your story' });
+    var save = el('button', { type: 'button', class: 'hf-button-light', 'aria-pressed': 'false', text: copyText('action-save') });
+    var withMe = el('button', { type: 'button', class: 'hf-button-light', style: 'display:none', text: copyText('action-with-me') });
+    var story = el('a', { class: 'hf-button-light', style: 'display:none', href: '/share-your-story?action=' + encodeURIComponent(slug), text: copyText('story-share') });
     row.appendChild(save);
     row.appendChild(withMe);
     row.appendChild(story);
-    var undo = el('button', { type: 'button', class: 'hfp-link hfp-small', style: 'display:none', text: 'Undo' });
+    var undo = el('button', { type: 'button', class: 'hfp-link hfp-small', style: 'display:none', text: copyText('action-undo') });
     msg.insertAdjacentElement('afterend', undo);
     var together = el('p', { class: 'hfp-muted', style: 'display:none' });
     undo.insertAdjacentElement('afterend', together);
     var shareNote = status();
-    var shareLine = el('p', { class: 'hfp-muted hfp-small', style: 'display:none', text: 'Invite someone to do it with you, not the person you are doing it for.' });
+    var shareLine = el('p', { class: 'hfp-muted hfp-small', style: 'display:none', text: copyText('action-invite-hint') });
     together.insertAdjacentElement('afterend', shareLine);
     shareLine.insertAdjacentElement('afterend', shareNote);
     var card = el('div', { class: 'hfp-card', style: 'display:none' });
@@ -255,22 +267,22 @@
 
     function render() {
       var me = st.me;
-      if (st.count) { count.textContent = st.count.toLocaleString() + ' people have done this'; count.style.display = ''; } else count.style.display = 'none';
-      if (st.suggestedBy) { suggested.textContent = 'Suggested by ' + st.suggestedBy; suggested.style.display = ''; }
+      if (st.count) { count.textContent = copyText('action-count', { n: st.count.toLocaleString() }); count.style.display = ''; } else count.style.display = 'none';
+      if (st.suggestedBy) { suggested.textContent = copyText('action-suggested', { name: st.suggestedBy }); suggested.style.display = ''; }
       withMe.style.display = st.canDoWithOthers ? '' : 'none';
       shareLine.style.display = st.canDoWithOthers ? '' : 'none';
-      save.textContent = me && me.liked ? '♥ Saved' : '♡ Save';
+      save.textContent = copyText(me && me.liked ? 'action-saved' : 'action-save');
       save.setAttribute('aria-pressed', me && me.liked ? 'true' : 'false');
       if (me && me.done) {
-        btn.textContent = 'I did this again';
+        btn.textContent = copyText('action-did-again');
         btn.setAttribute('aria-disabled', 'false');
-        msg.textContent = 'You have made ' + me.tally + ' ' + plural(me.tally, 'person', 'people') + ' happy.';
+        msg.textContent = copyText(me.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: me.tally });
         story.style.display = '';
-        story.textContent = me.story ? 'Edit your story' : 'Share your story';
+        story.textContent = copyText(me.story ? 'story-edit' : 'story-share');
         undo.style.display = me.canUndo ? '' : 'none';
-        if (me.doneWith && me.doneWith.length) { together.textContent = 'Done together with ' + me.doneWith.join(', '); together.style.display = ''; } else together.style.display = 'none';
+        if (me.doneWith && me.doneWith.length) { together.textContent = copyText('action-together', { names: me.doneWith.join(', ') }); together.style.display = ''; } else together.style.display = 'none';
       } else {
-        btn.textContent = 'I did this';
+        btn.textContent = copyText('action-did');
         btn.setAttribute('aria-disabled', 'false');
         story.style.display = 'none';
         undo.style.display = 'none';
@@ -280,10 +292,10 @@
 
     function showCard(ripple) {
       card.innerHTML = '';
-      card.appendChild(el('p', { class: 'hf-drop-label', text: 'Shared moment' }));
-      card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: 'I made someone happy today' }));
-      if (ripple > 0) card.appendChild(el('p', { text: 'Your actions have led to ' + ripple + ' more.' }));
-      var pass = el('button', { type: 'button', class: 'hf-button', text: 'Pass it on' });
+      card.appendChild(el('p', { class: 'hf-drop-label', text: copyText('action-card-label') }));
+      card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: copyText('action-card-headline') }));
+      if (ripple > 0) card.appendChild(el('p', { text: copyText('ripple', { n: ripple }) }));
+      var pass = el('button', { type: 'button', class: 'hf-button', text: copyText('action-pass') });
       pass.addEventListener('click', function () { compose(id, 'pass_it_on', card, shareNote); });
       card.appendChild(el('div', { class: 'hfp-row' }, [pass]));
       card.style.display = '';
@@ -307,14 +319,14 @@
         section.insertAdjacentElement('afterend', storiesBox);
       }
       storiesBox.innerHTML = '';
-      storiesBox.appendChild(el('h2', { id: 'hfp-stories-h', text: 'Stories' }));
+      storiesBox.appendChild(el('h2', { id: 'hfp-stories-h', text: copyText('action-stories-h') }));
       list.forEach(function (s) { storiesBox.appendChild(storyCard(s, false)); });
     }
 
     // Signed out: straight to sign-in. The click is remembered and finished
     // after sign-in, back on this action.
     function ask(kind) {
-      msg.textContent = kind === 'like' ? 'Taking you to sign in. Your save will be waiting.' : 'Taking you to sign in. This will be counted when you are back.';
+      msg.textContent = copyText(kind === 'like' ? 'action-signin-save' : 'action-signin-done');
       HFB.requireSignIn({ kind: kind, actionId: id });
     }
 
@@ -340,7 +352,7 @@
       undo.disabled = true;
       var r = await HFB.call('/api/actions/' + id + '/done', { method: 'DELETE' });
       undo.disabled = false;
-      if (r.ok) { card.style.display = 'none'; await load(); msg.textContent = 'Undone. ' + msg.textContent; }
+      if (r.ok) { card.style.display = 'none'; await load(); msg.textContent = copyText('action-undone', { message: msg.textContent }); }
       else msg.textContent = msgOf(r);
     });
 
@@ -389,29 +401,28 @@
     var me = r.data;
     if (out) out.style.display = 'none';
     inn.style.display = 'block';
-    if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || 'there';
+    if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
     var tally = $('hf-tally');
     if (tally && !$('hfp-ripple')) {
-      tally.insertAdjacentElement('afterend', el('p', { id: 'hfp-ripple', class: 'hfp-muted', text: me.ripple > 0 ? 'Your actions have led to ' + me.ripple + ' more.' : 'When someone you invite takes an action, it shows here.' }));
+      tally.insertAdjacentElement('afterend', el('p', { id: 'hfp-ripple', class: 'hfp-muted', text: me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : copyText('acct-ripple-none') }));
     }
 
     // Pledges
     var pl = $('hf-pledges');
     if (pl) {
       pl.innerHTML = '';
-      if (!me.pledges.length) pl.appendChild(el('p', { text: 'No pledges yet. Every piece in the shop comes with one.' }));
+      if (!me.pledges.length) pl.appendChild(el('p', { text: copyText('acct-pledges-none') }));
       else {
         var ul = el('ul', { class: 'hfp-list' });
         me.pledges.forEach(function (p) {
-          var li = el('li', null, ['Pledged ' + day(p.orderedAt) + ' · ']);
+          var li = el('li', null, [copyText('acct-pledged', { date: day(p.orderedAt) }) + ' · ']);
           if (p.status === 'kept') {
-            li.appendChild(document.createTextNode('Kept with '));
-            li.appendChild(p.keptBySlug ? el('a', { href: '/action/' + p.keptBySlug, text: p.keptByTitle }) : document.createTextNode(p.keptByTitle || 'an action'));
-            li.appendChild(document.createTextNode(' on ' + day(p.keptOn)));
+            var by = p.keptBySlug ? el('a', { href: '/action/' + p.keptBySlug, text: p.keptByTitle }) : p.keptByTitle || copyText('acct-pledge-an-action');
+            copyNodes('acct-pledge-kept', { action: by, date: day(p.keptOn) }).forEach(function (n) { li.appendChild(n); });
           } else {
-            li.appendChild(document.createTextNode('Open. '));
-            li.appendChild(el('a', { href: '/actions', text: 'Find an action to keep it' }));
+            li.appendChild(document.createTextNode(copyText('acct-pledge-open') + ' '));
+            li.appendChild(el('a', { href: '/actions', text: copyText('acct-pledge-keep') }));
           }
           ul.appendChild(li);
         });
@@ -423,7 +434,7 @@
     var ah = $('hf-actions');
     if (ah) {
       ah.innerHTML = '';
-      if (!me.done.length) ah.appendChild(el('p', { text: 'Nothing here yet. Pick an action and make someone happy.' }));
+      if (!me.done.length) ah.appendChild(el('p', { text: copyText('acct-actions-none') }));
       else {
         var storyFor = {};
         me.stories.forEach(function (s) { storyFor[s.actionId] = s; });
@@ -435,13 +446,13 @@
           var times = me.done.filter(function (x) { return x.actionId === d.actionId; }).length;
           var li = el('li');
           li.appendChild(d.slug && d.actionStatus === 'published' ? el('a', { href: '/action/' + d.slug, text: d.title }) : document.createTextNode(d.title));
-          li.appendChild(el('span', { class: 'hfp-muted', text: ' · ' + day(d.doneAt) + (times > 1 ? ' · ' + times + ' times' : '') }));
+          li.appendChild(el('span', { class: 'hfp-muted', text: ' · ' + day(d.doneAt) + (times > 1 ? ' · ' + copyText('acct-times', { n: times }) : '') }));
           var s = storyFor[d.actionId];
           if (d.slug && d.actionStatus === 'published') {
             li.appendChild(document.createTextNode(' · '));
-            li.appendChild(el('a', { class: 'hf-story-link', href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: s ? 'Edit your story' : 'Share your story' }));
+            li.appendChild(el('a', { class: 'hf-story-link', href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') }));
           }
-          if (s) li.appendChild(el('span', { class: 'hfp-pill', text: s.status === 'approved' ? 'Story on the site' : s.status === 'rejected' ? 'Story not shown' : 'Story in review' }));
+          if (s) li.appendChild(el('span', { class: 'hfp-pill', text: copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') }));
           list.appendChild(li);
         });
         ah.appendChild(list);
@@ -451,28 +462,28 @@
       if (me.saved && me.saved.length && !$('hfp-saved')) {
         var sv = el('ul', { class: 'hfp-list', id: 'hfp-saved' });
         me.saved.forEach(function (d) { sv.appendChild(el('li', null, [el('a', { href: '/action/' + d.slug, text: d.title })])); });
-        holder.insertBefore(section('Saved for later', [sv]), ah.previousElementSibling);
+        holder.insertBefore(section(copyText('acct-saved-h'), [sv]), ah.previousElementSibling);
       }
       // Invites
       if (!$('hfp-invites')) {
         var inv = el('div', { id: 'hfp-invites' });
         if (me.joinedMyInvites.length) {
           var j = el('ul', { class: 'hfp-list' });
-          me.joinedMyInvites.forEach(function (x) { j.appendChild(el('li', { text: (x.name || 'Someone') + ' is in · ' + (x.actionTitle || '') + ' · ' + day(x.joinedAt) })); });
-          inv.appendChild(section('People who joined you', [j]));
+          me.joinedMyInvites.forEach(function (x) { j.appendChild(el('li', { text: copyText('acct-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '', date: day(x.joinedAt) }) })); });
+          inv.appendChild(section(copyText('acct-joined-h'), [j]));
         }
         if (me.invitesIJoined.length) {
           var k = el('ul', { class: 'hfp-list' });
           me.invitesIJoined.forEach(function (x) {
-            var leave = el('button', { type: 'button', class: 'hfp-link hfp-small', text: 'Leave' });
-            var li = el('li', null, [(x.inviterName || 'Someone') + ' invited you · ', x.actionSlug ? el('a', { href: '/action/' + x.actionSlug, text: x.actionTitle }) : (x.actionTitle || ''), ' · ', leave]);
+            var leave = el('button', { type: 'button', class: 'hfp-link hfp-small', text: copyText('acct-leave') });
+            var li = el('li', null, [copyText('acct-invited', { name: x.inviterName || copyText('acct-someone') }) + ' · ', x.actionSlug ? el('a', { href: '/action/' + x.actionSlug, text: x.actionTitle }) : (x.actionTitle || ''), ' · ', leave]);
             leave.addEventListener('click', async function () {
               var rr = await HFB.call('/api/invites/' + encodeURIComponent(x.code) + '/join', { method: 'DELETE' });
               if (rr.ok) li.remove();
             });
             k.appendChild(li);
           });
-          inv.appendChild(section('Invites you joined', [k]));
+          inv.appendChild(section(copyText('acct-invited-h'), [k]));
         }
         ah.nextElementSibling ? holder.insertBefore(inv, ah.nextElementSibling.nextElementSibling) : holder.appendChild(inv);
       }
@@ -497,20 +508,16 @@
       var box = el('div', { id: 'hfp-settings' });
       var nameIn = el('input', { id: 'hfp-share-name', class: 'hf-form-input w-input', value: me.name || '', maxlength: '40', autocomplete: 'given-name' });
       var nameMsg = status();
-      var nameSave = el('button', { type: 'button', class: 'hf-button-light', text: 'Save name' });
+      var nameSave = el('button', { type: 'button', class: 'hf-button-light', text: copyText('acct-save-name') });
       nameSave.addEventListener('click', async function () {
         var rr = await HFB.call('/api/me/settings', { method: 'PATCH', body: { firstName: nameIn.value } });
-        nameMsg.textContent = rr.ok ? 'Saved.' : msgOf(rr);
+        nameMsg.textContent = rr.ok ? copyText('saved') : msgOf(rr);
       });
-      box.appendChild(el('h2', { text: 'Settings' }));
-      box.appendChild(el('div', { class: 'hfp-field' }, [el('label', { for: 'hfp-share-name', class: 'hf-form-label', text: 'First name shown when you share' }), nameIn, nameSave, nameMsg]));
-      var labels = {
-        invite_summary: 'When someone joins your invite',
-        story_approved: 'When your story is published on the site',
-        suggestion_live: 'When your suggested action is live',
-        pledge_reminder: 'If a pledge is still open after a week',
-      };
-      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:0 0 16px' }, [el('legend', { class: 'hf-form-label', text: 'Email me' })]);
+      box.appendChild(el('h2', { text: copyText('acct-settings-h') }));
+      box.appendChild(el('div', { class: 'hfp-field' }, [el('label', { for: 'hfp-share-name', class: 'hf-form-label', text: copyText('acct-name-label') }), nameIn, nameSave, nameMsg]));
+      var labels = {};
+      ['invite_summary', 'story_approved', 'suggestion_live', 'pledge_reminder'].forEach(function (k) { labels[k] = copyText('acct-email-' + k); });
+      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:0 0 16px' }, [el('legend', { class: 'hf-form-label', text: copyText('acct-email-me') })]);
       var setMsg = status();
       Object.keys(labels).forEach(function (kind) {
         var cb = el('input', { type: 'checkbox', id: 'hfp-n-' + kind, checked: me.settings[kind] ? true : false });
@@ -518,14 +525,14 @@
           var body = { notifications: {} };
           body.notifications[kind] = cb.checked;
           var rr = await HFB.call('/api/me/settings', { method: 'PATCH', body: body });
-          setMsg.textContent = rr.ok ? 'Saved.' : msgOf(rr);
+          setMsg.textContent = rr.ok ? copyText('saved') : msgOf(rr);
           if (!rr.ok) cb.checked = !cb.checked;
         });
         fs.appendChild(el('div', { class: 'hfp-check' }, [cb, el('label', { for: 'hfp-n-' + kind, text: labels[kind] })]));
       });
       fs.appendChild(setMsg);
       box.appendChild(fs);
-      var dl = el('button', { type: 'button', class: 'hf-button-light', text: 'Download my data' });
+      var dl = el('button', { type: 'button', class: 'hf-button-light', text: copyText('acct-download') });
       dl.addEventListener('click', function () {
         var blob = new Blob([JSON.stringify(me, null, 2)], { type: 'application/json' });
         var a = el('a', { href: URL.createObjectURL(blob), download: 'happiness-foundation-my-data.json' });
@@ -533,15 +540,15 @@
         a.click();
         a.remove();
       });
-      var del = el('button', { type: 'button', class: 'hf-button-light', text: 'Delete my data' });
+      var del = el('button', { type: 'button', class: 'hf-button-light', text: copyText('acct-delete') });
       var delMsg = status();
       del.addEventListener('click', async function () {
-        if (!window.confirm('Delete your stories, your name and your settings? Your counted actions stay in the totals without your name. This cannot be undone.')) return;
+        if (!window.confirm(copyText('acct-delete-confirm'))) return;
         var rr = await HFB.call('/api/me', { method: 'DELETE' });
-        delMsg.textContent = rr.ok ? 'Your data has been deleted. You will now be signed out.' : msgOf(rr);
+        delMsg.textContent = rr.ok ? copyText('acct-deleted') : msgOf(rr);
         if (rr.ok) setTimeout(function () { HF.signout(); }, 2500);
       });
-      box.appendChild(el('h2', { text: 'Your data' }));
+      box.appendChild(el('h2', { text: copyText('acct-data-h') }));
       box.appendChild(el('div', { class: 'hfp-row' }, [dl, del]));
       box.appendChild(delMsg);
       so.parentNode.insertAdjacentElement('beforebegin', box);
@@ -558,9 +565,9 @@
       // The old Webflow form has been removed: build the form here.
       if ($('hfp-suggest')) return;
       f = el('form', { id: 'hfp-suggest', class: 'hf-form', novalidate: true }, [
-        el('label', { for: 'Idea', class: 'hf-form-label', text: 'Your suggestion' }),
-        el('textarea', { id: 'Idea', name: 'Idea', class: 'hf-form-input is-textarea w-input', maxlength: '2000', required: true, placeholder: 'Describe the action and who it would make happy' }),
-        el('div', { class: 'hfp-row' }, [el('button', { type: 'submit', class: 'hf-button', text: 'Send suggestion' })]),
+        el('label', { for: 'Idea', class: 'hf-form-label', text: copyText('sug-label') }),
+        el('textarea', { id: 'Idea', name: 'Idea', class: 'hf-form-input is-textarea w-input', maxlength: '2000', required: true, placeholder: copyText('sug-placeholder') }),
+        el('div', { class: 'hfp-row' }, [el('button', { type: 'submit', class: 'hf-button', text: copyText('sug-send') })]),
       ]);
       var anchor = document.querySelector('.hf-lead') || document.querySelector('h1');
       if (!anchor) return;
@@ -580,14 +587,14 @@
     var draft = HFB.keepDraft(f);
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (!signedIn()) {
-      var note = el('p', { class: 'hfp-muted', text: 'You will be asked to sign in when you send it. It is free.' });
+      var note = el('p', { class: 'hfp-muted', text: copyText('sug-signin') });
       f.insertBefore(note, f.firstChild);
     }
     f.addEventListener('submit', async function (e) {
       e.preventDefault();
       e.stopImmediatePropagation();
       var text = (ta && ta.value || '').trim();
-      if (text.length < 3) { msg.textContent = 'Please write your idea before sending it.'; msg.setAttribute('data-kind', 'error'); ta && ta.focus(); return; }
+      if (text.length < 3) { msg.textContent = copyText('sug-empty'); msg.setAttribute('data-kind', 'error'); ta && ta.focus(); return; }
       if (!signedIn()) return HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
       var submit = f.querySelector('[type=submit]');
       if (submit) submit.disabled = true;
@@ -597,9 +604,9 @@
         draft.clear();
         wrap.innerHTML = '';
         wrap.appendChild(el('div', { class: 'hfp-card', role: 'status' }, [
-          el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: 'Thank you. Your idea is with us.' }),
-          el('p', { text: 'We read every suggestion. If it goes on the site, we will email you.' }),
-          el('p', null, [el('a', { class: 'hf-button-light', href: '/suggest-an-action', text: 'Suggest another' })]),
+          el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: copyText('sug-thanks') }),
+          el('p', { text: copyText('sug-thanks-more') }),
+          el('p', null, [el('a', { class: 'hf-button-light', href: '/suggest-an-action', text: copyText('sug-another') })]),
         ]));
       } else if (r.status === 401) HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
       else { msg.textContent = msgOf(r); msg.setAttribute('data-kind', 'error'); }
@@ -608,7 +615,7 @@
       if (ev.detail && ev.detail.kind === 'suggestion' && ev.detail.completed) {
         draft.clear();
         wrap.innerHTML = '';
-        wrap.appendChild(el('p', { class: 'hfp-card', role: 'status', text: 'Thank you. Your idea is with us. If it goes on the site, we will email you.' }));
+        wrap.appendChild(el('p', { class: 'hfp-card', role: 'status', text: copyText('sug-thanks-resumed') }));
       }
     });
   }
@@ -656,12 +663,12 @@
       if (fn) a.addEventListener('click', function (e) { e.preventDefault(); fn(); });
       note.appendChild(el('span', { class: 'hfp-row' }, [a]));
     }
-    if (!slug) return sayLink('Stories are shared from an action you have taken.', 'Go to your account', '/account');
-    if (!signedIn()) return sayLink('Sign in to share your story. It is free.', 'Sign in', '/account', function () { HFB.requireSignIn({ kind: 'return', returnTo: back }); });
+    if (!slug) return sayLink(copyText('st-no-action'), copyText('st-account'), '/account');
+    if (!signedIn()) return sayLink(copyText('st-signin'), copyText('st-signin-button'), '/account', function () { HFB.requireSignIn({ kind: 'return', returnTo: back }); });
     var r = await HFB.call('/api/stories/mine?action=' + encodeURIComponent(slug));
-    if (!r.ok) return sayLink(msgOf(r), 'Go to your account', '/account');
+    if (!r.ok) return sayLink(msgOf(r), copyText('st-account'), '/account');
     var mine = r.data;
-    if (!mine.done) return sayLink('Stories are shared from an action you have taken. Mark it done first.', 'Go to the action', '/action/' + slug);
+    if (!mine.done) return sayLink(copyText('st-not-done'), copyText('st-go-action'), '/action/' + slug);
     var title = slug.replace(/-/g, ' ');
     try {
       var h = await fetch('/action/' + slug).then(function (x) { return x.ok ? x.text() : ''; });
@@ -674,52 +681,52 @@
     function field(id, label, input, help) {
       return el('div', { class: 'hfp-field' }, [el('label', { for: id, class: 'hf-form-label', text: label }), help ? el('p', { class: 'hfp-muted hfp-small', id: id + '-help', text: help }) : null, input]);
     }
-    var text = el('textarea', { id: 'hfp-story-text', class: 'hf-form-input is-textarea w-input', maxlength: '5000', placeholder: 'What did you do, and how did they react?' });
+    var text = el('textarea', { id: 'hfp-story-text', class: 'hf-form-input is-textarea w-input', maxlength: '5000', placeholder: copyText('st-placeholder') });
     text.value = s.text || '';
     var photo = el('input', { id: 'hfp-photo', type: 'file', accept: 'image/*', 'aria-describedby': 'hfp-photo-help' });
     var photoKey = s.photoKey || null;
     var photoMsg = status('hfp-status hfp-small');
     var preview = el('img', { class: 'hfp-photo', alt: '', style: photoKey ? '' : 'display:none', src: photoKey ? HFB.base + '/media/' + photoKey : undefined });
-    var removePhoto = el('button', { type: 'button', class: 'hfp-link hfp-small', style: photoKey ? '' : 'display:none', text: 'Remove photo' });
-    var desc = el('input', { id: 'hfp-photo-desc', class: 'hf-form-input w-input', maxlength: '300', value: s.photoDescription || '', placeholder: 'For example: My neighbour holding the cake' });
+    var removePhoto = el('button', { type: 'button', class: 'hfp-link hfp-small', style: photoKey ? '' : 'display:none', text: copyText('st-remove-photo') });
+    var desc = el('input', { id: 'hfp-photo-desc', class: 'hf-form-input w-input', maxlength: '300', value: s.photoDescription || '', placeholder: copyText('st-desc-placeholder') });
     var video = el('input', { id: 'hfp-video', type: 'url', class: 'hf-form-input w-input', value: s.videoUrl || '', placeholder: 'https://', 'aria-describedby': 'hfp-video-help' });
     var showName = el('input', { type: 'checkbox', id: 'hfp-show-name', checked: s.showName === false ? false : true });
     var consent = el('input', { type: 'checkbox', id: 'hfp-consent', required: true });
-    var submit = el('button', { type: 'submit', class: 'hf-button', text: mine.story ? 'Save changes' : 'Share my story' });
+    var submit = el('button', { type: 'submit', class: 'hf-button', text: copyText(mine.story ? 'st-save' : 'st-share') });
 
     photo.addEventListener('change', async function () {
       var file = photo.files && photo.files[0];
       if (!file) return;
-      if (file.size > 10 * 1024 * 1024) { photoMsg.textContent = 'That photo is larger than 10 MB. Please choose a smaller one.'; return; }
-      photoMsg.textContent = 'Preparing your photo...';
+      if (file.size > 10 * 1024 * 1024) { photoMsg.textContent = copyText('st-too-big'); return; }
+      photoMsg.textContent = copyText('st-preparing');
       var blob;
       try { blob = await resizeToJpeg(file); } catch (e) {
-        photoMsg.textContent = 'This browser cannot read that photo. Please choose a JPEG or PNG, or use your phone.';
+        photoMsg.textContent = copyText('st-unreadable');
         return;
       }
       var tok = await HFB.token();
       var res = await fetch(HFB.base + '/api/stories/photo', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'image/jpeg' }, body: blob });
       var data = null;
       try { data = await res.json(); } catch (e) {}
-      if (!res.ok) { photoMsg.textContent = (data && data.message) || 'The photo could not be uploaded. Please try again.'; return; }
+      if (!res.ok) { photoMsg.textContent = (data && data.message) || copyText('st-upload-failed'); return; }
       photoKey = data.photoKey;
       preview.src = URL.createObjectURL(blob);
       preview.style.display = '';
       removePhoto.style.display = '';
-      photoMsg.textContent = 'Photo added. Location data has been removed.';
+      photoMsg.textContent = copyText('st-photo-added');
     });
-    removePhoto.addEventListener('click', function () { photoKey = null; preview.style.display = 'none'; removePhoto.style.display = 'none'; photo.value = ''; photoMsg.textContent = 'Photo removed.'; });
+    removePhoto.addEventListener('click', function () { photoKey = null; preview.style.display = 'none'; removePhoto.style.display = 'none'; photo.value = ''; photoMsg.textContent = copyText('st-photo-removed'); });
 
-    form.appendChild(el('p', { class: 'hf-drop-label', text: 'Your story about' }));
+    form.appendChild(el('p', { class: 'hf-drop-label', text: copyText('st-about') }));
     form.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: title }));
-    if (mine.story) form.appendChild(el('p', { class: 'hfp-muted', text: mine.story.status === 'approved' ? 'Your story is on the site. Saving changes sends it back for a quick review.' : 'Your story is waiting for review.' }));
-    form.appendChild(field('hfp-story-text', 'Your story', text));
-    form.appendChild(field('hfp-photo', 'A photo (optional)', el('div', null, [photo, photoMsg, preview, removePhoto]), 'Up to 10 MB. Location data is removed.'));
-    form.appendChild(field('hfp-photo-desc', 'Describe the photo for people who cannot see it (optional)', desc));
-    form.appendChild(field('hfp-video', 'A video link (optional)', video, 'A link from YouTube, TikTok, Instagram or Vimeo.'));
+    if (mine.story) form.appendChild(el('p', { class: 'hfp-muted', text: copyText(mine.story.status === 'approved' ? 'st-on-site' : 'st-in-review') }));
+    form.appendChild(field('hfp-story-text', copyText('st-label'), text));
+    form.appendChild(field('hfp-photo', copyText('st-photo-label'), el('div', null, [photo, photoMsg, preview, removePhoto]), copyText('st-photo-help')));
+    form.appendChild(field('hfp-photo-desc', copyText('st-desc-label'), desc));
+    form.appendChild(field('hfp-video', copyText('st-video-label'), video, copyText('st-video-help')));
     var withBoxes = [];
     if (mine.withCandidates && mine.withCandidates.length) {
-      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0' }, [el('legend', { class: 'hf-form-label', text: 'Who did it with you?' })]);
+      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0' }, [el('legend', { class: 'hf-form-label', text: copyText('st-with') })]);
       mine.withCandidates.forEach(function (c) {
         var cb = el('input', { type: 'checkbox', id: 'hfp-with-' + c.id, value: String(c.id), checked: (s.withMemberIds || []).indexOf(c.id) >= 0 });
         withBoxes.push(cb);
@@ -727,16 +734,16 @@
       });
       form.appendChild(fs);
     }
-    form.appendChild(el('div', { class: 'hfp-check' }, [showName, el('label', { for: 'hfp-show-name', text: 'Show my first name' + (mine.name ? ' (' + mine.name + ')' : '') + ' with the story' })]));
-    form.appendChild(el('div', { class: 'hfp-check' }, [consent, el('label', { for: 'hfp-consent', text: 'Everyone shown has agreed to this' })]));
+    form.appendChild(el('div', { class: 'hfp-check' }, [showName, el('label', { for: 'hfp-show-name', text: mine.name ? copyText('st-show-name-named', { name: mine.name }) : copyText('st-show-name') })]));
+    form.appendChild(el('div', { class: 'hfp-check' }, [consent, el('label', { for: 'hfp-consent', text: copyText('st-consent') })]));
     form.appendChild(el('div', { class: 'hfp-row' }, [submit]));
     form.appendChild(msg);
     if (mine.story) {
-      var del = el('button', { type: 'button', class: 'hfp-link hfp-small', text: 'Delete my story' });
+      var del = el('button', { type: 'button', class: 'hfp-link hfp-small', text: copyText('st-delete') });
       del.addEventListener('click', async function () {
-        if (!window.confirm('Delete your story? It is taken off the site straight away.')) return;
+        if (!window.confirm(copyText('st-delete-confirm'))) return;
         var rr = await HFB.call('/api/stories/' + mine.story.id, { method: 'DELETE' });
-        if (rr.ok) { form.innerHTML = ''; form.appendChild(el('p', { role: 'status', text: 'Your story has been deleted.' })); }
+        if (rr.ok) { form.innerHTML = ''; form.appendChild(el('p', { role: 'status', text: copyText('st-deleted') })); }
         else msg.textContent = msgOf(rr);
       });
       form.appendChild(el('p', null, [del]));
@@ -748,8 +755,8 @@
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
       msg.removeAttribute('data-kind');
-      if (!consent.checked) { msg.textContent = 'Please tick the box to confirm that everyone shown has agreed.'; msg.setAttribute('data-kind', 'error'); consent.focus(); return; }
-      if (!text.value.trim() && !photoKey && !video.value.trim()) { msg.textContent = 'Please add some text, a photo or a video link.'; msg.setAttribute('data-kind', 'error'); text.focus(); return; }
+      if (!consent.checked) { msg.textContent = copyText('st-need-consent'); msg.setAttribute('data-kind', 'error'); consent.focus(); return; }
+      if (!text.value.trim() && !photoKey && !video.value.trim()) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text.focus(); return; }
       submit.disabled = true;
       var body = {
         actionId: slug,
@@ -767,9 +774,9 @@
         try { localStorage.removeItem(draftKey); } catch (e2) {}
         form.innerHTML = '';
         form.appendChild(el('div', { class: 'hfp-card', role: 'status' }, [
-          el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: 'Thank you for sharing.' }),
-          el('p', { text: 'Your story is waiting for a quick review. We will email you when it is on the site.' }),
-          el('p', null, [el('a', { class: 'hf-button-light', href: '/action/' + slug, text: 'Back to the action' })]),
+          el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: copyText('st-thanks') }),
+          el('p', { text: copyText('st-thanks-more') }),
+          el('p', null, [el('a', { class: 'hf-button-light', href: '/action/' + slug, text: copyText('st-back') })]),
         ]));
       } else if (rr.status === 401) {
         HFB.requireSignIn({ kind: 'return', returnTo: back });
@@ -799,13 +806,13 @@
 
     async function render() {
       var r = await HFB.call('/api/invites/' + encodeURIComponent(code));
-      if (!r.ok) { titleEl.textContent = 'This invite link is not valid'; actionEl.textContent = 'Ask the person who sent it for a new link, or find an action yourself.'; descEl.textContent = ''; inBtn.textContent = 'Find an action'; inBtn.href = '/actions'; return; }
+      if (!r.ok) { titleEl.textContent = copyText('inv-invalid-h'); actionEl.textContent = copyText('inv-invalid'); descEl.textContent = ''; inBtn.textContent = copyText('inv-find'); inBtn.href = '/actions'; return; }
       var v = r.data;
-      var who = v.inviterName || 'Someone';
+      var who = v.inviterName || copyText('inv-someone');
       if (!v.action.live) {
-        titleEl.textContent = 'This action is no longer available';
-        actionEl.textContent = v.action.title ? '"' + v.action.title + '" has been taken off the site.' : '';
-        descEl.textContent = 'Here are three others to try:';
+        titleEl.textContent = copyText('inv-gone-h');
+        actionEl.textContent = v.action.title ? copyText('inv-gone', { title: v.action.title }) : '';
+        descEl.textContent = copyText('inv-others');
         inBtn.style.display = 'none';
         var ul = el('ul', { class: 'hfp-list' });
         v.alternatives.forEach(function (a) { ul.appendChild(el('li', null, [el('a', { href: '/action/' + a.slug, text: a.title })])); });
@@ -814,26 +821,26 @@
       }
       actionEl.textContent = v.action.title;
       descEl.textContent = v.action.shortAnswer;
-      var link = el('a', { class: 'hf-button-light', href: '/action/' + v.action.slug, text: 'See the action' });
+      var link = el('a', { class: 'hf-button-light', href: '/action/' + v.action.slug, text: copyText('inv-see') });
       if (v.me && v.me.isMine) {
-        titleEl.textContent = 'This is your invite';
-        inBtn.textContent = 'Share it';
+        titleEl.textContent = copyText('inv-mine-h');
+        inBtn.textContent = copyText('inv-share');
         inBtn.onclick = function (e) {
           e.preventDefault();
-          share({ title: document.title, text: (v.kind === 'with_me' ? who + ' wants to do this with you: ' : who + ' is passing this on to you: ') + v.action.title, url: location.origin + HFB.base + '/' + code }, noteEl);
+          share({ title: document.title, text: copyText(v.kind === 'with_me' ? 'inv-share-with' : 'inv-share-pass', { name: who, title: v.action.title }), url: location.origin + HFB.base + '/' + code }, noteEl);
         };
         return;
       }
-      titleEl.textContent = v.kind === 'with_me' ? who + ' wants to do this with you' : who + ' is passing this on to you';
+      titleEl.textContent = copyText(v.kind === 'with_me' ? 'inv-with-h' : 'inv-pass-h', { name: who });
       var noteBox = $('hfp-invite-note');
-      if (v.note && !noteBox) titleEl.insertAdjacentElement('afterend', el('blockquote', { id: 'hfp-invite-note', class: 'hf-lead', style: 'margin:0 0 16px;padding-left:16px;border-left:3px solid #222', text: '“' + v.note + '” – ' + who }));
+      if (v.note && !noteBox) titleEl.insertAdjacentElement('afterend', el('blockquote', { id: 'hfp-invite-note', class: 'hf-lead', style: 'margin:0 0 16px;padding-left:16px;border-left:3px solid #222', text: copyText('inv-note', { note: v.note, name: who }) }));
       if (v.me && v.me.joined) {
-        inBtn.textContent = "You're in";
+        inBtn.textContent = copyText('inv-in');
         inBtn.setAttribute('aria-disabled', 'true');
         inBtn.onclick = function (e) { e.preventDefault(); };
         noteEl.innerHTML = '';
-        noteEl.appendChild(document.createTextNode(who + ' can see that you are in. Mark the action as done when you have done it. '));
-        var leave = el('button', { type: 'button', class: 'hfp-link', text: 'Leave this invite' });
+        noteEl.appendChild(document.createTextNode(copyText('inv-joined', { name: who }) + ' '));
+        var leave = el('button', { type: 'button', class: 'hfp-link', text: copyText('inv-leave') });
         leave.addEventListener('click', async function () {
           var lr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'DELETE' });
           if (lr.ok) render();
@@ -842,7 +849,7 @@
         if (!$('hfp-see-action')) { link.id = 'hfp-see-action'; inBtn.parentNode.appendChild(document.createTextNode(' ')); inBtn.parentNode.appendChild(link); }
         return;
       }
-      inBtn.textContent = "I'm in";
+      inBtn.textContent = copyText('inv-join');
       inBtn.removeAttribute('aria-disabled');
       noteEl.textContent = '';
       inBtn.onclick = async function (e) {
@@ -867,7 +874,7 @@
     var r = await HFB.call('/api/stories?page=1', { auth: false });
     if (!r.ok || !r.data.stories.length) return;
     var box = el('div', { id: 'hfp-stories' });
-    var more = el('button', { type: 'button', class: 'hf-button-light', text: 'More stories' });
+    var more = el('button', { type: 'button', class: 'hf-button-light', text: copyText('stories-more') });
     var page = 1;
     function add(list) { list.forEach(function (s) { box.appendChild(storyCard(s, true)); }); more.style.display = list.length === 20 ? '' : 'none'; }
     add(r.data.stories);
@@ -925,9 +932,9 @@
     if (!r.ok || !r.data.actions.length) return;
     var ol = el('ol', { class: 'hfp-list' });
     r.data.actions.slice(0, 10).forEach(function (a) {
-      ol.appendChild(el('li', null, [el('a', { href: '/action/' + a.slug, text: a.title }), el('span', { class: 'hfp-muted', text: ' · ' + a.people.toLocaleString() + ' people' })]));
+      ol.appendChild(el('li', null, [el('a', { href: '/action/' + a.slug, text: a.title }), el('span', { class: 'hfp-muted', text: ' · ' + copyText('most-done-people', { n: a.people.toLocaleString() }) })]));
     });
-    var box = el('section', { id: 'hfp-most-done', 'aria-labelledby': 'hfp-most-done-h' }, [el('h2', { id: 'hfp-most-done-h', text: 'Most done' }), ol]);
+    var box = el('section', { id: 'hfp-most-done', 'aria-labelledby': 'hfp-most-done-h' }, [el('h2', { id: 'hfp-most-done-h', text: copyText('most-done-h') }), ol]);
     var footer = document.querySelector('footer');
     footer ? footer.parentNode.insertBefore(box, footer) : document.body.appendChild(box);
   }

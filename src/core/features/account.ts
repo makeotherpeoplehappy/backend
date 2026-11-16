@@ -14,6 +14,15 @@ export async function getAccount(env: Env, member: Member) {
   )
     .bind(member.id)
     .all();
+  // "Save" on an action page is a like (value 1); the account lists them so
+  // members can come back to actions they meant to do.
+  const saved = await env.DB.prepare(
+    `SELECT l.action_id AS actionId, a.title AS title, a.slug AS slug, l.updated_at AS savedAt
+     FROM likes l JOIN actions a ON a.cms_item_id = l.action_id
+     WHERE l.member_id = ?1 AND l.value = 1 AND a.status = 'published' ORDER BY l.updated_at DESC LIMIT 200`,
+  )
+    .bind(member.id)
+    .all();
   const stories = await env.DB.prepare(`SELECT id, action_id AS actionId, status, created_at AS createdAt FROM stories WHERE member_id = ?1 ORDER BY created_at DESC`)
     .bind(member.id)
     .all();
@@ -24,6 +33,7 @@ export async function getAccount(env: Env, member: Member) {
     firstName: member.first_name,
     tally: await memberTally(env, member.id),
     done: done.results,
+    saved: saved.results,
     stories: stories.results,
     suggestions: suggestions.results,
     settings: settingsOf(member),

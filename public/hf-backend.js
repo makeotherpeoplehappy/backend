@@ -242,6 +242,8 @@
       .map(function (d) { return { idea: d.slug, date: d.doneAt, id: d.actionId, title: d.title }; })
       .reverse();
     c.tally = r.ok && r.data ? r.data.tally : c.actions.length;
+    // Actions the member saved ("Save" on an action page), newest first.
+    c.saved = r.ok && r.data && r.data.saved ? r.data.saved.filter(function (d) { return d.slug; }) : [];
     return c;
   }
   waitFor(function () { return !!window.HF; }, 10000).then(function (ok) {

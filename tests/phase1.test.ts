@@ -378,6 +378,8 @@ describe('Check 6: existing done actions and likes for the test account appear a
     const me = await (await h.request('GET', '/api/me', { token: 'shcat_test' })).json();
     expect(me.tally).toBe(2);
     expect(me.done.map((d: { actionId: string }) => d.actionId).sort()).toEqual([actionA, actionB].sort());
+    // Saved (liked) actions are listed on the account; "don't like" is not.
+    expect(me.saved.map((d: { actionId: string }) => d.actionId)).toEqual([actionA]);
     const a = await (await h.request('GET', `/api/actions/${actionA}/state`, { token: 'shcat_test' })).json();
     expect(a.me).toMatchObject({ done: true, liked: true, lastDoneAt: '2026-10-02T10:00:00.000Z' });
     const b = await (await h.request('GET', `/api/actions/${actionB}/state`, { token: 'shcat_test' })).json();

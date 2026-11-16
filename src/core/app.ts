@@ -13,7 +13,7 @@ import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
 import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, updateDropsInCms, warmShop } from './features/drops';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
-import { reviewAll } from './features/review';
+import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
@@ -244,6 +244,18 @@ route('POST', '/api/lab/access', true, async ({ req, env, deps, ctx, baseUrl }) 
 route('DELETE', '/api/lab/access', true, async ({ req, env, deps }) => {
   await assertLabAccess(env, await requireMember(req, env, deps));
   return json(await removeLabAccess(env, await readJson(req)));
+});
+
+// Reviewing stories and suggestions from /lab.
+route('GET', '/api/lab/review', true, async ({ req, env, deps }) => {
+  await assertLabAccess(env, await requireMember(req, env, deps));
+  return json(await reviewQueue(env));
+});
+route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) => {
+  const me = await assertLabAccess(env, await requireMember(req, env, deps));
+  const out = await labDecide(env, deps, me.email, await readJson(req), baseUrl);
+  ctx.waitUntil(drain(env, deps, { limit: 5, deadlineMs: 10_000 }).catch(() => undefined));
+  return json(out);
 });
 
 // --- Email links ------------------------------------------------------------

@@ -705,3 +705,31 @@ describe('Phase 4: ripple', () => {
     expect((await invite('shcat_ana', actionA, 'pass_it_on')).text).toBe('Ana did this and is passing it on: Compliment a stranger');
   });
 });
+
+describe('Reviewing from /lab', () => {
+  const lab = (token: string) => ({ token, body: undefined as unknown });
+  it('anyone with Lab access can approve or reject; the CMS follows and the usual emails go out', async () => {
+    h.env.LAB_EMAILS = 'boss@example.com';
+    h.fake.signIn('shcat_boss', { email: 'boss@example.com', firstName: 'Boss' });
+    await done('shcat_ana');
+    await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: actionA, text: 'Lovely day', consent: true } });
+    await h.request('POST', '/api/suggestions', { token: 'shcat_ana', body: { text: 'Leave a note on a bike' } });
+    expect((await h.request('GET', '/api/lab/review', lab('shcat_ana'))).status).toBe(403);
+    await flush();
+    const q = await (await h.request('GET', '/api/lab/review', lab('shcat_boss'))).json();
+    expect(q.stories).toEqual([expect.objectContaining({ id: 1, text: 'Lovely day', name: 'Ana', actionTitle: 'Compliment a stranger' })]);
+    expect(q.suggestions).toEqual([expect.objectContaining({ id: 1, text: 'Leave a note on a bike' })]);
+    expect((await h.request('POST', '/api/lab/review', { token: 'shcat_boss', body: { type: 'story', id: 1, decision: 'approved' } })).status).toBe(200);
+    expect((await h.request('POST', '/api/lab/review', { token: 'shcat_boss', body: { type: 'suggestion', id: 1, decision: 'rejected' } })).status).toBe(200);
+    await flush();
+    const story = items(CMS.stories.id)[0];
+    expect(story.fieldData.status).toBe(CMS.stories.status.approved);
+    expect(story.live).toBe(true);
+    expect(items(CMS.suggestions.id)[0].fieldData.status).toBe(CMS.suggestions.status.rejected);
+    expect(h.fake.emails.filter((e) => e.subject === 'Your story is on the site')).toHaveLength(1);
+    expect(await h.db(`SELECT reviewed_by FROM stories`)).toEqual([{ reviewed_by: 'boss@example.com' }]);
+    const again = await h.request('POST', '/api/lab/review', { token: 'shcat_boss', body: { type: 'story', id: 1, decision: 'rejected' } });
+    expect((await again.json()).error).toBe('already_reviewed');
+    expect(await (await h.request('GET', '/api/lab/review', lab('shcat_boss'))).json()).toEqual({ suggestions: [], stories: [] });
+  });
+});

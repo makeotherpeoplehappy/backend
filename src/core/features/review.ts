@@ -6,7 +6,7 @@
 
 import { CMS } from '../config';
 import type { Deps, Env } from '../env';
-import { iso } from '../http';
+import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
 import { memberEmail } from '../email';
 import { enqueue, registerTask } from '../queue';
@@ -43,7 +43,7 @@ async function memberById(env: Env, id: number | null): Promise<Member | null> {
   return env.DB.prepare(`SELECT * FROM members WHERE id = ?1 AND deleted_at IS NULL`).bind(id).first<Member>();
 }
 
-async function applySuggestion(env: Env, deps: Deps, id: number, cmsId: string, status: Status) {
+export async function applySuggestion(env: Env, deps: Deps, id: number, cmsId: string, status: Status) {
   const row = await env.DB.prepare(`SELECT id, status, draft_action_id FROM suggestions WHERE id = ?1`).bind(id).first<{ id: number; status: string; draft_action_id: string | null }>();
   if (!row) return null;
   const stmts: D1PreparedStatement[] = [];
@@ -153,7 +153,7 @@ export async function notifySuggestionsLive(env: Env, deps: Deps, baseUrl: strin
 // Stories
 // ---------------------------------------------------------------------------
 
-async function applyStory(env: Env, deps: Deps, id: number, cmsId: string, status: Status, baseUrl: string) {
+export async function applyStory(env: Env, deps: Deps, id: number, cmsId: string, status: Status, baseUrl: string) {
   const row = await env.DB.prepare(`SELECT id, member_id, action_id, status, version, approved_version FROM stories WHERE id = ?1`)
     .bind(id)
     .first<{ id: number; member_id: number; action_id: string; status: string; version: number; approved_version: number | null }>();
@@ -226,3 +226,44 @@ export async function reviewAll(env: Env, deps: Deps, baseUrl: string) {
 }
 
 export { storySlug };
+
+// ---------------------------------------------------------------------------
+// Reviewing from /lab: anyone with Lab access can approve or reject. The
+// decision is written to the CMS Status first (so Webflow stays the record),
+// then applied exactly as if it had been made in the CMS.
+// ---------------------------------------------------------------------------
+
+export async function reviewQueue(env: Env) {
+  const suggestions = await env.DB.prepare(
+    `SELECT s.id, s.text, s.similar_notes AS similar, s.created_at AS createdAt, s.cms_item_id IS NOT NULL AS ready,
+       COALESCE(m.share_name, m.first_name) AS name
+     FROM suggestions s LEFT JOIN members m ON m.id = s.member_id
+     WHERE s.status = 'new' ORDER BY s.created_at LIMIT 50`,
+  ).all();
+  const stories = await env.DB.prepare(
+    `SELECT s.id, s.text, s.photo_key AS photoKey, s.photo_description AS photoDescription, s.video_url AS videoUrl, s.show_name AS showName,
+       s.created_at AS createdAt, s.version, s.cms_item_id IS NOT NULL AS ready, COALESCE(m.share_name, m.first_name) AS name,
+       a.title AS actionTitle, CASE WHEN a.status = 'published' THEN a.slug END AS actionSlug
+     FROM stories s JOIN members m ON m.id = s.member_id LEFT JOIN actions a ON a.cms_item_id = s.action_id
+     WHERE s.status = 'new' ORDER BY s.created_at LIMIT 50`,
+  ).all();
+  return { suggestions: suggestions.results, stories: stories.results };
+}
+
+export async function labDecide(env: Env, deps: Deps, reviewer: string, body: { type?: unknown; id?: unknown; decision?: unknown }, baseUrl: string) {
+  const type = body.type === 'story' ? 'story' : body.type === 'suggestion' ? 'suggestion' : null;
+  const decision = body.decision === 'approved' ? 'approved' : body.decision === 'rejected' ? 'rejected' : null;
+  const id = Number(body.id);
+  if (!type || !decision || !Number.isInteger(id)) throw new HttpError(400, 'invalid_review', 'That decision could not be read.');
+  const table = type === 'story' ? 'stories' : 'suggestions';
+  const row = await env.DB.prepare(`SELECT id, status, cms_item_id FROM ${table} WHERE id = ?1`).bind(id).first<{ id: number; status: string; cms_item_id: string | null }>();
+  if (!row) throw new HttpError(404, 'not_found', 'This has been removed.');
+  if (row.status !== 'new') throw new HttpError(409, 'already_reviewed', 'Someone has already reviewed this.');
+  if (!row.cms_item_id) throw new HttpError(409, 'not_ready', 'This is still being saved. Try again in a minute.');
+  const collection = type === 'story' ? CMS.stories : CMS.suggestions;
+  await webflow.updateItem(env, deps, collection.id, row.cms_item_id, { status: collection.status[decision] });
+  if (type === 'story') await applyStory(env, deps, id, row.cms_item_id, decision, baseUrl);
+  else await applySuggestion(env, deps, id, row.cms_item_id, decision);
+  await env.DB.prepare(`UPDATE ${table} SET reviewed_by = ?2, reviewed_at = ?3 WHERE id = ?1`).bind(id, reviewer, iso(deps.now())).run();
+  return { type, id, decision };
+}

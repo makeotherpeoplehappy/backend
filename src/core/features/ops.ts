@@ -18,7 +18,7 @@ import { draftActionDeleted, notifySuggestionsLive, reviewItem } from './review'
 
 const WEBHOOK_LIMIT_PER_MINUTE = 120;
 
-export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<string, unknown>, baseUrl: string) {
+export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<string, unknown>, baseUrl: string): Promise<Record<string, unknown>> {
   const minute = `wfhook:${iso(deps.now()).slice(0, 16)}`;
   const seen = Number((await env.CACHE.get(minute)) || '0');
   if (seen >= WEBHOOK_LIMIT_PER_MINUTE) return { ok: true, ignored: 'rate limit' };
@@ -26,6 +26,14 @@ export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<st
 
   const trigger = String(body.triggerType || '');
   const payload = (body.payload || {}) as Record<string, unknown>;
+  // Publish and unpublish messages carry a list of items: handle each.
+  if (Array.isArray(payload.items)) {
+    const results: unknown[] = [];
+    for (const it of (payload.items as Record<string, unknown>[]).slice(0, 20)) {
+      results.push(await handleWebflowWebhook(env, deps, { triggerType: trigger, payload: { ...it, collectionId: it.collectionId || payload.collectionId } }, baseUrl));
+    }
+    return { ok: true, items: results.length };
+  }
   const collectionId = String(payload.collectionId || '');
   const itemId = String(payload.id || payload.itemId || '');
   const validId = /^[a-f0-9]{24}$/.test(itemId);

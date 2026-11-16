@@ -510,7 +510,20 @@
   // ---------------------------------------------------------------------------
   async function suggestPage() {
     var f = $('wf-form-Suggest-an-action');
-    if (!f || f.getAttribute('data-hfp')) return;
+    if (location.pathname !== '/suggest-an-action' && !f) return;
+    if (!f) {
+      // The old Webflow form has been removed: build the form here.
+      if ($('hfp-suggest')) return;
+      f = el('form', { id: 'hfp-suggest', class: 'hf-form', novalidate: true }, [
+        el('label', { for: 'Idea', class: 'hf-form-label', text: 'Your suggestion' }),
+        el('textarea', { id: 'Idea', name: 'Idea', class: 'hf-form-input is-textarea w-input', maxlength: '2000', required: true, placeholder: 'Describe the action and who it would make happy' }),
+        el('div', { class: 'hfp-row' }, [el('button', { type: 'submit', class: 'hf-button', text: 'Send suggestion' })]),
+      ]);
+      var anchor = document.querySelector('.hf-lead') || document.querySelector('h1');
+      if (!anchor) return;
+      anchor.insertAdjacentElement('afterend', el('div', { class: 'w-form' }, [f]));
+    }
+    if (f.getAttribute('data-hfp')) return;
     f.setAttribute('data-hfp', '1');
     var wrap = f.closest('.w-form') || f;
     var ta = f.querySelector('textarea');
@@ -582,11 +595,13 @@
   async function storyPage() {
     var fa = $('story-action');
     var native = fa && fa.closest('form');
-    if (!native || native.getAttribute('data-hfp')) return;
-    native.setAttribute('data-hfp', '1');
-    var wrap = native.closest('.w-form') || native;
-    var note = $('hf-story-note') || status();
-    wrap.style.display = 'none';
+    var note = $('hf-story-note');
+    // Works with or without the old Webflow form on the page (it is no longer used).
+    if ((!native && !note) || (note && note.getAttribute('data-hfp'))) return;
+    if (!note) { note = status(); (native.closest('.w-form') || native).insertAdjacentElement('beforebegin', note); }
+    note.setAttribute('data-hfp', '1');
+    var wrap = native ? native.closest('.w-form') || native : null;
+    if (wrap) wrap.style.display = 'none';
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (HF.finish) { try { await HF.finish(); } catch (e) {} }
     var slug = new URLSearchParams(location.search).get('action') || '';
@@ -718,8 +733,8 @@
       } else { msg.textContent = msgOf(rr); msg.setAttribute('data-kind', 'error'); }
     });
     note.innerHTML = '';
-    wrap.parentNode.insertBefore(form, wrap);
-    wrap.remove();
+    note.insertAdjacentElement('afterend', form);
+    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
   }
 
   // ---------------------------------------------------------------------------

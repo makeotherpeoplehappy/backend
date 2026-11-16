@@ -31,6 +31,14 @@ async function page(path: string, html: string, handler: Handler, opts: { signed
     keepDraft: () => ({ clear: () => undefined }),
     token: async () => 'tok',
   };
+  // Direct fetches to the backend go to the same fake.
+  w.fetch = async (url: string, init: { method?: string } = {}) => {
+    const path = String(url).replace(/^.*?\/join/, '');
+    const method = init.method || 'GET';
+    calls.push({ method, path, body: undefined });
+    const r = handler(method, path, undefined) || { status: 404, data: {} };
+    return { ok: (r.status ?? 200) < 400, status: r.status ?? 200, json: async () => r.data, text: async () => '' };
+  };
   window.eval(SOURCE);
   const settle = async () => {
     for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 10));
@@ -97,14 +105,18 @@ describe('Action page', () => {
     expect(p.document.querySelectorAll('#hfp-compose').length, p.document.body.innerHTML.slice(-600)).toBe(0);
   });
 
-  it('asks a signed-out visitor to sign in and remembers the click', async () => {
+  it('sends a signed-out visitor straight to sign in and remembers the click', async () => {
     const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [] } } : undefined), { signedIn: false });
+    const save = [...p.document.querySelectorAll('button')].find((b) => b.textContent === '♡ Save')!;
+    save.click();
+    await p.settle();
     p.document.getElementById('hf-did-this')!.click();
     await p.settle();
-    const signIn = [...p.document.querySelectorAll('#hf-signup-prompt button')][0] as unknown as HTMLButtonElement;
-    expect(signIn.textContent).toBe('Sign in');
-    signIn.click();
-    expect(p.signIns).toEqual([{ kind: 'done', actionId: 'a1' }]);
+    expect(p.signIns).toEqual([
+      { kind: 'like', actionId: 'a1' },
+      { kind: 'done', actionId: 'a1' },
+    ]);
+    expect(p.document.getElementById('hf-did-msg')!.textContent).toContain('Taking you to sign in');
   });
 
   it('shows approved stories with a vertical player and a report link', async () => {
@@ -204,8 +216,9 @@ describe('Shop', () => {
         : undefined,
     );
     const text = p.document.body.textContent;
-    expect(text).toContain('Drop 02 · Coming soon');
-    expect(text).toContain('Be the reason.');
+    expect(text).toContain('Coming soon');
+    expect(p.document.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02');
+    expect(p.document.querySelector('#hfp-shop-drop .hf-drop-quote')!.textContent).toBe('Be the reason.');
     expect(text).toContain('Available now');
     expect(text).toContain('Past drops');
     expect(text).toContain('100 pledges made, 81 kept');

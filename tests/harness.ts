@@ -62,7 +62,7 @@ export class FakeServices {
   marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
   items = new Map<string, FakeItem[]>();
-  emails: { to: string[]; subject: string; text: string; headers?: Record<string, string> }[] = [];
+  emails: { to: string[]; subject: string; text: string; template?: { id: string; variables: Record<string, string | number> }; headers?: Record<string, string> }[] = [];
   calls: { method: string; url: string; body?: unknown }[] = [];
   webflowDown = false;
   /** Webflow creates the item but the answer is lost (network drop). */
@@ -360,8 +360,9 @@ export class FakeServices {
 
     if (url.href === 'https://api.resend.com/emails') {
       if (headers.get('Authorization') !== 'Bearer re_test') return j({ message: 'Unauthorized' }, 401);
-      const b = body as { to: string[]; subject: string; text: string; headers?: Record<string, string> };
-      this.emails.push(b);
+      const b = body as { to: string[]; subject?: string; text?: string; template?: { id: string; variables: Record<string, string | number> }; headers?: Record<string, string> };
+      if (b.template && (b.subject || b.text)) return j({ message: 'html, text or subject cannot be sent with a template' }, 422);
+      this.emails.push({ ...b, subject: b.subject ?? `template:${b.template?.id}`, text: b.text ?? '' });
       return j({ id: `email_${this.emails.length}` });
     }
 

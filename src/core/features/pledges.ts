@@ -290,7 +290,7 @@ export async function pledgeReminders(env: Env, deps: Deps, baseUrl: string) {
     const stmts: D1PreparedStatement[] = [
       env.DB.prepare(`UPDATE pledges SET reminder_sent_at = ?3 WHERE member_id = ?1 AND shopify_order_id = ?2`).bind(d.memberId, d.orderId, iso(deps.now())),
     ];
-    const msg = member && !member.deleted_at ? await memberEmail(env, deps, member, 'pledge_reminder', { actionUrl: `${site}/actions` }, baseUrl) : null;
+    const msg = member && !member.deleted_at ? await memberEmail(env, member, 'pledge_reminder', { actionUrl: `${site}/actions` }, baseUrl) : null;
     if (msg) {
       stmts.push(enqueue(env, deps, `pledge-reminder:${d.orderId}:${d.memberId}`, { op: 'email.send', message: msg }, d.memberId));
       sent++;

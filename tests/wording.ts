@@ -237,28 +237,6 @@ export const WORDING: Record<string, string> = {
   "invite-preview-title": "An invite from Happiness Foundation",
   "site-tagline": "Small actions that make other people happy.",
   "site-name": "Happiness Foundation",
-  // Member emails
-  "email-hi": "Hi {name},",
-  "email-hi-anon": "Hi,",
-  "email-signoff": "With thanks,",
-  "email-signoff-name": "Happiness Foundation",
-  "email-unsubscribe": "To stop these emails: {url}",
-  "email-someone": "Someone",
-  "email-and": "and",
-  "email-invite-subject-one": "{name} joined your invite",
-  "email-invite-subject-many": "{n} people joined your invite",
-  "email-invite-body-one": "{name} is in for \"{action}\".",
-  "email-invite-body-one-untitled": "{name} is in.",
-  "email-invite-body-many": "{names} are in for \"{action}\".",
-  "email-invite-body-many-untitled": "{names} are in.",
-  "email-story-subject": "Your story is on the site",
-  "email-story-body": "Your story about \"{action}\" has been approved and is now on the site.",
-  "email-story-body-untitled": "Your story has been approved and is now on the site.",
-  "email-suggestion-subject": "Your suggested action is live",
-  "email-suggestion-body": "The action you suggested, \"{action}\", is now live for everyone to do.",
-  "email-suggestion-body-untitled": "The action you suggested is now live for everyone to do.",
-  "email-pledge-subject": "Your pledge is still open",
-  "email-pledge-body": "A week ago you made a pledge with your order. Mark an action as done to keep it.",
 };
 
 /** Wording kept on one page instead of the footer (key: where it is in Webflow). */

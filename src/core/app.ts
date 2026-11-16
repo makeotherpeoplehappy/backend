@@ -19,7 +19,6 @@ import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } 
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
-import { setUpEmailTemplates } from './features/email-setup';
 import { customerGid } from './shopify';
 
 type Params = Record<string, string>;
@@ -258,13 +257,6 @@ route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) 
   const out = await labDecide(env, deps, me.email, await readJson(req), baseUrl);
   ctx.waitUntil(drain(env, deps, { limit: 5, deadlineMs: 10_000 }).catch(() => undefined));
   return json(out);
-});
-
-// One-time: put the member email templates into Resend (owners only).
-route('POST', '/api/lab/email-templates', true, async ({ req, env, deps }) => {
-  const me = await assertLabAccess(env, await requireMember(req, env, deps));
-  if (!me.owner) throw new HttpError(403, 'owner_only', 'Only an owner can do this.');
-  return json(await setUpEmailTemplates(env, deps));
 });
 
 // --- Email links ------------------------------------------------------------

@@ -912,12 +912,16 @@
     await wait(function () { return window.HFB; }, 10000);
     var r = await HFB.call('/api/drops/state?drop=' + m[1], { auth: false });
     var upcoming = r.ok && r.data.status === 'upcoming';
-    document.head.appendChild(el('style', { text: GRID_CSS }));
+    document.head.appendChild(el('style', { text: GRID_CSS + '.hfp-card-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#eee}' }));
     ensureShopify();
+    // The drop's pieces from the shop's one answer (fast); Shopify's own list as a fallback.
+    var shop = await HFB.call('/api/shop', { auth: false });
+    var all = shop.ok ? [shop.data.current].concat(shop.data.past || []).filter(Boolean) : [];
+    var found = all.filter(function (d) { return d.drop === m[1]; })[0];
     var box = el('section', { id: 'hfp-pieces', class: 'hfp-shop-section', 'aria-labelledby': 'hfp-pieces-h' }, [
       el('h2', { id: 'hfp-pieces-h', text: 'The pieces' }),
       upcoming ? el('p', { class: 'hfp-muted', text: 'On sale when the drop goes live. Every piece comes with a pledge: take an action that makes someone else happy.' }) : el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
-      collectionGrid(m[1], upcoming),
+      found ? grid(found.products, found.status === 'live') : collectionGrid(m[1], upcoming),
     ]);
     var hero = document.querySelector('.hf-drop');
     hero ? hero.insertAdjacentElement('afterend', box) : (document.querySelector('footer') || document.body).insertAdjacentElement('beforebegin', box);
@@ -965,22 +969,51 @@
     (h1 || target).insertAdjacentElement(h1 ? 'beforebegin' : 'beforebegin', el('p', { id: 'hfp-product-edition', class: 'hf-drop-label', text: labels[m[1]] }));
   }
 
-  // The shop asks for its drops as soon as this script runs, not after the rest of the page.
-  var shopDropsEarly = location.pathname === '/shop'
-    ? fetch((window.HFB ? HFB.base : '/join') + '/api/drops', { headers: { Accept: 'application/json' } })
+  // The whole shop in one call, asked for as soon as this script runs.
+  var shopEarly = location.pathname === '/shop'
+    ? fetch((window.HFB ? HFB.base : '/join') + '/api/shop', { headers: { Accept: 'application/json' } })
         .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
         .catch(function () { return { ok: false }; })
     : null;
+
+  function money(p) {
+    if (!p) return '';
+    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode }).format(Number(p.amount)); } catch (e) { return p.amount + ' ' + p.currencyCode; }
+  }
+
+  /** A product card drawn straight from the backend's answer; only "Add to cart" comes from Shopify. */
+  function productCard(p, canBuy) {
+    var href = '/products/' + p.handle;
+    var img = p.image ? el('a', { href: href, tabindex: '-1', 'aria-hidden': 'true' }, [
+      el('img', { class: 'hfp-card-img', src: p.image.url + (p.image.url.indexOf('?') >= 0 ? '&' : '?') + 'width=640', alt: p.image.alt || p.title, loading: 'lazy', width: '640', height: '640' }),
+    ]) : el('div', { class: 'hfp-card-img', 'aria-hidden': 'true' });
+    var buy = null;
+    if (canBuy && p.available) {
+      buy = el('span', { class: 'hfp-buy' });
+      buy.innerHTML = '<shopify-context type="product" handle="' + p.handle + '"><template><button type="button" class="hf-button" onclick="document.getElementById(\'hf-cart\').addLine(event).showModal()">Add to cart</button></template></shopify-context>';
+    }
+    return el('div', { class: 'hf-product' }, [
+      img,
+      p.label ? el('p', { class: 'hfp-edition hf-drop-label', style: 'margin:12px 0 0', text: p.label }) : null,
+      el('h3', null, [el('a', { href: href, style: 'color:inherit;text-decoration:none', text: p.title })]),
+      el('p', { text: p.available ? money(p.price) : money(p.price) + ' · Sold out' }),
+      el('div', { class: 'hfp-row', style: 'margin:8px 0 0' }, [el('a', { class: 'hf-button-light', href: href, text: 'Details' }), buy]),
+    ]);
+  }
+  function grid(products, canBuy) {
+    return el('div', { class: 'hfp-grid' }, products.map(function (p) { return productCard(p, canBuy); }));
+  }
 
   async function shopPage() {
     var root = $('hf-shop');
     if (location.pathname !== '/shop' || !root || root.getAttribute('data-hfp')) return;
     root.setAttribute('data-hfp', '1');
-    var r = await shopDropsEarly;
-    if (!r.ok) return; // keep the page's own list of every product
+    var r = await shopEarly;
+    if (!r || !r.ok) { document.documentElement.setAttribute('data-hfp-shop', 'fallback'); return; } // the page's own list stays
     var cur = r.data.current;
     var past = r.data.past || [];
-    document.head.appendChild(el('style', { text: GRID_CSS }));
+    var now = r.data.availableNow || [];
+    document.head.appendChild(el('style', { text: GRID_CSS + '.hfp-card-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#eee}' }));
     root.innerHTML = '<shopify-store store-domain="' + STORE + '" country="US" language="en"></shopify-store><shopify-cart id="hf-cart"></shopify-cart>';
     if (cur) {
       var facts = [];
@@ -993,10 +1026,9 @@
         el('p', { class: 'hfp-muted', id: 'hfp-shop-drop-details', text: cur.detailsLine }),
         facts.length ? el('p', { class: 'hfp-muted', text: facts.join(' · ') }) : null,
         el('p', null, [el('a', { class: 'hf-story-link', href: '/drops/' + cur.drop, text: 'About this drop →' })]),
-        collectionGrid(cur.collection),
+        cur.products.length ? grid(cur.products, cur.status === 'live') : null,
       ]);
       root.appendChild(drop);
-      // "Notify me" (added by hf-backend.js) belongs with the drop.
       wait(function () { return $('hfb-notify'); }, 8000).then(function (found) {
         if (!found) return;
         var f = $('hfb-notify');
@@ -1005,27 +1037,28 @@
         $('hfp-shop-drop-details').insertAdjacentElement('afterend', f);
       });
     }
-    var always = el('section', { class: 'hfp-shop-section', 'aria-labelledby': 'hfp-shop-always-h' }, [
-      el('h2', { id: 'hfp-shop-always-h', style: cur ? '' : 'margin-top:0', text: 'Available now' }),
-      el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
-      collectionGrid('available-now'),
-    ]);
-    root.appendChild(always);
-    hideIfEmpty(always);
-    editionLabels(root);
-    if (past.length) {
+    if (now.length) {
+      root.appendChild(el('section', { class: 'hfp-shop-section', 'aria-labelledby': 'hfp-shop-now-h' }, [
+        el('h2', { id: 'hfp-shop-now-h', style: cur ? '' : 'margin-top:0', text: 'Available now' }),
+        el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
+        grid(now, true),
+      ]));
+    }
+    var withPieces = past.filter(function (d) { return d.products && d.products.length; });
+    if (withPieces.length) {
       var pastBox = el('section', { class: 'hfp-shop-section hfp-past', 'aria-labelledby': 'hfp-shop-past-h' }, [el('h2', { id: 'hfp-shop-past-h', text: 'Past drops' })]);
-      past.forEach(function (d) {
+      withPieces.forEach(function (d) {
         var line = d.pledges && d.pledges.made ? d.pledges.made + ' ' + plural(d.pledges.made, 'pledge', 'pledges') + ' made, ' + d.pledges.kept + ' kept' : 'Sold out';
         pastBox.appendChild(el('div', null, [
           el('h3', { text: d.name }),
           d.statement ? el('p', { class: 'hf-drop-quote', style: 'font-size:18px', text: d.statement }) : null,
           el('p', { class: 'hfp-muted', text: line }),
-          collectionGrid(d.collection),
+          grid(d.products, false),
         ]));
       });
       root.appendChild(pastBox);
     }
+    document.documentElement.setAttribute('data-hfp-shop', 'ready');
   }
 
   function start() {

@@ -55,6 +55,8 @@ export class FakeServices {
   /** productId -> publishDate per publication, or null when unpublished. */
   published = new Map<string, Record<string, string | null>>();
   publicationsAllowed = true;
+  /** Shopify collections by handle: product ids. */
+  shopCollections = new Map<string, string[]>();
   /** Shopify customers created or updated by drop sign-ups, by email. */
   marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
@@ -182,6 +184,16 @@ export class FakeServices {
         return j({ data: { webhookSubscriptionCreate: { webhookSubscription: { id: sub.id }, userErrors: [] } } });
       }
       if (q.query.includes('webhookSubscriptions')) return j({ data: { webhookSubscriptions: { nodes: this.webhookSubs } } });
+      if (q.query.includes('collections(first: 1')) {
+        const handle = String(q.variables.q).replace(/^handle:/, '');
+        const ids = this.shopCollections.get(handle);
+        if (!ids) return j({ data: { collections: { nodes: [] } } });
+        const nodes = ids
+          .map((id) => this.products.find((p) => p.id === id))
+          .filter(Boolean)
+          .map((p) => ({ handle: p!.handle, title: p!.title, status: p!.status, featuredMedia: null, priceRangeV2: { minVariantPrice: { amount: '45.0', currencyCode: 'USD' } }, variants: { nodes: [{ availableForSale: true }] } }));
+        return j({ data: { collections: { nodes: [{ products: { nodes } }] } } });
+      }
       if (q.query.includes('edition_size')) {
         return j({
           data: {

@@ -108,6 +108,7 @@
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))])
     ]));
     root.appendChild(accessPanel(k.me));
+    if (k.me && k.me.owner) root.appendChild(emailPanel());
     if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
   }
 
@@ -158,6 +159,22 @@
       });
     });
     return wrap;
+  }
+
+  // One-time: put the member email templates into Resend, from today's wording.
+  function emailPanel() {
+    var b = el('button', { type: 'button', text: 'Set up email templates in Resend' });
+    var msg = el('p', { role: 'status', 'aria-live': 'polite' });
+    msg.style.cssText = 'margin:8px 0 0;font-size:14px;white-space:pre-line';
+    b.onclick = async function () {
+      b.disabled = true;
+      msg.textContent = 'Working...';
+      var r = await window.HFB.call('/api/lab/email-templates', { method: 'POST' });
+      b.disabled = false;
+      if (!r.ok) { msg.textContent = (r.data && r.data.message) || 'That did not work.'; return; }
+      msg.textContent = r.data.done.map(function (d) { return d.alias + ': ' + d.action + ' and published'; }).concat(r.data.failed.map(function (f) { return f.alias + ': failed (' + f.status + ') ' + f.message; })).join('\n');
+    };
+    return el('div', {}, [el('h2', { text: 'Email templates' }), el('div', { class: 'panel' }, [b, msg])]);
   }
 
   // "Who can see this": anyone with access can add or remove invited people.

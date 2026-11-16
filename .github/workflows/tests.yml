@@ -1,0 +1,28 @@
+# Runs the automated tests and the type check on every pull request and on
+# pushes to main, so a change is checked before it is merged and deployed.
+
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Generates .astro/types.d.ts (git-ignored), which the type check needs.
+      - run: npx astro sync
+      - run: npm run typecheck
+      - run: npm test

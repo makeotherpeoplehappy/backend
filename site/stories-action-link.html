@@ -1,0 +1,2 @@
+<!-- Page code (Before </body>) on /stories AND on the Stories Template. Each story's action link carries data-action-slug (bound to Action > Slug, since Webflow can't bind a link to a referenced item's page). This points it at /action/<slug>, or hides it when the story has no action. Keep in sync with Webflow. -->
+<script>document.querySelectorAll('a[data-action-slug]').forEach(function(a){var s=(a.getAttribute('data-action-slug')||'').trim(),t=a.textContent.trim();if(!s||!t){a.style.display='none';return}a.href='/action/'+s;a.textContent='The action: '+t+' →'});</script>

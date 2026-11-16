@@ -5,30 +5,16 @@
 import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
 import { describe, expect, it } from 'vitest';
+import { FOOTER_HTML, PAGE_WORDING, WORDING } from './wording';
 
 const SOURCE = readFileSync(new URL('../public/hf-pages.js', import.meta.url), 'utf8');
-
-// The footer's hidden "Site wording" block, as built in Webflow (on every page).
-const WORDING: Record<string, string> = {
-  'card-details': 'Details',
-  'card-add': 'Add to cart',
-  'card-sold-out': '{price} · Sold out',
-  'label-pieces': '{name} · {size} pieces',
-  'label-left': '{name} · {left} of {size} left',
-  'label-sold-out': '{name} · Sold out',
-  'label-edition': 'Limited edition',
-  'facts-left': '{left} of {quantity} left',
-  'pledges-one': '{made} pledge made, {kept} kept',
-  'pledges-many': '{made} pledges made, {kept} kept',
-};
-const FOOTER = '<footer><div data-hf-wording="site">' + Object.entries(WORDING).map(([k, v]) => `<p data-hf-copy="${k}">${v}</p>`).join('') + '</div></footer>';
 
 type Handler = (method: string, path: string, body: unknown) => { status?: number; data: unknown } | undefined;
 
 async function page(path: string, html: string, handler: Handler, opts: { signedIn?: boolean } = {}) {
   const window = new Window({ url: `https://site.test${path}` });
   const document = window.document;
-  document.body.innerHTML = html + FOOTER + '<div data-hf-pages hidden></div>';
+  document.body.innerHTML = html + FOOTER_HTML + '<div data-hf-pages hidden></div>';
   const calls: { method: string; path: string; body: unknown }[] = [];
   const signIns: unknown[] = [];
   const w = window as unknown as Record<string, unknown>;
@@ -382,5 +368,19 @@ describe('Drop hero script (Webflow)', () => {
   it('shows "Out now" once the date has passed, and the sold-out wording with the pledge count', () => {
     expect(hero('Upcoming', 'December 5, 2020').shown).toEqual(['Out now', 'See the drop']);
     expect(hero('Sold out', 'December 5, 2020').shown).toEqual(['Sold out. 100 pledges made.', 'Find an action']);
+  });
+});
+
+describe('Wording guard', () => {
+  it('every text key the scripts use is in the Webflow wording block', () => {
+    const files = ['../public/hf-pages.js', '../public/hf-backend.js', '../site/cart-pledge.js'].map((f) => readFileSync(new URL(f, import.meta.url), 'utf8'));
+    const used = new Set<string>();
+    for (const src of files) for (const m of src.matchAll(/\b(?:copyText|copy|copyNodes|C)\('([a-z0-9_-]+)'/g)) used.add(m[1]);
+    // Keys picked at run time.
+    for (const k of ['invite_summary', 'story_approved', 'suggestion_live', 'pledge_reminder']) used.add('acct-email-' + k);
+    for (const src of files) for (const m of src.matchAll(/'([a-z]+(?:-[a-z0-9_]+)+)'/g)) if (m[1] in WORDING) used.add(m[1]);
+    const missing = [...used].filter((k) => !k.endsWith('-') && !(k in WORDING) && !(k in PAGE_WORDING)); // a trailing '-' is a prefix, completed at run time
+    expect(missing).toEqual([]);
+    expect(used.size).toBeGreaterThan(100);
   });
 });

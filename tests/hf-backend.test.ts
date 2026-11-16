@@ -4,6 +4,7 @@
 import { readFileSync } from 'node:fs';
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
+import { WORDING as SITE_WORDING } from './wording';
 
 const SOURCE = readFileSync(new URL('../public/hf-backend.js', import.meta.url), 'utf8');
 
@@ -25,18 +26,6 @@ const el = (id?: string, text = ''): FakeEl => ({
     (this as FakeEl).inserted.push({ where, el: c });
   },
 });
-
-// The footer's hidden "Site wording" block, as built in Webflow.
-export const SITE_WORDING: Record<string, string> = {
-  'notify-drop': 'Get an email when this drop goes live.',
-  'notify-product': 'This piece goes live with the next drop on {date} ET. Get an email when it does.',
-  'notify-next': 'The next drop goes live on {date} ET. Get an email when it does.',
-  'notify-email-phrase': 'Get an email',
-  'notify-email-phrase-member': 'Get an email at your account address',
-  'notify-button': 'Notify me',
-  'notify-placeholder': 'you@example.com',
-  'error-offline': 'We could not reach the server. Please check your connection and try again.',
-};
 
 function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: string; pathname?: string; elements?: FakeEl[]; home?: Record<string, string> }) {
   const elements = new Map((opts.elements || []).map((e) => [e.id!, e]));

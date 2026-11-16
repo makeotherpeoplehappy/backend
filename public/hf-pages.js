@@ -204,7 +204,7 @@
 
   function storyCard(s, withAction) {
     var kids = [];
-    if (s.photo) kids.push(el('img', { class: 'hfp-photo', src: HFB.base + '/media/' + s.photo.key, alt: s.photo.description, loading: 'lazy' }));
+    if (s.photo) kids.push(el('img', { class: 'hfp-photo', src: HFB.base + '/media/' + s.photo.key, alt: s.photo.description || copyText('story-photo-alt'), loading: 'lazy' }));
     if (s.video) {
       kids.push(el('div', { class: 'hfp-video' + (s.video.vertical ? ' is-vertical' : '') }, [
         el('iframe', { src: s.video.embed, title: copyText('story-video-title', { name: s.name || copyText('member-anon') }), loading: 'lazy', allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true }),

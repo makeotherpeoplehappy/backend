@@ -24,7 +24,7 @@ export { storySlug, storyCreateKey } from './stories';
 
 export async function sendSuggestion(env: Env, deps: Deps, member: Member, body: { text?: unknown }) {
   const text = cleanText(body.text, MAX_SUGGESTION);
-  if (text.length < 3) throw new HttpError(400, 'empty_suggestion', 'Please write your idea before sending it.');
+  if (text.length < 3) throw new HttpError(400, 'empty_suggestion', 'err-empty-suggestion');
   await consumeDaily(env, deps, member.id, 'suggestion');
   let id: number | null = null;
   try {

@@ -2,6 +2,7 @@ import { EMAIL_KINDS, type EmailKind } from './config';
 import type { Deps, Env } from './env';
 import { UpstreamError, base64url, callUpstream, hmac, retryAfterSeconds, timingSafeEqual } from './http';
 import type { Member } from './identity';
+import { siteWording, word, type Wording } from './wording';
 
 export interface EmailMessage {
   to: string;
@@ -39,36 +40,29 @@ export interface MemberEmailVars {
   actionUrl?: string;
 }
 
-const SIGN_OFF = '\n\nWith thanks,\nHappiness Foundation';
-
-function render(kind: EmailKind, member: Member, v: MemberEmailVars): { subject: string; body: string } {
-  const hi = member.first_name ? `Hi ${member.first_name},` : 'Hi,';
+// Every word of these emails is in the site's wording block in Webflow
+// ("email-..." keys); {name}-style parts are filled in here.
+function render(kind: EmailKind, member: Member, v: MemberEmailVars, w: Wording): { subject: string; body: string } {
+  const hi = member.first_name ? word(w, 'email-hi', { name: member.first_name }) : word(w, 'email-hi-anon');
   const link = v.actionUrl ? `\n\n${v.actionUrl}` : '';
+  const action = v.actionTitle;
+  const pick = (key: string) => word(w, action ? key : `${key}-untitled`, { action });
   switch (kind) {
     case 'invite_summary': {
       const names = v.joinedNames || [];
-      const who = names.length <= 1 ? names[0] || 'Someone' : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-      const verb = names.length > 1 ? 'are' : 'is';
+      const one = names.length <= 1;
+      const who = one ? names[0] || word(w, 'email-someone') : `${names.slice(0, -1).join(', ')} ${word(w, 'email-and')} ${names[names.length - 1]}`;
       return {
-        subject: names.length > 1 ? `${names.length} people joined your invite` : `${who} joined your invite`,
-        body: `${hi}\n\n${who} ${verb} in${v.actionTitle ? ` for "${v.actionTitle}"` : ''}.${link}`,
+        subject: one ? word(w, 'email-invite-subject-one', { name: who }) : word(w, 'email-invite-subject-many', { n: names.length }),
+        body: `${hi}\n\n${word(w, `email-invite-body-${one ? 'one' : 'many'}${action ? '' : '-untitled'}`, { name: who, names: who, action })}${link}`,
       };
     }
     case 'story_approved':
-      return {
-        subject: 'Your story is on the site',
-        body: `${hi}\n\nYour story${v.actionTitle ? ` about "${v.actionTitle}"` : ''} has been approved and is now on the site.${link}`,
-      };
+      return { subject: word(w, 'email-story-subject'), body: `${hi}\n\n${pick('email-story-body')}${link}` };
     case 'suggestion_live':
-      return {
-        subject: 'Your suggested action is live',
-        body: `${hi}\n\nThe action you suggested${v.actionTitle ? `, "${v.actionTitle}",` : ''} is now live for everyone to do.${link}`,
-      };
+      return { subject: word(w, 'email-suggestion-subject'), body: `${hi}\n\n${pick('email-suggestion-body')}${link}` };
     case 'pledge_reminder':
-      return {
-        subject: 'Your pledge is still open',
-        body: `${hi}\n\nA week ago you made a pledge with your order. Mark an action as done to keep it.${link}`,
-      };
+      return { subject: word(w, 'email-pledge-subject'), body: `${hi}\n\n${word(w, 'email-pledge-body')}${link}` };
   }
 }
 
@@ -77,14 +71,15 @@ export function wantsEmail(member: Member, kind: EmailKind): boolean {
 }
 
 /** Builds a member email with a one-click unsubscribe link, or null if the member turned it off. */
-export async function memberEmail(env: Env, member: Member, kind: EmailKind, vars: MemberEmailVars, baseUrl: string): Promise<EmailMessage | null> {
+export async function memberEmail(env: Env, deps: Deps, member: Member, kind: EmailKind, vars: MemberEmailVars, baseUrl: string): Promise<EmailMessage | null> {
   if (!wantsEmail(member, kind)) return null;
-  const { subject, body } = render(kind, member, vars);
+  const w = await siteWording(env, deps);
+  const { subject, body } = render(kind, member, vars, w);
   const offUrl = `${baseUrl}/api/notifications/off?t=${await signUnsubscribe(env, member.id, kind)}`;
   return {
     to: member.email!,
     subject,
-    text: `${body}${SIGN_OFF}\n\nTo stop these emails: ${offUrl}`,
+    text: `${body}\n\n${word(w, 'email-signoff')}\n${word(w, 'email-signoff-name')}\n\n${word(w, 'email-unsubscribe', { url: offUrl })}`,
     headers: { 'List-Unsubscribe': `<${offUrl}>`, 'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click' },
   };
 }

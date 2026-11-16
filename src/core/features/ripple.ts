@@ -2,6 +2,7 @@
 // actions led to N more". One mechanic: a record of one member's action
 // leading to another's.
 
+import { siteWording, word } from '../wording';
 import type { Deps, Env } from '../env';
 import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
@@ -58,15 +59,15 @@ export async function doneWithNames(env: Env, memberId: number, actionId: string
 
 export async function createInvite(env: Env, deps: Deps, member: Member, body: { actionId?: unknown; kind?: unknown; note?: unknown }, baseUrl: string) {
   const name = displayName(member);
-  if (!name) throw new HttpError(409, 'need_first_name', 'Add your first name so the person you invite knows who it is from.');
+  if (!name) throw new HttpError(409, 'need_first_name', 'err-need-first-name');
   const actionId = typeof body.actionId === 'string' ? body.actionId : '';
   const action = actionId ? await getAction(env, deps, actionId) : null;
-  if (!action || action.status !== 'published') throw new HttpError(404, 'action_not_found', 'This action is no longer available.');
+  if (!action || action.status !== 'published') throw new HttpError(404, 'action_not_found', 'err-action-not-found');
   const kind = body.kind === 'pass_it_on' ? 'pass_it_on' : 'with_me';
-  if (kind === 'with_me' && action.can_do_with_others !== 1) throw new HttpError(400, 'not_with_others', 'This action is done on your own. Use "Pass it on" instead.');
+  if (kind === 'with_me' && action.can_do_with_others !== 1) throw new HttpError(400, 'not_with_others', 'err-not-with-others');
   if (kind === 'pass_it_on') {
     const done = await env.DB.prepare(`SELECT 1 AS x FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first();
-    if (!done) throw new HttpError(403, 'not_done', 'Mark the action as done first, then pass it on.');
+    if (!done) throw new HttpError(403, 'not_done', 'err-pass-needs-done');
   }
   const note = typeof body.note === 'string' ? body.note.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) || null : null;
   let row = await env.DB.prepare(`SELECT code FROM invites WHERE inviter_id = ?1 AND action_id = ?2 AND kind = ?3`).bind(member.id, actionId, kind).first<{ code: string }>();
@@ -102,7 +103,7 @@ async function alternatives(env: Env, except: string) {
 
 export async function getInvite(env: Env, deps: Deps, code: string, member: Member | null) {
   const inv = await inviteRow(env, code);
-  if (!inv) throw new HttpError(404, 'invite_not_found', 'This invite link is not valid.');
+  if (!inv) throw new HttpError(404, 'invite_not_found', 'err-invite-not-found');
   const action = await getAction(env, deps, inv.actionId);
   const live = action?.status === 'published';
   let me: Record<string, unknown> | null = null;
@@ -143,10 +144,10 @@ async function forgetRipple(env: Env, memberId: number): Promise<void> {
 
 export async function joinInvite(env: Env, deps: Deps, member: Member, code: string) {
   const inv = await inviteRow(env, code);
-  if (!inv) throw new HttpError(404, 'invite_not_found', 'This invite link is not valid.');
-  if (inv.inviterId === member.id) throw new HttpError(409, 'own_invite', 'This is your invite. Share it with someone.');
+  if (!inv) throw new HttpError(404, 'invite_not_found', 'err-invite-not-found');
+  if (inv.inviterId === member.id) throw new HttpError(409, 'own_invite', 'err-own-invite');
   const action = await getAction(env, deps, inv.actionId);
-  if (!action || action.status !== 'published') throw new HttpError(410, 'action_removed', 'This action is no longer available.');
+  if (!action || action.status !== 'published') throw new HttpError(410, 'action_removed', 'err-action-removed');
   const now = iso(deps.now());
   await env.DB.prepare(
     `INSERT INTO invite_joins (invite_code, member_id, joined_at) VALUES (?1, ?2, ?3)
@@ -166,7 +167,7 @@ export async function joinInvite(env: Env, deps: Deps, member: Member, code: str
 
 export async function leaveInvite(env: Env, deps: Deps, member: Member, code: string) {
   const inv = await inviteRow(env, code);
-  if (!inv) throw new HttpError(404, 'invite_not_found', 'This invite link is not valid.');
+  if (!inv) throw new HttpError(404, 'invite_not_found', 'err-invite-not-found');
   const now = iso(deps.now());
   await env.DB.prepare(`UPDATE invite_joins SET left_at = ?3 WHERE invite_code = ?1 AND member_id = ?2 AND left_at IS NULL`).bind(code, member.id, now).run();
   const still = await env.DB.prepare(
@@ -222,7 +223,7 @@ export async function inviteSummaries(env: Env, deps: Deps, baseUrl: string) {
     const inviter = await env.DB.prepare(`SELECT * FROM members WHERE id = ?1 AND deleted_at IS NULL`).bind(inviterId).first<Member>();
     const names = [...new Set(joins.map((j) => j.name || 'Someone'))];
     const titles = [...new Set(joins.map((j) => j.title).filter(Boolean))] as string[];
-    const msg = inviter ? await memberEmail(env, inviter, 'invite_summary', { joinedNames: names, actionTitle: titles.length === 1 ? titles[0] : undefined, actionUrl: `${site}/account` }, baseUrl) : null;
+    const msg = inviter ? await memberEmail(env, deps, inviter, 'invite_summary', { joinedNames: names, actionTitle: titles.length === 1 ? titles[0] : undefined, actionUrl: `${site}/account` }, baseUrl) : null;
     if (msg) {
       stmts.push(enqueue(env, deps, `invite-summary:${inviterId}:${now}`, { op: 'email.send', message: msg }, inviterId));
       sent++;
@@ -246,14 +247,19 @@ export async function invitePreview(env: Env, deps: Deps, code: string, baseUrl:
   if (!inv) return Response.redirect(`${site}/actions`, 302);
   const action = await getAction(env, deps, inv.actionId).catch(() => null);
   const name = inv.inviterDeleted ? null : inv.inviterName;
-  const title = action?.status === 'published' ? `${name || 'Someone'} ${inv.kind === 'with_me' ? 'wants to do this with you' : 'is passing this on to you'}: ${action.title}` : 'An invite from Happiness Foundation';
-  const description = (!inv.inviterDeleted && inv.note) || action?.short_answer || 'Small actions that make other people happy.';
+  // Worded in Webflow: the same texts as the invite page, plus the preview's own.
+  const w = await siteWording(env, deps);
+  const title =
+    action?.status === 'published'
+      ? word(w, inv.kind === 'with_me' ? 'inv-share-with' : 'inv-share-pass', { name: name || word(w, 'inv-someone'), title: action.title })
+      : word(w, 'invite-preview-title');
+  const description = (!inv.inviterDeleted && inv.note) || action?.short_answer || word(w, 'site-tagline');
   const image = `${baseUrl}/share-invite.png`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${esc(title)}</title>
 <meta name="robots" content="noindex">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="Happiness Foundation">
+<meta property="og:site_name" content="${esc(word(w, 'site-name'))}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:image" content="${esc(image)}">

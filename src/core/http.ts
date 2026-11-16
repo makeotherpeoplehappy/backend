@@ -1,3 +1,8 @@
+/**
+ * An error answered to the caller. `message` is either a wording key
+ * ("err-...", worded from the site's wording block in Webflow) or, for
+ * staff-only and technical errors, the text itself.
+ */
 export class HttpError extends Error {
   constructor(
     public status: number,
@@ -31,8 +36,9 @@ export function json(body: unknown, status = 200, headers: Record<string, string
   });
 }
 
-export function errorResponse(err: HttpError): Response {
-  return json({ error: err.code, message: err.message }, err.status, err.headers);
+export function errorResponse(err: HttpError, wording: Record<string, string> = {}): Response {
+  const message = err.message.startsWith('err-') ? wording[err.message] || wording['error-something'] || '' : err.message;
+  return json({ error: err.code, message }, err.status, err.headers);
 }
 
 export async function readJson<T = Record<string, unknown>>(req: Request): Promise<T> {
@@ -43,7 +49,7 @@ export async function readJson<T = Record<string, unknown>>(req: Request): Promi
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) throw new Error('not an object');
     return parsed as T;
   } catch {
-    throw new HttpError(400, 'invalid_json', 'The request could not be read.');
+    throw new HttpError(400, 'invalid_json', 'err-invalid-json');
   }
 }
 

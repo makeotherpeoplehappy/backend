@@ -126,5 +126,5 @@ export async function requireMember(req: Request, env: Env, deps: Deps): Promise
 }
 
 function signInRequired(): HttpError {
-  return new HttpError(401, 'signin_required', 'Please sign in to continue.');
+  return new HttpError(401, 'signin_required', 'err-signin-required');
 }

@@ -60,13 +60,13 @@ export async function updateSettings(env: Env, deps: Deps, member: Member, body:
   const values: unknown[] = [];
   if (body.firstName !== undefined) {
     const name = typeof body.firstName === 'string' ? body.firstName.trim().replace(/\s+/g, ' ') : '';
-    if (!name || name.length > 40 || /[<>@]/.test(name)) throw new HttpError(400, 'invalid_name', 'Please enter a first name of up to 40 letters.');
+    if (!name || name.length > 40 || /[<>@]/.test(name)) throw new HttpError(400, 'invalid_name', 'err-invalid-name');
     values.push(name);
     sets.push(`share_name = ?${values.length}`);
   }
   for (const [kind, value] of Object.entries(changes)) {
     if (!(kind in EMAIL_KINDS) || typeof value !== 'boolean') {
-      throw new HttpError(400, 'invalid_setting', 'That setting could not be saved.');
+      throw new HttpError(400, 'invalid_setting', 'err-invalid-setting');
     }
     values.push(value ? 1 : 0);
     sets.push(`${EMAIL_KINDS[kind as EmailKind]} = ?${values.length}`);

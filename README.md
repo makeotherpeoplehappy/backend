@@ -36,7 +36,8 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `SHOPIFY_CLIENT_SECRET` | yes | That app's client secret. The backend exchanges ID and secret for a 24-hour Admin API token, and uses the secret to verify webhooks |
 | `SHOPIFY_ADMIN_API_VERSION` | no | Optional, default `2026-07` |
 | `WEBFLOW_API_TOKEN` | yes | Site API token with CMS read and write |
-| `RESEND_API_KEY` | yes | Resend API key for happiness.foundation |
+| `RESEND_API_KEY` | yes | Resend API key for happiness.foundation (sending access only) |
+| `RESEND_SETUP_KEY` | no | Temporary Resend full-access key for the one-time email template setup on /lab. Delete the key in Resend and this setting afterwards. |
 | `EMAIL_FROM` | no | e.g. `Happiness Foundation <hello@happiness.foundation>` |
 | `ERROR_EMAIL_TO` | no | Where error reports go |
 | `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key |

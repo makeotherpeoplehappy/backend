@@ -203,7 +203,7 @@ export async function syncOneProduct(env: Env, deps: Deps, id: string | number, 
 // Shopify webhook subscriptions for this backend.
 // ---------------------------------------------------------------------------
 
-const TOPICS = ['PRODUCTS_CREATE', 'PRODUCTS_UPDATE', 'PRODUCTS_DELETE', 'CUSTOMERS_DELETE'] as const;
+const TOPICS = ['PRODUCTS_CREATE', 'PRODUCTS_UPDATE', 'PRODUCTS_DELETE', 'CUSTOMERS_DELETE', 'ORDERS_CREATE', 'ORDERS_UPDATED', 'ORDERS_CANCELLED', 'REFUNDS_CREATE'] as const;
 
 /** Makes sure Shopify sends product and customer-deletion events to this backend. */
 export async function ensureShopifyWebhooks(env: Env, deps: Deps, callbackUrl: string) {

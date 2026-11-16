@@ -46,6 +46,14 @@ export class FakeServices {
   customers: FakeCustomer[] = [];
   products: FakeProduct[] = [];
   webhookSubs: { id: string; topic: string; uri: string }[] = [];
+  /** Shopify orders, in the Admin GraphQL shape. */
+  orders: Record<string, unknown>[] = [];
+  /** Inventory by product id: null means not tracked. */
+  inventory = new Map<string, number | null>();
+  publications = ['gid://shopify/Publication/1', 'gid://shopify/Publication/2'];
+  /** productId -> publishDate per publication, or null when unpublished. */
+  published = new Map<string, Record<string, string | null>>();
+  publicationsAllowed = true;
   /** Shopify customers created or updated by drop sign-ups, by email. */
   marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
@@ -67,7 +75,11 @@ export class FakeServices {
   }
 
   collection(id: string): FakeItem[] {
-    if (!this.items.has(id)) this.items.set(id, []);
+    if (!this.items.has(id)) {
+      this.items.set(id, []);
+      if (id === 'times') this.items.get(id)!.push({ id: 'time5minutes0000000000000'.slice(0, 24), isDraft: false, live: true, fieldData: { name: '5 minutes', slug: '5-minutes' } });
+      if (id === 'costs') this.items.get(id)!.push({ id: 'costfree0000000000000000', isDraft: false, live: true, fieldData: { name: 'Free', slug: 'free' } });
+    }
     return this.items.get(id)!;
   }
 
@@ -169,6 +181,28 @@ export class FakeServices {
         return j({ data: { webhookSubscriptionCreate: { webhookSubscription: { id: sub.id }, userErrors: [] } } });
       }
       if (q.query.includes('webhookSubscriptions')) return j({ data: { webhookSubscriptions: { nodes: this.webhookSubs } } });
+      if (q.query.includes('tracksInventory')) {
+        const inv = this.inventory.get(String(q.variables.id));
+        return j({ data: { product: inv === undefined && !this.inventory.has(String(q.variables.id)) ? null : { tracksInventory: inv !== null, totalInventory: inv ?? 0 } } });
+      }
+      if (q.query.includes('publications(')) {
+        if (!this.publicationsAllowed) return j({ errors: [{ message: 'Access denied for publications field. Required access: `read_publications` access scope.' }] });
+        return j({ data: { publications: { nodes: this.publications.map((id) => ({ id })) } } });
+      }
+      if (q.query.includes('publishableUnpublish')) {
+        const rec = this.published.get(String(q.variables.id)) || {};
+        for (const p of q.variables.input as { publicationId: string }[]) rec[p.publicationId] = null;
+        this.published.set(String(q.variables.id), rec);
+        return j({ data: { publishableUnpublish: { userErrors: [] } } });
+      }
+      if (q.query.includes('publishablePublish')) {
+        const rec = this.published.get(String(q.variables.id)) || {};
+        for (const p of q.variables.input as { publicationId: string; publishDate: string }[]) rec[p.publicationId] = p.publishDate;
+        this.published.set(String(q.variables.id), rec);
+        return j({ data: { publishablePublish: { userErrors: [] } } });
+      }
+      if (q.query.includes('order(id:')) return j({ data: { order: this.orders.find((o) => o.id === q.variables.id) || null } });
+      if (q.query.includes('orders(')) return j({ data: { orders: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: this.orders } } });
       if (q.query.includes('product(id:')) {
         const p = this.products.find((x) => x.id === q.variables.id);
         return j({ data: { product: p ? productNode(p) : null } });
@@ -210,6 +244,16 @@ export class FakeServices {
         items.push(it);
         return j(it, 202);
       }
+      const coll = /^\/v2\/collections\/([^/]+)$/.exec(url.pathname);
+      if (coll && method === 'GET') {
+        if (coll[1] !== CMS.actions.id) return j({ fields: [] });
+        return j({
+          fields: [
+            { slug: 'time', type: 'Reference', validations: { collectionId: 'times' } },
+            { slug: 'cost', type: 'Reference', validations: { collectionId: 'costs' } },
+          ],
+        });
+      }
       const m = /^\/v2\/collections\/([^/]+)\/items(?:\/([^/]+))?(?:\/(live))?$/.exec(url.pathname);
       if (!m) return j({ message: 'not found' }, 404);
       const [, cid, rawId, rawLive] = m;
@@ -226,6 +270,10 @@ export class FakeServices {
       if (method === 'GET' && !itemId) {
         const slug = url.searchParams.get('slug');
         return j({ items: items.filter((i) => !slug || i.fieldData.slug === slug) });
+      }
+      if (method === 'GET' && itemId && !live) {
+        const it = items.find((i) => i.id === itemId);
+        return it ? j(it) : j({ message: 'not found' }, 404);
       }
       if (method === 'GET' && itemId && live) {
         const it = items.find((i) => i.id === itemId && i.live);

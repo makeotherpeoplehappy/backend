@@ -94,10 +94,10 @@
         await sleep(800 * (attempt + 1));
         continue;
       }
-      // 409: the first click is still being saved; 503: a service is briefly down.
-      if (res.status === 409 || res.status === 503) { await sleep(800 * (attempt + 1)); continue; }
       var data = null;
       try { data = await res.json(); } catch (e) {}
+      // The first click is still being saved, or a service is briefly down: try again.
+      if ((res.status === 409 && data && data.error === 'in_progress') || res.status === 503) { await sleep(800 * (attempt + 1)); continue; }
       return { ok: res.ok, status: res.status, data: data };
     }
     return { ok: false, status: 0, data: { error: 'network', message: 'We could not reach the server. Please check your connection and try again.' } };
@@ -159,7 +159,7 @@
     } else {
       // The server could not save it (for example the bot check failed):
       // keep it in this browser and finish it after sign-in instead.
-      store(LOCAL_KEY, JSON.stringify({ kind: intent.kind, actionId: intent.actionId, returnTo: intent.returnTo, key: newKey() }));
+      store(LOCAL_KEY, JSON.stringify({ kind: intent.kind, actionId: intent.actionId, inviteCode: intent.inviteCode, returnTo: intent.returnTo, key: newKey() }));
     }
     if (window.HF && window.HF.signin) window.HF.signin();
     return r;
@@ -170,6 +170,13 @@
     var saved;
     try { saved = JSON.parse(read(LOCAL_KEY) || 'null'); } catch (e) { saved = null; }
     if (!saved) return null;
+    if (saved.kind === 'join' && saved.inviteCode) {
+      var j = await call('/api/invites/' + encodeURIComponent(saved.inviteCode) + '/join', { method: 'POST', key: saved.key });
+      if (j.status !== 401) store(LOCAL_KEY, null);
+      document.dispatchEvent(new CustomEvent('hfb:resumed', { detail: { kind: 'join', inviteCode: saved.inviteCode, result: j.data } }));
+      if (saved.returnTo && saved.returnTo !== location.pathname + location.search) location.href = saved.returnTo;
+      return j;
+    }
     if (saved.kind === 'return' || !saved.actionId) {
       store(LOCAL_KEY, null);
       if (saved.returnTo && saved.returnTo !== location.pathname + location.search) location.href = saved.returnTo;
@@ -348,7 +355,15 @@
   }
   waitFor(function () { return !!window.HF; }, 10000).then(function () { return dropNotify(); }).catch(function () {});
 
-  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify };
+  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor };
+
+  // Page features (action page, account, stories, invites, drops) live in one
+  // script served by the backend, so they ship with the backend and are tested.
+  var pages = document.createElement('script');
+  pages.src = BASE + '/hf-pages.js';
+  pages.defer = true;
+  var parent = document.head || document.body;
+  if (parent && !(window.HFB_NO_PAGES)) parent.appendChild(pages);
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
   else resume();

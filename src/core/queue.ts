@@ -22,16 +22,34 @@ export type QueuedOp =
     }
   | { op: 'webflow.update'; collectionId: string; itemId?: string; slug?: string; fieldData: Record<string, unknown> }
   | { op: 'webflow.delete'; collectionId: string; itemId?: string; slug?: string; afterCreate?: string }
+  | { op: 'webflow.updateLive'; collectionId: string; itemId: string; fieldData: Record<string, unknown> }
+  | { op: 'webflow.publish'; collectionId: string; itemId?: string; slug?: string; afterCreate?: string }
+  | { op: 'webflow.removeFromLive'; collectionId: string; itemId?: string; slug?: string; afterCreate?: string }
   | { op: 'email.send'; message: EmailMessage }
-  | { op: 'shopify.dropSignup'; email: string; firstName: string | null; tag: string };
+  | { op: 'shopify.dropSignup'; email: string; firstName: string | null; tag: string }
+  /** A named piece of feature work, retried like any other write. */
+  | { op: 'task'; name: string; target: Target; args: Record<string, unknown> };
 
-const TARGET_OF: Record<QueuedOp['op'], Target> = {
+type TaskFn = (env: Env, deps: Deps, args: Record<string, unknown>) => Promise<'ok' | 'defer' | void>;
+const TASKS = new Map<string, TaskFn>();
+
+/** Features register the work they queue, so the queue needs no import of them. */
+export function registerTask(name: string, fn: TaskFn): void {
+  TASKS.set(name, fn);
+}
+
+const TARGET_OF: Record<Exclude<QueuedOp['op'], 'task'>, Target> = {
   'webflow.create': 'webflow',
   'webflow.update': 'webflow',
   'webflow.delete': 'webflow',
+  'webflow.updateLive': 'webflow',
+  'webflow.publish': 'webflow',
+  'webflow.removeFromLive': 'webflow',
   'email.send': 'email',
   'shopify.dropSignup': 'shopify',
 };
+
+const targetOf = (op: QueuedOp): Target => (op.op === 'task' ? op.target : TARGET_OF[op.op]);
 
 // Writes per drain run, per service. Webflow's CMS API allows 60 requests a
 // minute on most plans; a create can take two requests.
@@ -46,7 +64,7 @@ export function enqueue(env: Env, deps: Deps, dedupeKey: string, op: QueuedOp, m
     `INSERT INTO outbox (target, op, payload, dedupe_key, member_id, status, attempts, next_attempt_at, created_at, updated_at)
      VALUES (?1, ?2, ?3, ?4, ?5, 'pending', 0, ?6, ?6, ?6)
      ON CONFLICT (dedupe_key) DO NOTHING`,
-  ).bind(TARGET_OF[op.op], op.op, JSON.stringify(op), dedupeKey, memberId ?? null, now);
+  ).bind(targetOf(op), op.op, JSON.stringify(op), dedupeKey, memberId ?? null, now);
 }
 
 interface OutboxRow {
@@ -177,8 +195,38 @@ function redact(payload: string): string {
   return payload.replace(/"email"\s*:\s*"[^"]*"/g, '"email":"[hidden]"').replace(/"to"\s*:\s*"[^"]*"/g, '"to":"[hidden]"').slice(0, 1500);
 }
 
+async function waitingFor(env: Env, dedupeKey?: string): Promise<boolean> {
+  if (!dedupeKey) return false;
+  const create = await env.DB.prepare(`SELECT status FROM outbox WHERE dedupe_key = ?1`).bind(dedupeKey).first<{ status: string }>();
+  return !!create && (create.status === 'pending' || create.status === 'running');
+}
+
+async function itemIdOf(env: Env, deps: Deps, op: { collectionId: string; itemId?: string; slug?: string }): Promise<string | undefined> {
+  return op.itemId || (op.slug ? (await webflow.findItemBySlug(env, deps, op.collectionId, op.slug))?.id : undefined);
+}
+
 async function run(env: Env, deps: Deps, op: QueuedOp, row: OutboxRow): Promise<'ok' | 'defer'> {
   switch (op.op) {
+    case 'webflow.updateLive':
+      await webflow.updateLiveItem(env, deps, op.collectionId, op.itemId, op.fieldData);
+      return 'ok';
+    case 'webflow.publish': {
+      if (await waitingFor(env, op.afterCreate)) return 'defer';
+      const id = await itemIdOf(env, deps, op);
+      if (id) await webflow.publishItems(env, deps, op.collectionId, [id]);
+      return 'ok';
+    }
+    case 'webflow.removeFromLive': {
+      if (await waitingFor(env, op.afterCreate)) return 'defer';
+      const id = await itemIdOf(env, deps, op);
+      if (id) await webflow.removeFromLive(env, deps, op.collectionId, id);
+      return 'ok';
+    }
+    case 'task': {
+      const fn = TASKS.get(op.name);
+      if (!fn) throw new Error(`Unknown queued task ${op.name}`);
+      return (await fn(env, deps, op.args)) === 'defer' ? 'defer' : 'ok';
+    }
     case 'webflow.create': {
       const item = await webflow.createItem(env, deps, op.collectionId, op.fieldData, op.isDraft ?? true);
       if (op.saveIdTo) {

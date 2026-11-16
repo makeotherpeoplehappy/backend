@@ -7,6 +7,8 @@ import type { Member } from '../identity';
 import * as webflow from '../webflow';
 import { enqueue } from '../queue';
 import { forgetDrops } from './drops';
+import { rowFromItem, upsertStatement } from './actions';
+import { draftActionDeleted, notifySuggestionsLive, reviewItem } from './review';
 
 // ---------------------------------------------------------------------------
 // Webflow webhooks. The message is only a hint that something changed: the
@@ -16,7 +18,7 @@ import { forgetDrops } from './drops';
 
 const WEBHOOK_LIMIT_PER_MINUTE = 120;
 
-export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<string, unknown>) {
+export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<string, unknown>, baseUrl: string) {
   const minute = `wfhook:${iso(deps.now()).slice(0, 16)}`;
   const seen = Number((await env.CACHE.get(minute)) || '0');
   if (seen >= WEBHOOK_LIMIT_PER_MINUTE) return { ok: true, ignored: 'rate limit' };
@@ -26,6 +28,7 @@ export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<st
   const payload = (body.payload || {}) as Record<string, unknown>;
   const collectionId = String(payload.collectionId || '');
   const itemId = String(payload.id || payload.itemId || '');
+  const validId = /^[a-f0-9]{24}$/.test(itemId);
 
   if (trigger === 'site_publish') {
     // Everything may have changed: run the hourly mirror at the next tick.
@@ -37,31 +40,24 @@ export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<st
     await forgetDrops(env);
     return { ok: true, refreshed: 'drops' };
   }
-  if (collectionId === CMS.actions.id && /^[a-f0-9]{24}$/.test(itemId)) {
+  if ((collectionId === CMS.suggestions.id || collectionId === CMS.stories.id) && validId) {
+    const item = await webflow.getItem(env, deps, collectionId, itemId);
+    const change = item ? await reviewItem(env, deps, collectionId, item, baseUrl) : null;
+    if (collectionId === CMS.suggestions.id) await notifySuggestionsLive(env, deps, baseUrl);
+    return { ok: true, reviewed: change };
+  }
+  if (collectionId === CMS.actions.id && validId) {
     const item = await webflow.getLiveItem(env, deps, CMS.actions.id, itemId);
     const now = iso(deps.now());
     if (!item) {
       await env.DB.prepare(`UPDATE actions SET status = 'removed', synced_at = ?2 WHERE cms_item_id = ?1`).bind(itemId, now).run();
       await env.CACHE.delete(`count:${itemId}`);
+      // A draft made from a suggestion and deleted before publishing.
+      if (!(await webflow.getItem(env, deps, CMS.actions.id, itemId))) await draftActionDeleted(env, deps, itemId);
       return { ok: true, action: itemId, live: false };
     }
-    const f = item.fieldData || {};
-    const withIds = Array.isArray(f['do-it-with']) ? (f['do-it-with'] as string[]) : [];
-    await env.DB.prepare(
-      `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6)
-       ON CONFLICT (cms_item_id) DO UPDATE SET slug = excluded.slug, title = excluded.title, short_answer = excluded.short_answer,
-         can_do_with_others = excluded.can_do_with_others, status = 'published', synced_at = excluded.synced_at`,
-    )
-      .bind(
-        item.id,
-        String(f.slug || ''),
-        String(f.name || ''),
-        typeof f['short-answer'] === 'string' ? f['short-answer'] : null,
-        withIds.some((id) => id !== CMS.actions.onMyOwnCompanionId) ? 1 : 0,
-        now,
-      )
-      .run();
+    await upsertStatement(env, rowFromItem(item, now)).run();
+    await notifySuggestionsLive(env, deps, baseUrl);
     return { ok: true, action: itemId, live: true };
   }
   return { ok: true, ignored: trigger || 'unknown' };

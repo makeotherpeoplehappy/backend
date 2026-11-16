@@ -210,6 +210,7 @@ describe('/lab KPIs', () => {
     h.fake.signIn('shcat_ben', { email: 'ben@example.com' });
     await h.request('POST', '/api/actions/compliment-a-stranger/done', { token: 'shcat_ana' });
     await h.request('POST', '/api/actions/compliment-a-stranger/done', { token: 'shcat_ben' });
+    h.clock.advance(24 * 60 * 60 * 1000);
     await h.request('POST', '/api/actions/compliment-a-stranger/done', { token: 'shcat_ben' });
     await h.request('PUT', '/api/actions/compliment-a-stranger/like', { token: 'shcat_ana', body: { liked: true } });
     await notify({ drop: 'drop-01', email: 'v@example.com' }, { headers: human });
@@ -217,7 +218,10 @@ describe('/lab KPIs', () => {
     expect(k.impact).toMatchObject({ peopleMadeHappy: 3, peopleMadeHappy7d: 3, actionsEverDone: 1 });
     expect(k.engagement).toMatchObject({ members: 2, activeMembers7d: 2, likes: 1, dropSignups: 1 });
     expect(k.topActions[0]).toMatchObject({ title: 'Compliment a stranger', slug: 'compliment-a-stranger', people: 2, times: 3 });
-    expect(k.daily).toEqual([{ day: '2026-11-16', done: 3 }]);
+    expect(k.daily).toEqual([
+      { day: '2026-11-16', done: 2 },
+      { day: '2026-11-17', done: 1 },
+    ]);
     expect(k.drops).toEqual([{ drop: 'drop-01', signups: 1 }]);
   });
 });

@@ -35,6 +35,23 @@
   }
   function status(cls) { return el('p', { class: cls || 'hfp-status', role: 'status', 'aria-live': 'polite' }); }
   function plural(n, one, many) { return n === 1 ? one : many; }
+  // Text kept in Webflow. [data-hf-show="x"] is shown once the script turns it on
+  // (the site head hides it until then), [data-hf-fill="x"] receives data, and
+  // [data-hf-copy="x"] holds wording the script reads but never shows.
+  function showOnly(root, key) {
+    root.querySelectorAll('[data-hf-show]').forEach(function (e) {
+      if (e.getAttribute('data-hf-show') === key) e.setAttribute('data-hf-on', ''); else e.removeAttribute('data-hf-on');
+    });
+  }
+  function turnOn(e) { if (e) e.setAttribute('data-hf-on', ''); return e; }
+  function slot(root, key) { return root.querySelector('[data-hf-fill="' + key + '"]'); }
+  function fillText(root, key, text) {
+    var e = slot(root, key);
+    if (!e) return null;
+    if (text) e.textContent = text; else drop(e);
+    return text ? e : null;
+  }
+  function copyText(key) { var e = document.querySelector('[data-hf-copy="' + key + '"]'); return e ? e.textContent.trim() : ''; }
   function day(iso) { try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return ''; } }
   function signedIn() { return !!(window.HF && HF.token && HF.token()); }
   function wait(test, ms) {
@@ -853,11 +870,17 @@
   async function dropHero() {
     var count = $('hf-drop-count');
     if (!count || $('hfp-drop-facts')) return;
+    // "Coming soon", "Out now" and "Sold out" are Webflow elements in the hero; show the one
+    // for the drop's state: the CMS status at once, then the backend's (stock, launch time).
+    var hero = count.parentNode;
+    var cms = $('hf-drop-status');
+    if (cms && cms.textContent.trim()) showOnly(hero, cms.textContent.trim().toLowerCase().replace(/ /g, '_'));
     var m = /^\/drops\/([a-z0-9-]+)/.exec(location.pathname);
     await wait(function () { return window.HFB; }, 10000);
     var r = await HFB.call('/api/drops/state' + (m ? '?drop=' + m[1] : ''), { auth: false });
     if (!r.ok) return;
     var d = r.data;
+    if (d.status && d.status !== 'unknown') showOnly(hero, d.status);
     var facts = el('p', { id: 'hfp-drop-facts', class: 'hfp-muted' });
     var parts = [];
     if (d.status === 'live' && d.left !== null && d.quantity) parts.push(d.left + ' of ' + d.quantity + ' left');
@@ -924,7 +947,9 @@
   /** A drop's own page: every piece in the drop, right there. */
   async function dropPage() {
     var m = /^\/drops\/([a-z0-9-]+)\/?$/.exec(location.pathname);
-    if (!m || $('hfp-pieces')) return;
+    var box = $('hfp-pieces'); // "The pieces" heading and its line are in Webflow, inside the drop's box
+    if (!m || !box || box.getAttribute('data-hfp')) return;
+    box.setAttribute('data-hfp', '1');
     await wait(function () { return window.HFB; }, 10000);
     var r = await HFB.call('/api/drops/state?drop=' + m[1], { auth: false });
     var upcoming = r.ok && r.data.status === 'upcoming';
@@ -934,15 +959,11 @@
     var shop = await HFB.call('/api/shop', { auth: false });
     var all = shop.ok ? [shop.data.current].concat(shop.data.past || []).filter(Boolean) : [];
     var found = all.filter(function (d) { return d.drop === m[1]; })[0];
-    var box = el('section', { id: 'hfp-pieces', class: 'hfp-shop-section', 'aria-labelledby': 'hfp-pieces-h' }, [
-      el('h2', { id: 'hfp-pieces-h', text: 'The pieces' }),
-      // Before launch the hero already says when the drop goes live, so no line here.
-      upcoming ? null : el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
-      found ? grid(found.products, found.status === 'live') : collectionGrid(m[1], upcoming),
-    ]);
-    var hero = document.querySelector('.hf-drop');
-    // Inside the drop's box, full width under the image and text (.hf-drop wraps).
-    if (hero) { box.style.cssText = 'flex:1 1 100%;margin:0'; hero.appendChild(box); } else { (document.querySelector('footer') || document.body).insertAdjacentElement('beforebegin', box); }
+    box.classList.add('hfp-shop-section');
+    box.style.cssText = 'flex:1 1 100%;margin:0'; // full width under the image and text (.hf-drop wraps)
+    // Before launch the hero already says when the drop goes live, so the line under the heading waits.
+    if (!upcoming) showOnly(box, 'live');
+    box.appendChild(found ? grid(found.products, found.status === 'live') : collectionGrid(m[1], upcoming));
     editionLabels(box);
   }
   function hideIfEmpty(sec) {
@@ -1030,50 +1051,68 @@
     var now = r.data.availableNow || [];
     document.head.appendChild(el('style', { text: GRID_CSS + '.hfp-card-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#eee}' }));
     root.innerHTML = '<shopify-store store-domain="' + STORE + '" country="US" language="en"></shopify-store><shopify-cart id="hf-cart"></shopify-cart>';
-    if (cur) {
+    // The sections and their wording are Webflow elements under the shop (hidden until shown
+    // here); this fills in the data and shows the sections that have something in them.
+    var dropBox = $('hfp-shop-drop');
+    if (cur && dropBox) {
       var facts = [];
       if (cur.status === 'live' && cur.left !== null && cur.quantity) facts.push(cur.left + ' of ' + cur.quantity + ' left');
       if (cur.pledges && cur.pledges.made > 0) facts.push(cur.pledges.made + ' ' + plural(cur.pledges.made, 'pledge', 'pledges') + ' made, ' + cur.pledges.kept + ' kept');
       // The drop and its pieces sit in one box, apart from any other products below.
-      var drop = el('section', { class: 'hfp-shop-section hf-box', id: 'hfp-shop-drop', style: 'margin-top:0', 'aria-labelledby': 'hfp-shop-drop-h' }, [
-        cur.status === 'live' ? el('p', { class: 'hf-drop-label', text: 'Out now' }) : null,
-        el('h2', { id: 'hfp-shop-drop-h', style: 'margin-top:0', text: cur.name }),
-        cur.statement ? el('p', { class: 'hf-drop-quote', text: cur.statement }) : null,
-        el('p', { class: 'hfp-muted', id: 'hfp-shop-drop-details', text: cur.detailsLine }),
-        facts.length ? el('p', { class: 'hfp-muted', text: facts.join(' · ') }) : null,
-        el('p', null, [el('a', { class: 'hf-story-link', href: '/drops/' + cur.drop, text: 'See the pieces →' })]),
-        // Before launch the pieces are shown on the drop page only; the shop lists them once the drop is out.
-        cur.products.length && cur.status === 'live' ? grid(cur.products, true) : null,
-      ]);
-      root.appendChild(drop);
+      dropBox.classList.add('hfp-shop-section');
+      dropBox.style.marginTop = '0';
+      showOnly(dropBox, cur.status);
+      var h = fillText(dropBox, 'name', cur.name);
+      if (h) h.style.marginTop = '0';
+      fillText(dropBox, 'statement', cur.statement);
+      var details = fillText(dropBox, 'details', cur.detailsLine);
+      if (details) details.classList.add('hfp-muted');
+      var f = fillText(dropBox, 'facts', facts.join(' · '));
+      if (f) f.classList.add('hfp-muted');
+      var link = slot(dropBox, 'link');
+      if (link) link.setAttribute('href', '/drops/' + cur.drop);
+      var dropGrid = slot(dropBox, 'grid');
+      // Before launch the pieces are shown on the drop page only; the shop lists them once the drop is out.
+      if (dropGrid) { if (cur.products.length && cur.status === 'live') dropGrid.appendChild(grid(cur.products, true)); else drop(dropGrid); }
+      turnOn(dropBox);
       wait(function () { return $('hfb-notify'); }, 8000).then(function (found) {
         if (!found) return;
-        var f = $('hfb-notify');
-        var lab = f.querySelector('label');
-        if (lab) lab.textContent = 'Get an email when the drop goes live.'; // the same for members and visitors
-        $('hfp-shop-drop-details').insertAdjacentElement('afterend', f);
+        var form = $('hfb-notify');
+        var lab = form.querySelector('label');
+        var wording = copyText('notify-label'); // the same for members and visitors
+        if (lab && wording) lab.textContent = wording;
+        (details || dropBox.firstElementChild).insertAdjacentElement('afterend', form);
       });
     }
-    if (now.length) {
-      root.appendChild(el('section', { class: 'hfp-shop-section', 'aria-labelledby': 'hfp-shop-now-h' }, [
-        el('h2', { id: 'hfp-shop-now-h', style: cur ? '' : 'margin-top:0', text: 'Available now' }),
-        el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
-        grid(now, true),
-      ]));
+    var nowBox = $('hfp-shop-now');
+    if (now.length && nowBox) {
+      nowBox.classList.add('hfp-shop-section');
+      if (!cur) nowBox.firstElementChild.style.marginTop = '0';
+      var line = nowBox.querySelector('p');
+      if (line) line.classList.add('hfp-muted');
+      var nowGrid = slot(nowBox, 'grid');
+      if (nowGrid) nowGrid.appendChild(grid(now, true));
+      turnOn(nowBox);
     }
+    var pastBox = $('hfp-shop-past');
+    var template = pastBox && pastBox.querySelector('[data-hf-template="past-drop"]');
     var withPieces = past.filter(function (d) { return d.products && d.products.length; });
-    if (withPieces.length) {
-      var pastBox = el('section', { class: 'hfp-shop-section hfp-past', 'aria-labelledby': 'hfp-shop-past-h' }, [el('h2', { id: 'hfp-shop-past-h', text: 'Past drops' })]);
+    if (template) {
+      drop(template);
       withPieces.forEach(function (d) {
-        var line = d.pledges && d.pledges.made ? d.pledges.made + ' ' + plural(d.pledges.made, 'pledge', 'pledges') + ' made, ' + d.pledges.kept + ' kept' : 'Sold out';
-        pastBox.appendChild(el('div', null, [
-          el('h3', { text: d.name }),
-          d.statement ? el('p', { class: 'hf-drop-quote', style: 'font-size:18px', text: d.statement }) : null,
-          el('p', { class: 'hfp-muted', text: line }),
-          grid(d.products, false),
-        ]));
+        var item = template.cloneNode(true);
+        item.removeAttribute('data-hf-template');
+        fillText(item, 'name', d.name);
+        var q = fillText(item, 'statement', d.statement);
+        if (q) q.style.fontSize = '18px';
+        // "Sold out" (Webflow's text) unless there are pledges to count.
+        var pl = slot(item, 'pledges');
+        if (pl) { pl.classList.add('hfp-muted'); if (d.pledges && d.pledges.made) pl.textContent = d.pledges.made + ' ' + plural(d.pledges.made, 'pledge', 'pledges') + ' made, ' + d.pledges.kept + ' kept'; }
+        var g = slot(item, 'grid');
+        if (g) g.appendChild(grid(d.products, false));
+        pastBox.appendChild(item);
       });
-      root.appendChild(pastBox);
+      if (withPieces.length) { pastBox.classList.add('hfp-shop-section', 'hfp-past'); turnOn(pastBox); }
     }
     document.documentElement.setAttribute('data-hfp-shop', 'ready');
   }

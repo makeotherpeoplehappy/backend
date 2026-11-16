@@ -13,6 +13,7 @@ import { getAction } from './actions';
 export const displayName = (m: { share_name?: string | null; first_name?: string | null }) => m.share_name || m.first_name || null;
 
 const CODE = /^[A-Za-z0-9]{10}$/;
+export const NOTE_MAX = 280;
 const ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
 
 function newCode(): string {
@@ -55,7 +56,7 @@ export async function doneWithNames(env: Env, memberId: number, actionId: string
   return r.results.map((x) => x.name).filter((x): x is string => !!x);
 }
 
-export async function createInvite(env: Env, deps: Deps, member: Member, body: { actionId?: unknown; kind?: unknown }, baseUrl: string) {
+export async function createInvite(env: Env, deps: Deps, member: Member, body: { actionId?: unknown; kind?: unknown; note?: unknown }, baseUrl: string) {
   const name = displayName(member);
   if (!name) throw new HttpError(409, 'need_first_name', 'Add your first name so the person you invite knows who it is from.');
   const actionId = typeof body.actionId === 'string' ? body.actionId : '';
@@ -67,25 +68,30 @@ export async function createInvite(env: Env, deps: Deps, member: Member, body: {
     const done = await env.DB.prepare(`SELECT 1 AS x FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first();
     if (!done) throw new HttpError(403, 'not_done', 'Mark the action as done first, then pass it on.');
   }
+  const note = typeof body.note === 'string' ? body.note.replace(/\s+/g, ' ').trim().slice(0, NOTE_MAX) || null : null;
   let row = await env.DB.prepare(`SELECT code FROM invites WHERE inviter_id = ?1 AND action_id = ?2 AND kind = ?3`).bind(member.id, actionId, kind).first<{ code: string }>();
   if (!row) {
     await consumeDaily(env, deps, member.id, 'invite');
     const code = newCode();
-    await env.DB.prepare(`INSERT INTO invites (code, inviter_id, action_id, kind, created_at) VALUES (?1, ?2, ?3, ?4, ?5)`).bind(code, member.id, actionId, kind, iso(deps.now())).run();
+    await env.DB.prepare(`INSERT INTO invites (code, inviter_id, action_id, kind, created_at, note) VALUES (?1, ?2, ?3, ?4, ?5, ?6)`).bind(code, member.id, actionId, kind, iso(deps.now()), note).run();
     row = { code };
+  } else if (body.note !== undefined) {
+    // The latest note is what the invite page and link preview show.
+    await env.DB.prepare(`UPDATE invites SET note = ?2 WHERE code = ?1`).bind(row.code, note).run();
   }
-  const text = kind === 'with_me' ? `${name} wants to do this with you: ${action.title}` : `${name} did this and is passing it on: ${action.title}`;
-  return { code: row.code, url: `${baseUrl}/${row.code}`, text, kind };
+  const intro = kind === 'with_me' ? `${name} wants to do this with you: ${action.title}` : `${name} did this and is passing it on: ${action.title}`;
+  const text = note ? `${note}\n\n${intro}` : intro;
+  return { code: row.code, url: `${baseUrl}/${row.code}`, text, kind, note };
 }
 
 async function inviteRow(env: Env, code: string) {
   if (!CODE.test(code)) return null;
   return env.DB.prepare(
-    `SELECT i.code, i.kind, i.action_id AS actionId, i.inviter_id AS inviterId, COALESCE(m.share_name, m.first_name) AS inviterName, m.deleted_at AS inviterDeleted
+    `SELECT i.code, i.kind, i.note, i.action_id AS actionId, i.inviter_id AS inviterId, COALESCE(m.share_name, m.first_name) AS inviterName, m.deleted_at AS inviterDeleted
      FROM invites i JOIN members m ON m.id = i.inviter_id WHERE i.code = ?1`,
   )
     .bind(code)
-    .first<{ code: string; kind: string; actionId: string; inviterId: number; inviterName: string | null; inviterDeleted: string | null }>();
+    .first<{ code: string; kind: string; note: string | null; actionId: string; inviterId: number; inviterName: string | null; inviterDeleted: string | null }>();
 }
 
 /** Three other live actions, for an invite whose action was removed. */
@@ -108,6 +114,7 @@ export async function getInvite(env: Env, deps: Deps, code: string, member: Memb
     code,
     kind: inv.kind,
     inviterName: inv.inviterDeleted ? null : inv.inviterName,
+    note: inv.inviterDeleted ? null : inv.note,
     action: { id: inv.actionId, title: action?.title || '', shortAnswer: action?.short_answer || '', slug: live ? action!.slug : null, live },
     alternatives: live ? [] : await alternatives(env, inv.actionId),
     me,
@@ -240,7 +247,7 @@ export async function invitePreview(env: Env, deps: Deps, code: string, baseUrl:
   const action = await getAction(env, deps, inv.actionId).catch(() => null);
   const name = inv.inviterDeleted ? null : inv.inviterName;
   const title = action?.status === 'published' ? `${name || 'Someone'} ${inv.kind === 'with_me' ? 'wants to do this with you' : 'is passing this on to you'}: ${action.title}` : 'An invite from Happiness Foundation';
-  const description = action?.short_answer || 'Small actions that make other people happy.';
+  const description = (!inv.inviterDeleted && inv.note) || action?.short_answer || 'Small actions that make other people happy.';
   const image = `${baseUrl}/share-invite.png`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${esc(title)}</title>

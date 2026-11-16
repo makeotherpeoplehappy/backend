@@ -530,6 +530,19 @@ describe('Phase 4: ripple', () => {
     expect((await invite('shcat_ana')).code).toBe(inv.code);
   });
 
+  it('carries a short note from the inviter to the invite page and the link preview', async () => {
+    const res = await (await h.request('POST', '/api/invites', { token: 'shcat_ana', body: { actionId: actionB, kind: 'with_me', note: '  Saturday at mine?  ' } })).json();
+    expect(res.text).toBe('Saturday at mine?\n\nAna wants to do this with you: Cook a meal together');
+    expect((await (await h.request('GET', `/api/invites/${res.code}`)).json()).note).toBe('Saturday at mine?');
+    expect(await (await h.request('GET', `/${res.code}`, { origin: null })).text()).toContain('<meta property="og:description" content="Saturday at mine?">');
+    // A later share with a new note replaces it; the link stays the same.
+    const again = await (await h.request('POST', '/api/invites', { token: 'shcat_ana', body: { actionId: actionB, kind: 'with_me', note: 'Sunday instead?' } })).json();
+    expect(again.code).toBe(res.code);
+    expect((await (await h.request('GET', `/api/invites/${res.code}`)).json()).note).toBe('Sunday instead?');
+    const long = await (await h.request('POST', '/api/invites', { token: 'shcat_ana', body: { actionId: actionB, kind: 'with_me', note: 'x'.repeat(400) } })).json();
+    expect(long.note).toHaveLength(280);
+  });
+
   it('asks for a first name before the first share', async () => {
     h.fake.signIn('shcat_noname', { firstName: null });
     const res = await h.request('POST', '/api/invites', { token: 'shcat_noname', body: { actionId: actionB, kind: 'with_me' } });

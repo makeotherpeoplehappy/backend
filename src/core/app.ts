@@ -151,7 +151,7 @@ route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
 
 // Ripple: invites and "I'm in".
 route('POST', '/api/invites', true, memberWrite('invite', async ({ req, env, deps, baseUrl }, m) => {
-  const body = await readJson<{ actionId?: unknown; kind?: unknown }>(req);
+  const body = await readJson<{ actionId?: unknown; kind?: unknown; note?: unknown }>(req);
   if (typeof body.actionId === 'string') body.actionId = await resolveActionRef(env, deps, body.actionId);
   return createInvite(env, deps, m, body, baseUrl);
 }, 201));

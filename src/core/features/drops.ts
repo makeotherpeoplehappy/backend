@@ -161,30 +161,60 @@ async function shopifyIdOf(env: Env, cmsItemId: string | null): Promise<string |
   return r?.shopify_id ?? null;
 }
 
-/** Pieces left of the lead product, all sizes together; null when not tracked. Cached 60 seconds. */
-export async function piecesLeft(env: Env, deps: Deps, drop: Drop): Promise<number | null> {
-  const key = `drop-stock:${drop.slug}`;
-  const cached = await env.CACHE.get(key);
-  if (cached !== null) return cached === 'untracked' ? null : Number(cached);
-  const productId = await shopifyIdOf(env, drop.leadProductItemId);
-  if (!productId) return null;
-  const r = await adminGraphql<{ product: { tracksInventory: boolean; totalInventory: number } | null }>(
-    env,
-    deps,
-    `query ($id: ID!) { product(id: $id) { tracksInventory totalInventory } }`,
-    { id: productId },
-  );
-  const left = r.product && r.product.tracksInventory ? Math.max(0, r.product.totalInventory) : null;
-  await env.CACHE.put(key, left === null ? 'untracked' : String(left), { expirationTtl: 60 });
-  return left;
+export interface DropStock {
+  /** Pieces in the drop: the pieces' edition sizes added up, or the CMS Quantity when a piece has no size. */
+  quantity: number | null;
+  /** Pieces left across every piece of the drop; null when any piece's stock is not tracked. */
+  left: number | null;
 }
 
-/** Upcoming before the drop date, sold out at zero stock, live otherwise. */
+/** An edition size from Shopify (custom.edition_size), or null. */
+function editionSize(value: string | null | undefined): number | null {
+  const n = value ? parseInt(value, 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+/**
+ * Size and stock of every piece in the drop, added up. Each piece's size is
+ * its Shopify edition size (custom.edition_size); a piece's stock counts up
+ * to its size. Cached 60 seconds.
+ */
+export async function dropStock(env: Env, deps: Deps, drop: Drop): Promise<DropStock> {
+  const key = `drop-stock:${drop.slug}`;
+  const cached = (await env.CACHE.get(key, 'json')) as DropStock | null;
+  if (cached && typeof cached === 'object') return cached;
+  const ids = (await Promise.all(drop.productItemIds.map((item) => shopifyIdOf(env, item)))).filter((id): id is string => !!id);
+  const r = ids.length
+    ? await adminGraphql<{ nodes: ({ id: string; tracksInventory: boolean; totalInventory: number; edition: { value: string } | null } | null)[] }>(
+        env,
+        deps,
+        `query ($ids: [ID!]!) { nodes(ids: $ids) { ... on Product { id tracksInventory totalInventory edition: metafield(namespace: "custom", key: "edition_size") { value } } } }`,
+        { ids },
+      )
+    : { nodes: [] };
+  const pieces = r.nodes
+    .filter((n): n is NonNullable<typeof n> => !!n && !!n.id)
+    .map((n) => {
+      const size = editionSize(n.edition?.value);
+      const stock = n.tracksInventory ? Math.max(0, n.totalInventory) : null;
+      return { size, left: stock === null ? null : size === null ? stock : Math.min(stock, size) };
+    });
+  const stock: DropStock = {
+    quantity: pieces.length && pieces.every((p) => p.size !== null) ? pieces.reduce((n, p) => n + p.size!, 0) : drop.quantity,
+    left: pieces.length && pieces.every((p) => p.left !== null) ? pieces.reduce((n, p) => n + p.left!, 0) : null,
+  };
+  await env.CACHE.put(key, JSON.stringify(stock), { expirationTtl: 60 });
+  return stock;
+}
+
+const NO_STOCK = (drop: Drop): DropStock => ({ quantity: drop.quantity, left: null });
+
+/** Upcoming before the drop date, sold out once every piece is gone, live otherwise. */
 export async function effectiveStatus(env: Env, deps: Deps, drop: Drop, left?: number | null): Promise<Drop['status']> {
   const at = drop.dropDate ? Date.parse(drop.dropDate) : NaN;
   if (Number.isFinite(at)) {
     if (deps.now().getTime() < at) return 'upcoming';
-    const l = left === undefined ? await piecesLeft(env, deps, drop).catch(() => null) : left;
+    const l = left === undefined ? (await dropStock(env, deps, drop).catch(() => NO_STOCK(drop))).left : left;
     return l === 0 ? 'sold_out' : 'live';
   }
   return drop.status;
@@ -208,16 +238,16 @@ export function detailsLineFor(drop: Pick<Drop, 'quantity' | 'dropDate'>, status
 export async function dropState(env: Env, deps: Deps, slug: string | null) {
   const drop = await findDrop(env, deps, slug);
   if (!drop) throw new HttpError(404, 'drop_not_found', 'This drop could not be found.');
-  const left = await piecesLeft(env, deps, drop).catch(() => null);
+  const { quantity, left } = await dropStock(env, deps, drop).catch(() => NO_STOCK(drop));
   const status = await effectiveStatus(env, deps, drop, left);
   return {
     drop: drop.slug,
     name: drop.name,
     status,
     dropDate: drop.dropDate,
-    quantity: drop.quantity,
+    quantity,
     left,
-    detailsLine: detailsLineFor(drop, status) || drop.detailsLine,
+    detailsLine: detailsLineFor({ quantity, dropDate: drop.dropDate }, status) || drop.detailsLine,
     pledges: await dropPledges(env, drop.slug),
   };
 }
@@ -239,9 +269,10 @@ export async function updateDropsInCms(env: Env, deps: Deps) {
   const changed: string[] = [];
   for (const d of drops) {
     if (!d.dropDate) continue;
-    const status = await effectiveStatus(env, deps, d);
+    const { quantity, left } = await dropStock(env, deps, d).catch(() => NO_STOCK(d));
+    const status = await effectiveStatus(env, deps, d, left);
     if (status === 'unknown') continue;
-    const line = detailsLineFor(d, status);
+    const line = detailsLineFor({ quantity, dropDate: d.dropDate }, status);
     const fieldData: Record<string, unknown> = {};
     if (d.status !== status) fieldData.status = STATUS_ID[status];
     if (line && line !== d.detailsLine) fieldData['details-line'] = line;
@@ -331,7 +362,7 @@ export async function shopDrops(env: Env, deps: Deps) {
   const drops = await listDrops(env, deps);
   const out = [];
   for (const d of drops) {
-    const left = await piecesLeft(env, deps, d).catch(() => null);
+    const { quantity, left } = await dropStock(env, deps, d).catch(() => NO_STOCK(d));
     const status = await effectiveStatus(env, deps, d, left);
     out.push({
       drop: d.slug,
@@ -339,9 +370,9 @@ export async function shopDrops(env: Env, deps: Deps) {
       statement: d.statement,
       status,
       dropDate: d.dropDate,
-      quantity: d.quantity,
+      quantity,
       left,
-      detailsLine: detailsLineFor(d, status) || d.detailsLine,
+      detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status) || d.detailsLine,
       onFrontPage: d.onFrontPage,
       collection: d.slug,
       pledges: await dropPledges(env, d.slug),
@@ -377,16 +408,18 @@ export async function productLabels(env: Env, deps: Deps): Promise<Record<string
   const labels: Record<string, string> = {};
   for (const p of r.products.nodes) {
     const left = p.tracksInventory ? Math.max(0, p.totalInventory) : null;
+    const size = editionSize(p.edition?.value);
     const d = dropOf.get(p.id);
     if (d) {
+      // Each piece with its own size; a one-piece drop without a size uses the drop's Quantity.
+      const pieces = size ?? (d.productItemIds.length === 1 ? d.quantity : null);
       const status = await effectiveStatus(env, deps, d);
       if (status === 'sold_out' || (status === 'live' && left === 0)) labels[p.handle] = `${d.name} · Sold out`;
-      else if (status === 'live' && left !== null && d.quantity) labels[p.handle] = `${d.name} · ${Math.min(left, d.quantity)} of ${d.quantity} left`;
-      else labels[p.handle] = d.quantity ? `${d.name} · ${d.quantity} pieces` : d.name;
+      else if (status === 'live' && left !== null && pieces) labels[p.handle] = `${d.name} · ${Math.min(left, pieces)} of ${pieces} left`;
+      else labels[p.handle] = pieces ? `${d.name} · ${pieces} pieces` : d.name;
       continue;
     }
-    const size = p.edition ? parseInt(p.edition.value, 10) : NaN;
-    if (Number.isFinite(size) && size > 0) {
+    if (size !== null) {
       if (left === 0) labels[p.handle] = 'Limited edition · Sold out';
       else if (left !== null && left < size) labels[p.handle] = `Limited edition · ${left} of ${size} left`;
       else labels[p.handle] = `Limited edition · ${size} pieces`;

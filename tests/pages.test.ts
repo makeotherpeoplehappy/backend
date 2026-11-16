@@ -302,6 +302,8 @@ describe('Drop page', () => {
     // The pieces sit inside the drop's box, under the image and text, so there is no button to them.
     expect(p.document.querySelector('.hf-drop')!.lastElementChild!.id).toBe('hfp-pieces');
     expect(p.document.querySelector('shopify-cart#hf-cart')).toBeTruthy();
+    // The hero and "The pieces" share one answer about the drop's state.
+    expect(p.calls.filter((c) => c.path.startsWith('/api/drops/state'))).toHaveLength(1);
   });
 });
 

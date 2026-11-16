@@ -51,6 +51,12 @@
     if (text) e.textContent = text; else drop(e);
     return text ? e : null;
   }
+  // The drop's state, asked for once per page: the hero and "The pieces" both need it.
+  var dropStates = {};
+  function dropState(slug) {
+    var q = '/api/drops/state' + (slug ? '?drop=' + slug : '');
+    return dropStates[q] || (dropStates[q] = HFB.call(q, { auth: false }));
+  }
   function copyText(key) { var e = document.querySelector('[data-hf-copy="' + key + '"]'); return e ? e.textContent.trim() : ''; }
   function day(iso) { try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return ''; } }
   function signedIn() { return !!(window.HF && HF.token && HF.token()); }
@@ -877,7 +883,7 @@
     if (cms && cms.textContent.trim()) showOnly(hero, cms.textContent.trim().toLowerCase().replace(/ /g, '_'));
     var m = /^\/drops\/([a-z0-9-]+)/.exec(location.pathname);
     await wait(function () { return window.HFB; }, 10000);
-    var r = await HFB.call('/api/drops/state' + (m ? '?drop=' + m[1] : ''), { auth: false });
+    var r = await dropState(m && m[1]);
     if (!r.ok) return;
     var d = r.data;
     if (d.status && d.status !== 'unknown') showOnly(hero, d.status);
@@ -951,7 +957,7 @@
     if (!m || !box || box.getAttribute('data-hfp')) return;
     box.setAttribute('data-hfp', '1');
     await wait(function () { return window.HFB; }, 10000);
-    var r = await HFB.call('/api/drops/state?drop=' + m[1], { auth: false });
+    var r = await dropState(m[1]);
     var upcoming = r.ok && r.data.status === 'upcoming';
     document.head.appendChild(el('style', { text: GRID_CSS + '.hfp-card-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#eee}' }));
     ensureShopify();

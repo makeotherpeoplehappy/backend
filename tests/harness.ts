@@ -194,6 +194,16 @@ export class FakeServices {
           .map((p) => ({ handle: p!.handle, title: p!.title, status: p!.status, featuredMedia: null, priceRangeV2: { minVariantPrice: { amount: '45.0', currencyCode: 'USD' } }, variants: { nodes: [{ availableForSale: true }] } }));
         return j({ data: { collections: { nodes: [{ products: { nodes } }] } } });
       }
+      if (q.query.includes('nodes(ids:')) {
+        // A drop's pieces: size and stock of each product asked for.
+        const nodes = (q.variables.ids as string[]).map((id) => {
+          const p = this.products.find((x) => x.id === id);
+          if (!p && !this.inventory.has(id)) return null;
+          const inv = this.inventory.get(id);
+          return { id, tracksInventory: this.inventory.has(id) && inv !== null, totalInventory: inv ?? 0, edition: p?.editionSize ? { value: String(p.editionSize) } : null };
+        });
+        return j({ data: { nodes } });
+      }
       if (q.query.includes('edition_size')) {
         return j({
           data: {

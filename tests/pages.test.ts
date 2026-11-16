@@ -31,6 +31,14 @@ async function page(path: string, html: string, handler: Handler, opts: { signed
     keepDraft: () => ({ clear: () => undefined }),
     token: async () => 'tok',
   };
+  // Direct fetches to the backend go to the same fake.
+  w.fetch = async (url: string, init: { method?: string } = {}) => {
+    const path = String(url).replace(/^.*?\/join/, '');
+    const method = init.method || 'GET';
+    calls.push({ method, path, body: undefined });
+    const r = handler(method, path, undefined) || { status: 404, data: {} };
+    return { ok: (r.status ?? 200) < 400, status: r.status ?? 200, json: async () => r.data, text: async () => '' };
+  };
   window.eval(SOURCE);
   const settle = async () => {
     for (let i = 0; i < 10; i++) await new Promise((r) => setTimeout(r, 10));
@@ -204,8 +212,9 @@ describe('Shop', () => {
         : undefined,
     );
     const text = p.document.body.textContent;
-    expect(text).toContain('Drop 02 · Coming soon');
-    expect(text).toContain('Be the reason.');
+    expect(text).toContain('Coming soon');
+    expect(p.document.getElementById('hfp-shop-drop-h')!.textContent).toBe('Drop 02');
+    expect(p.document.querySelector('#hfp-shop-drop .hf-drop-quote')!.textContent).toBe('Be the reason.');
     expect(text).toContain('Available now');
     expect(text).toContain('Past drops');
     expect(text).toContain('100 pledges made, 81 kept');

@@ -520,6 +520,33 @@ describe('Phase 3: stock and drop state', () => {
     expect(fresh.current.products[0].title).toBe('Tee, renamed');
   });
 
+  it('adds up every piece of a drop: total pieces, pieces left, and sold out only when all are gone', async () => {
+    const drop = await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
+    const MUG = 'gid://shopify/Product/803';
+    const mugItem = h.fake.newId();
+    await h.db(`INSERT INTO product_sync (shopify_id, cms_item_id, source_hash, state, synced_at) VALUES (?1, ?2, 'x', 'live', '2026-11-16')`, MUG, mugItem);
+    drop.fieldData['products-in-this-drop'] = [drop.fieldData['lead-product'], mugItem];
+    const base = { status: 'ACTIVE' as const, descriptionHtml: '', description: '' };
+    h.fake.products.push({ ...base, id: PRODUCT, handle: 'tee', title: 'Tee', editionSize: 100 });
+    h.fake.products.push({ ...base, id: MUG, handle: 'mug', title: 'Mug', editionSize: 100 });
+    h.fake.inventory.set(PRODUCT, 0);
+    h.fake.inventory.set(MUG, 40);
+    const a = await (await h.request('GET', '/api/drops/state')).json();
+    expect(a).toMatchObject({ status: 'live', quantity: 200, left: 40, detailsLine: "200 pieces. Out now. Gone when they're gone." });
+    const { labels } = await (await h.request('GET', '/api/products/labels')).json();
+    expect(labels).toEqual({ tee: 'Drop 01 · Sold out', mug: 'Drop 01 · 40 of 100 left' });
+    h.fake.inventory.set(MUG, 0);
+    await h.env.CACHE.delete('drop-stock:drop-01');
+    expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'sold_out', quantity: 200, left: 0 });
+  });
+
+  it("uses the drop's Quantity when a piece has no edition size", async () => {
+    await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
+    h.fake.products.push({ status: 'ACTIVE', descriptionHtml: '', description: '', id: PRODUCT, handle: 'tee', title: 'Tee' });
+    h.fake.inventory.set(PRODUCT, 100);
+    expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'upcoming', quantity: 100 });
+  });
+
   it('hides the line when inventory is not tracked', async () => {
     await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, null);

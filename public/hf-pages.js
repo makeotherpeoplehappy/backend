@@ -936,7 +936,8 @@
     var found = all.filter(function (d) { return d.drop === m[1]; })[0];
     var box = el('section', { id: 'hfp-pieces', class: 'hfp-shop-section', 'aria-labelledby': 'hfp-pieces-h' }, [
       el('h2', { id: 'hfp-pieces-h', text: 'The pieces' }),
-      upcoming ? el('p', { class: 'hfp-muted', text: 'On sale when the drop goes live. Every piece comes with a pledge: take an action that makes someone else happy.' }) : el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
+      // Before launch the hero already says when the drop goes live, so no line here.
+      upcoming ? null : el('p', { class: 'hfp-muted', text: 'Every piece comes with a pledge: take an action that makes someone else happy.' }),
       found ? grid(found.products, found.status === 'live') : collectionGrid(m[1], upcoming),
     ]);
     var hero = document.querySelector('.hf-drop');
@@ -1040,7 +1041,7 @@
         cur.statement ? el('p', { class: 'hf-drop-quote', text: cur.statement }) : null,
         el('p', { class: 'hfp-muted', id: 'hfp-shop-drop-details', text: cur.detailsLine }),
         facts.length ? el('p', { class: 'hfp-muted', text: facts.join(' · ') }) : null,
-        el('p', null, [el('a', { class: 'hf-story-link', href: '/drops/' + cur.drop, text: 'About this drop →' })]),
+        el('p', null, [el('a', { class: 'hf-story-link', href: '/drops/' + cur.drop, text: 'See the pieces →' })]),
         // Before launch the pieces are shown on the drop page only; the shop lists them once the drop is out.
         cur.products.length && cur.status === 'live' ? grid(cur.products, true) : null,
       ]);

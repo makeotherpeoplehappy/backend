@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
-const STAFF_FILES = ['public/lab.js', 'src/core/features/ops.ts', 'src/core/errors.ts'];
+const STAFF_FILES = ['public/lab.js', 'src/core/features/ops.ts', 'src/core/errors.ts', 'src/core/features/email-setup.ts'];
 const TECHNICAL = new Set([
   'Not authorised.',
   'Invalid body.',
@@ -18,6 +18,7 @@ const TECHNICAL = new Set([
   'No Shopify customer with that ID.',
   'That decision could not be read.',
   'Someone has already reviewed this.',
+  'Only an owner can do this.',
 ]);
 
 function files(dir: string): string[] {

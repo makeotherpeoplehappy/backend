@@ -510,6 +510,14 @@ describe('Phase 3: stock and drop state', () => {
     expect(shop.current).toMatchObject({ drop: 'drop-01', status: 'upcoming', products: [{ handle: 'tee', title: 'Tee', available: true, label: 'Drop 01 · 100 pieces' }] });
     expect(shop.availableNow).toEqual([]);
     expect(shop.past).toEqual([]);
+    // Later visits get the stored copy at once, even when it is older than a minute.
+    h.fake.products[0].title = 'Tee, renamed';
+    h.clock.advance(5 * 60 * 1000);
+    const stale = await (await h.request('GET', '/api/shop')).json();
+    expect(stale.current.products[0].title).toBe('Tee');
+    await h.settle(); // the background refresh
+    const fresh = await (await h.request('GET', '/api/shop')).json();
+    expect(fresh.current.products[0].title).toBe('Tee, renamed');
   });
 
   it('hides the line when inventory is not tracked', async () => {

@@ -100,7 +100,19 @@
       if ((res.status === 409 && data && data.error === 'in_progress') || res.status === 503) { await sleep(800 * (attempt + 1)); continue; }
       return { ok: res.ok, status: res.status, data: data };
     }
-    return { ok: false, status: 0, data: { error: 'network', message: 'We could not reach the server. Please check your connection and try again.' } };
+    return { ok: false, status: 0, data: { error: 'network', message: copy('error-offline') } };
+  }
+
+  /**
+   * Wording kept in Webflow: the hidden "Site wording" block in the footer has
+   * one element per text, marked data-hf-copy="key". {name}-style parts are
+   * filled in from vars.
+   */
+  function copy(key, vars) {
+    var e = document.querySelector ? document.querySelector('[data-hf-copy="' + key + '"]') : null;
+    var t = e ? e.textContent.trim() : '';
+    if (vars) Object.keys(vars).forEach(function (k) { t = t.split('{' + k + '}').join(vars[k] == null ? '' : String(vars[k])); });
+    return t;
   }
 
   function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
@@ -278,7 +290,7 @@
     if (status && count) {
       if (status.textContent.trim().toLowerCase() !== 'upcoming') return null;
       var m = location.pathname.match(/^\/drops\/([a-z0-9-]+)/);
-      return { anchor: count, where: 'afterend', drop: m ? m[1] : null, label: 'Get an email when this drop goes live.' };
+      return { anchor: count, where: 'afterend', drop: m ? m[1] : null, label: copy('notify-drop') };
     }
     var p = location.pathname.match(/^\/products\/([^\/]+)/);
     var anchor = location.pathname === '/shop' ? document.getElementById('hf-shop') : p ? document.getElementById('hf-product') : null;
@@ -286,12 +298,11 @@
     var home = await readHomeDrop();
     if (!home || home.status.toLowerCase() !== 'upcoming') return null;
     if (p && p[1] !== home.lead) return null;
-    var when = home.date ? ' on ' + home.date + ' ET' : '';
     return {
       anchor: anchor,
       where: 'beforebegin',
       drop: null,
-      label: p ? 'This piece goes live with the next drop' + when + '. Get an email when it does.' : 'The next drop goes live' + when + '. Get an email when it does.',
+      label: copy(p ? 'notify-product' : 'notify-next', { date: home.date }),
     };
   }
 
@@ -307,7 +318,7 @@
     form.style.margin = '12px 0';
     var label = document.createElement('label');
     label.htmlFor = 'hfb-notify-email';
-    label.textContent = signedIn ? place.label.replace('Get an email', 'Get an email at your account address') : place.label;
+    label.textContent = signedIn ? place.label.replace(copy('notify-email-phrase'), copy('notify-email-phrase-member')) : place.label;
     label.style.display = 'block';
     var row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px';
@@ -316,13 +327,13 @@
     input.type = 'email';
     input.autocomplete = 'email';
     input.required = true;
-    input.placeholder = 'you@example.com';
+    input.placeholder = copy('notify-placeholder');
     input.className = 'w-input';
     input.style.cssText = 'max-width:260px;margin:0';
     var btn = document.createElement('button');
     btn.type = 'submit';
     btn.className = 'hf-button-light';
-    btn.textContent = 'Notify me';
+    btn.textContent = copy('notify-button');
     var msg = document.createElement('p');
     msg.setAttribute('role', 'status');
     msg.setAttribute('aria-live', 'polite');
@@ -337,25 +348,25 @@
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
       if (busy) return;
-      if (!signedIn && !input.value.trim()) { msg.textContent = 'Please enter your email address.'; input.focus(); return; }
+      if (!signedIn && !input.value.trim()) { msg.textContent = copy('notify-missing-email'); input.focus(); return; }
       busy = true;
       btn.setAttribute('aria-busy', 'true');
       var r = await call('/api/drops/notify', { method: 'POST', body: { drop: drop, email: signedIn ? undefined : input.value }, auth: signedIn, turnstile: !signedIn });
       busy = false;
       btn.removeAttribute('aria-busy');
       if (r.ok) {
-        msg.textContent = r.data && r.data.alreadySignedUp ? 'You are already on the list for this drop.' : 'You are on the list. We will email you when it goes live.';
+        msg.textContent = copy(r.data && r.data.alreadySignedUp ? 'notify-already' : 'notify-done');
         input.disabled = true;
         btn.disabled = true;
       } else {
-        msg.textContent = (r.data && r.data.message) || 'That did not work. Please try again.';
+        msg.textContent = (r.data && r.data.message) || copy('error-generic');
       }
     });
     return true;
   }
   waitFor(function () { return !!window.HF; }, 10000).then(function () { return dropNotify(); }).catch(function () {});
 
-  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor };
+  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify, copy: copy, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor };
 
   // Page features (action page, account, stories, invites, drops) live in one
   // script served by the backend, so they ship with the backend and are tested.

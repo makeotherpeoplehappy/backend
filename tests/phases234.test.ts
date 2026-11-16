@@ -499,7 +499,7 @@ describe('Phase 3: stock and drop state', () => {
     h.fake.products.push({ ...base, id: 'gid://shopify/Product/802', handle: 'mug', title: 'Mug' });
     h.fake.inventory.set('gid://shopify/Product/801', 12);
     const { labels } = await (await h.request('GET', '/api/products/labels')).json();
-    expect(labels).toEqual({ tee: 'Drop 01 · 100 pieces', print: 'Limited edition · 12 of 250 left' });
+    expect(labels).toEqual({ tee: { name: 'Drop 01', size: 100, left: null, soldOut: false }, print: { name: null, size: 250, left: 12, soldOut: false } });
   });
 
   it('answers the whole shop in one call, leaving out empty sections', async () => {
@@ -507,7 +507,7 @@ describe('Phase 3: stock and drop state', () => {
     h.fake.products.push({ id: PRODUCT, handle: 'tee', title: 'Tee', status: 'ACTIVE', descriptionHtml: '', description: '' });
     h.fake.shopCollections.set('drop-01', [PRODUCT]);
     const shop = await (await h.request('GET', '/api/shop')).json();
-    expect(shop.current).toMatchObject({ drop: 'drop-01', status: 'upcoming', products: [{ handle: 'tee', title: 'Tee', available: true, label: 'Drop 01 · 100 pieces' }] });
+    expect(shop.current).toMatchObject({ drop: 'drop-01', status: 'upcoming', products: [{ handle: 'tee', title: 'Tee', available: true, label: { name: 'Drop 01', size: 100, left: null, soldOut: false } }] });
     expect(shop.availableNow).toEqual([]);
     expect(shop.past).toEqual([]);
     // Later visits get the stored copy at once, even when it is older than a minute.
@@ -534,7 +534,7 @@ describe('Phase 3: stock and drop state', () => {
     const a = await (await h.request('GET', '/api/drops/state')).json();
     expect(a).toMatchObject({ status: 'live', quantity: 200, left: 40, detailsLine: "200 pieces. Out now. Gone when they're gone." });
     const { labels } = await (await h.request('GET', '/api/products/labels')).json();
-    expect(labels).toEqual({ tee: 'Drop 01 · Sold out', mug: 'Drop 01 · 40 of 100 left' });
+    expect(labels).toEqual({ tee: { name: 'Drop 01', size: 100, left: null, soldOut: true }, mug: { name: 'Drop 01', size: 100, left: 40, soldOut: false } });
     h.fake.inventory.set(MUG, 0);
     await h.env.CACHE.delete('drop-stock:drop-01');
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'sold_out', quantity: 200, left: 0 });

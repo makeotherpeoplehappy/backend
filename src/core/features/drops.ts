@@ -384,14 +384,23 @@ export async function shopDrops(env: Env, deps: Deps) {
 }
 
 /**
- * The scarcity label for each product, by handle. True and specific only:
- *   drop pieces          "Drop 01 · 100 pieces", "Drop 01 · 64 of 100 left", "Drop 01 · Sold out"
- *   limited editions     "Limited edition · 250 pieces" (Shopify field custom.edition_size)
+ * The facts behind each product's scarcity label, by handle. True and specific
+ * only; the site words them with the label texts in Webflow's footer
+ * (for example "Drop 01 · 64 of 100 left" or "Limited edition · 250 pieces"):
+ *   drop pieces          name = the drop's name, size = the piece's edition size
+ *   limited editions     name = null, size = Shopify field custom.edition_size
  *   everything else      no label
  * Cached for 60 seconds.
  */
-export async function productLabels(env: Env, deps: Deps): Promise<Record<string, string>> {
-  const cached = (await env.CACHE.get('product-labels', 'json')) as Record<string, string> | null;
+export interface ProductLabel {
+  name: string | null;
+  size: number | null;
+  left: number | null;
+  soldOut: boolean;
+}
+
+export async function productLabels(env: Env, deps: Deps): Promise<Record<string, ProductLabel>> {
+  const cached = (await env.CACHE.get('product-labels', 'json')) as Record<string, ProductLabel> | null;
   if (cached) return cached;
   const r = await adminGraphql<{
     products: { nodes: { id: string; handle: string; tracksInventory: boolean; totalInventory: number; edition: { value: string } | null }[] };
@@ -405,7 +414,7 @@ export async function productLabels(env: Env, deps: Deps): Promise<Record<string
   const dropOf = new Map<string, Drop>();
   const byItem = new Map(sync.results.map((s) => [s.cms_item_id, s.shopify_id]));
   for (const d of drops) for (const item of d.productItemIds) if (byItem.get(item) && !dropOf.has(byItem.get(item)!)) dropOf.set(byItem.get(item)!, d);
-  const labels: Record<string, string> = {};
+  const labels: Record<string, ProductLabel> = {};
   for (const p of r.products.nodes) {
     const left = p.tracksInventory ? Math.max(0, p.totalInventory) : null;
     const size = editionSize(p.edition?.value);
@@ -414,15 +423,12 @@ export async function productLabels(env: Env, deps: Deps): Promise<Record<string
       // Each piece with its own size; a one-piece drop without a size uses the drop's Quantity.
       const pieces = size ?? (d.productItemIds.length === 1 ? d.quantity : null);
       const status = await effectiveStatus(env, deps, d);
-      if (status === 'sold_out' || (status === 'live' && left === 0)) labels[p.handle] = `${d.name} · Sold out`;
-      else if (status === 'live' && left !== null && pieces) labels[p.handle] = `${d.name} · ${Math.min(left, pieces)} of ${pieces} left`;
-      else labels[p.handle] = pieces ? `${d.name} · ${pieces} pieces` : d.name;
+      const soldOut = status === 'sold_out' || (status === 'live' && left === 0);
+      labels[p.handle] = { name: d.name, size: pieces, left: !soldOut && status === 'live' && left !== null && pieces ? Math.min(left, pieces) : null, soldOut };
       continue;
     }
     if (size !== null) {
-      if (left === 0) labels[p.handle] = 'Limited edition · Sold out';
-      else if (left !== null && left < size) labels[p.handle] = `Limited edition · ${left} of ${size} left`;
-      else labels[p.handle] = `Limited edition · ${size} pieces`;
+      labels[p.handle] = { name: null, size, left: left !== null && left > 0 && left < size ? left : null, soldOut: left === 0 };
     }
   }
   await env.CACHE.put('product-labels', JSON.stringify(labels), { expirationTtl: 60 });
@@ -446,7 +452,7 @@ interface ShopProduct {
   image: { url: string; alt: string } | null;
   price: { amount: string; currencyCode: string } | null;
   available: boolean;
-  label: string | null;
+  label: ProductLabel | null;
 }
 
 async function collectionProducts(env: Env, deps: Deps, handle: string): Promise<Omit<ShopProduct, 'label'>[]> {
@@ -490,8 +496,8 @@ const SHOP_FRESH_MS = 60_000;
 
 async function buildShopCatalog(env: Env, deps: Deps) {
   const { current, past } = await shopDrops(env, deps);
-  const labels = await productLabels(env, deps).catch(() => ({}) as Record<string, string>);
-  const withLabels = (list: Omit<ShopProduct, 'label'>[]): ShopProduct[] => list.map((p) => ({ ...p, label: (labels as Record<string, string>)[p.handle] || null }));
+  const labels = await productLabels(env, deps).catch(() => ({}) as Record<string, ProductLabel>);
+  const withLabels = (list: Omit<ShopProduct, 'label'>[]): ShopProduct[] => list.map((p) => ({ ...p, label: labels[p.handle] || null }));
   const out = {
     current: current ? { ...current, products: withLabels(await collectionProducts(env, deps, current.collection)) } : null,
     availableNow: withLabels(await collectionProducts(env, deps, AVAILABLE_NOW)),

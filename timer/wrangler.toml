@@ -1,0 +1,15 @@
+# The 5-minute timer for the Happiness Foundation backend.
+# Deploy: cd timer && npx wrangler deploy
+name = "hf-timer"
+main = "index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+[vars]
+JOBS_URL = "https://happiness-foundation.webflow.io/join/api/jobs/tick"
+
+[observability]
+enabled = true

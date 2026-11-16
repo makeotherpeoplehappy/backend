@@ -35,6 +35,8 @@ export async function sendSuggestion(env: Env, deps: Deps, member: Member, body:
       .bind(member.id, text, now)
       .first<{ id: number }>();
     id = row!.id;
+    const similar = await similarNotes(env, text, id);
+    if (similar) await env.DB.prepare(`UPDATE suggestions SET similar_notes = ?2 WHERE id = ?1`).bind(id, similar).run();
     await enqueue(
       env,
       deps,
@@ -51,7 +53,7 @@ export async function sendSuggestion(env: Env, deps: Deps, member: Member, body:
           email: member.email || '',
           'submitted-on': now,
           status: CMS.suggestions.status.new,
-          'review-notes': await similarNotes(env, text, id),
+          'review-notes': similar,
         },
         saveIdTo: { table: 'suggestions', id },
       },

@@ -19,10 +19,13 @@
     '#hf-lab .tile .s{font-size:12px;color:var(--lab-muted);margin-top:6px}',
     '#hf-lab .panel{background:var(--lab-card);border:1px solid var(--lab-line);border-radius:10px;padding:16px;overflow-x:auto}',
     '#hf-lab table{border-collapse:collapse;width:100%;font-size:14px}#hf-lab td,#hf-lab th{text-align:left;padding:7px 8px;border-bottom:1px solid var(--lab-line)}',
-    '#hf-lab th{font-weight:600;color:var(--lab-muted);font-size:12px;text-transform:uppercase;letter-spacing:.05em}#hf-lab td.n{text-align:right}',
+    '#hf-lab th{font-weight:600;color:var(--lab-muted);font-size:12px;}#hf-lab td.n{text-align:right}',
     '#hf-lab .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:12px}@media (max-width:760px){#hf-lab .two{grid-template-columns:minmax(0,1fr)}}',
     '#hf-lab .warn{color:var(--lab-warn);font-weight:600}#hf-lab button{font:inherit;padding:10px 18px;border-radius:999px;border:0;background:var(--lab-fg);color:var(--lab-bg);cursor:pointer}',
-    '#hf-lab svg text{fill:var(--lab-muted);font-size:11px}'
+    '#hf-lab svg text{fill:var(--lab-muted);font-size:11px}',
+    '#hf-lab .review{margin:0 0 12px}#hf-lab .review .row{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}',
+    '#hf-lab button.light{background:transparent;color:var(--lab-fg);border:1px solid var(--lab-line)}#hf-lab button[disabled]{opacity:.5;cursor:default}',
+    '#hf-lab .review-text{white-space:pre-wrap;font-size:16px;margin:8px 0}#hf-lab .review-photo{display:block;max-width:min(100%,420px);border-radius:8px;margin:8px 0}'
   ].join('\n');
 
   function el(tag, attrs, kids) {
@@ -68,12 +71,13 @@
     var i = k.impact, e = k.engagement, h = k.health;
     root.appendChild(el('h1', { text: 'Happiness Foundation Lab' }));
     root.appendChild(el('p', { class: 'sub', text: 'Live numbers from the backend · updated ' + new Date(k.generatedAt).toLocaleString() + ' · refreshes every minute' }));
+    root.appendChild(reviewPanel());
     root.appendChild(el('h2', { text: 'Impact' }));
     root.appendChild(el('div', { class: 'grid' }, [
       tile(i.peopleMadeHappy, 'People made happy', fmt(i.peopleMadeHappy30d) + ' in 30 days · ' + fmt(i.peopleMadeHappy7d) + ' in 7', true),
       tile(i.actionsEverDone, 'Different actions done'),
-      tile(i.pledgesMade, 'Pledges made', 'Phase 3'),
-      tile(i.pledgesKept, 'Pledges kept', 'Phase 3')
+      tile(i.pledgesMade, 'Pledges made'),
+      tile(i.pledgesKept, 'Pledges kept')
     ]));
     root.appendChild(el('h2', { text: 'Engagement' }));
     root.appendChild(el('div', { class: 'grid' }, [
@@ -102,6 +106,55 @@
     ]));
     root.appendChild(accessPanel(k.me));
     if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
+  }
+
+  // "To review": anyone with access approves or rejects new suggestions and
+  // stories here. The decision is saved to the Webflow CMS too.
+  var reviewing = false;
+  function reviewPanel() {
+    var wrap = el('div', { id: 'lab-review' }, [el('h2', { text: 'To review' })]);
+    var body = el('div', {}, [el('p', { class: 'sub', text: 'Loading…' })]);
+    wrap.appendChild(body);
+    function when(iso) { try { return new Date(iso).toLocaleString(); } catch (e) { return ''; } }
+    function card(type, item, kids) {
+      var status = el('p', { class: 'sub', role: 'status' });
+      var yes = el('button', { type: 'button', class: 'btn', text: type === 'story' ? 'Approve and publish' : 'Approve' });
+      var no = el('button', { type: 'button', class: 'btn light', text: 'Reject' });
+      var box = el('div', { class: 'panel review' }, kids.concat([el('div', { class: 'row' }, [yes, no]), status]));
+      function decide(decision) {
+        return async function () {
+          if (decision === 'rejected' && !window.confirm(type === 'story' ? 'Reject this story? It will not be shown, and no email is sent.' : 'Reject this suggestion? No email is sent.')) return;
+          reviewing = true; yes.disabled = no.disabled = true; status.textContent = 'Saving…';
+          var r = await window.HFB.call('/api/lab/review', { method: 'POST', body: { type: type, id: item.id, decision: decision } });
+          reviewing = false;
+          if (r.ok) { box.innerHTML = ''; box.appendChild(el('p', { class: 'sub', text: decision === 'approved' ? (type === 'story' ? 'Approved. It is on the site and the member gets an email.' : 'Approved. A draft action has been made in the CMS for you to finish and publish.') : 'Rejected.' })); }
+          else { status.textContent = (r.data && r.data.message) || 'That did not work. Try again.'; yes.disabled = no.disabled = false; }
+        };
+      }
+      yes.onclick = decide('approved');
+      no.onclick = decide('rejected');
+      return box;
+    }
+    window.HFB.call('/api/lab/review').then(function (r) {
+      body.innerHTML = '';
+      if (!r.ok) { body.appendChild(el('p', { class: 'sub', text: (r.data && r.data.message) || 'Could not load.' })); return; }
+      var d = r.data;
+      if (!d.suggestions.length && !d.stories.length) { body.appendChild(el('p', { class: 'sub', text: 'Nothing waiting. New suggestions and stories show up here.' })); return; }
+      d.stories.forEach(function (s) {
+        var kids = [el('p', { class: 'sub', text: 'Story · ' + (s.name || 'A member') + (s.showName ? '' : ' (posting without a name)') + ' · ' + when(s.createdAt) + (s.version > 1 ? ' · edited' : '') })];
+        if (s.actionTitle) kids.push(el('p', { text: 'About: ' + s.actionTitle }));
+        if (s.photoKey) kids.push(el('img', { src: window.HFB.base + '/media/' + s.photoKey, alt: s.photoDescription || 'Story photo', class: 'review-photo' }));
+        if (s.text) kids.push(el('p', { class: 'review-text', text: s.text }));
+        if (s.videoUrl) { var a = el('a', { href: s.videoUrl, text: 'Watch the video', target: '_blank', rel: 'noopener' }); kids.push(el('p', {}, [a])); }
+        body.appendChild(card('story', s, kids));
+      });
+      d.suggestions.forEach(function (s) {
+        var kids = [el('p', { class: 'sub', text: 'Suggestion · ' + (s.name || 'A member') + ' · ' + when(s.createdAt) }), el('p', { class: 'review-text', text: s.text })];
+        if (s.similar) kids.push(el('p', { class: 'sub', text: s.similar }));
+        body.appendChild(card('suggestion', s, kids));
+      });
+    });
+    return wrap;
   }
 
   // "Who can see this": anyone with access can add or remove invited people.
@@ -193,6 +246,7 @@
       // Do not redraw while someone is typing an invitation.
       var active = document.activeElement;
       if (active && active.id === 'lab-invite-email') return;
+      if (reviewing) return;
       var r = await window.HFB.call('/api/lab/kpis');
       if (r.ok) render(root, r.data);
       else if (r.status === 401) message(root, 'Your sign-in has expired. Sign in again to see the numbers.', true);

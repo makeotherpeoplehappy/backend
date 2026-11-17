@@ -345,13 +345,10 @@ describe('Phase 3: pledges', () => {
     await h.request('GET', '/api/me', { token: 'shcat_ana' });
   });
 
-  it('a test order of two pieces makes two pledges; refunding one removes one', async () => {
+  it('an order of two pieces makes one pledge; a partial refund keeps it, a full refund removes it', async () => {
     expect((await shopifyHook('orders/create', orderPayload(1, { qty: 2 }))).status).toBe(200);
-    expect(await h.db(`SELECT piece, status, drop_id FROM pledges ORDER BY piece`)).toEqual([
-      { piece: 1, status: 'open', drop_id: 'drop-01' },
-      { piece: 2, status: 'open', drop_id: 'drop-01' },
-    ]);
-    h.fake.orders.push({
+    expect(await h.db(`SELECT line_ref, piece, status, drop_id FROM pledges`)).toEqual([{ line_ref: 'order', piece: 1, status: 'open', drop_id: 'drop-01' }]);
+    const refunded = (qty: number) => ({
       id: 'gid://shopify/Order/1',
       email: 'ana@example.com',
       createdAt: '2026-11-16T10:00:00Z',
@@ -359,26 +356,25 @@ describe('Phase 3: pledges', () => {
       cancelledAt: null,
       customer: { id: 'gid://shopify/Customer/1000' },
       lineItems: { nodes: [{ id: 'gid://shopify/LineItem/10', quantity: 2, product: { id: PRODUCT } }] },
-      refunds: [{ refundLineItems: { nodes: [{ quantity: 1, lineItem: { id: 'gid://shopify/LineItem/10' } }] } }],
+      refunds: [{ refundLineItems: { nodes: [{ quantity: qty, lineItem: { id: 'gid://shopify/LineItem/10' } }] } }],
     });
+    h.fake.orders.push(refunded(1));
     await shopifyHook('refunds/create', { order_id: 1, refund_line_items: [{ line_item_id: 10, quantity: 1 }] });
-    expect(await h.db(`SELECT piece, status FROM pledges ORDER BY piece`)).toEqual([
-      { piece: 1, status: 'open' },
-      { piece: 2, status: 'cancelled' },
-    ]);
+    expect(await h.db(`SELECT status FROM pledges`)).toEqual([{ status: 'open' }]);
     // The same webhook again changes nothing.
     await shopifyHook('orders/create', orderPayload(1, { qty: 2 }));
-    expect(await h.db(`SELECT COUNT(*) AS n FROM pledges`)).toEqual([{ n: 2 }]);
+    expect(await h.db(`SELECT COUNT(*) AS n FROM pledges`)).toEqual([{ n: 1 }]);
+    h.fake.orders[h.fake.orders.length - 1] = refunded(2);
+    await shopifyHook('refunds/create', { order_id: 1, refund_line_items: [{ line_item_id: 10, quantity: 1 }] });
+    expect(await h.db(`SELECT status FROM pledges`)).toEqual([{ status: 'cancelled' }]);
     const st = await (await h.request('GET', '/api/drops/state?drop=drop-01')).json();
-    expect(st.pledges).toEqual({ made: 1, kept: 0 });
+    expect(st.pledges).toEqual({ made: 0, kept: 0 });
   });
+
 
   it('a shop order from someone without an account emails them a "Keep your pledge" link, once', async () => {
     await shopifyHook('orders/create', orderPayload(7, { qty: 2, email: 'new@example.com', customerId: null }));
-    expect(await h.db(`SELECT claim_id IS NOT NULL AS claim, partner_id, buyer_email FROM pledges`)).toEqual([
-      { claim: 1, partner_id: 1, buyer_email: 'new@example.com' },
-      { claim: 1, partner_id: 1, buyer_email: 'new@example.com' },
-    ]);
+    expect(await h.db(`SELECT claim_id IS NOT NULL AS claim, partner_id, buyer_email FROM pledges`)).toEqual([{ claim: 1, partner_id: 1, buyer_email: 'new@example.com' }]);
     await tick();
     await flush();
     await tick();
@@ -386,13 +382,13 @@ describe('Phase 3: pledges', () => {
     const mails = h.fake.emails.filter((e) => e.template?.id === CLAIM_TEMPLATE);
     expect(mails).toHaveLength(1);
     expect(mails[0].to).toEqual(['new@example.com']);
-    expect(mails[0].template!.variables).toMatchObject({ COUNT: 2, CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });
+    expect(mails[0].template!.variables).toMatchObject({ COUNT: 1, CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });
   });
 
-  it('a cancelled order removes its pledges', async () => {
+  it('a cancelled order removes its pledge', async () => {
     await shopifyHook('orders/create', orderPayload(1, { qty: 2 }));
     await shopifyHook('orders/cancelled', orderPayload(1, { qty: 2, cancelled: true }));
-    expect(await h.db(`SELECT status FROM pledges`)).toEqual([{ status: 'cancelled' }, { status: 'cancelled' }]);
+    expect(await h.db(`SELECT status FROM pledges`)).toEqual([{ status: 'cancelled' }]);
   });
 
   it('an action done after the order keeps the oldest open pledge; one done before does not', async () => {
@@ -460,7 +456,7 @@ describe('Phase 3: pledges', () => {
     });
     const out = await (await tick()).json();
     expect(out.syncOrders).toEqual({ orders: 1 });
-    expect(await h.db(`SELECT COUNT(*) AS n FROM pledges WHERE drop_id = 'drop-01'`)).toEqual([{ n: 3 }]);
+    expect(await h.db(`SELECT COUNT(*) AS n FROM pledges WHERE drop_id = 'drop-01'`)).toEqual([{ n: 1 }]);
   });
 });
 

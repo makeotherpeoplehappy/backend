@@ -46,7 +46,7 @@
   "action-signin-done": "Taking you to sign in. This will be counted when you are back.",
   "acct-there": "there",
   "acct-ripple-none": "When someone you invite takes an action, it shows here.",
-  "acct-pledges-none": "No pledges yet. Every piece in the shop comes with one.",
+  "acct-pledges-none": "No pledges yet. Every purchase in the shop comes with one.",
   "acct-pledged": "Pledged {date}",
   "acct-pledge-kept": "Kept with {action} on {date}",
   "acct-pledge-an-action": "an action",

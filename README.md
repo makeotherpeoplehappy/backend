@@ -93,15 +93,16 @@ A drop is a Shopify collection with a **Drop date** (collection field
 - **Early buying is impossible:** each upcoming drop's products are scheduled in
   Shopify to publish at the drop date (needs the app scopes `read_publications`
   and `write_publications`).
-- **Pledges:** every product sold in the shop makes pledges; a drop's
-  "pledges made, kept" adds up the pledges of its products.
+- **Pledges:** every purchase in the shop makes one pledge; a drop's
+  "pledges made, kept" counts the orders that hold one of its pieces.
 - **Notify me:** Shopify customers tagged `notify-drop-<handle>`; send the "it's
   live" email with Shopify Email.
 
 ## Partner pledges
 
-Any shop can give its buyers pledges, ours included (partner 1). The shop never
-needs the buyer's account: it registers the order and gives the buyer a link.
+Every purchase comes with one pledge, in any shop: ours (partner 1) or a
+partner's. The shop never needs the buyer's account: it registers the order and
+gives the buyer a link.
 
 1. In `/lab`, an owner adds the partner under **Partners**. The key (`hfp_…`) is
    shown once; only its hash is stored. The partner can be switched off there.
@@ -110,20 +111,22 @@ needs the buyer's account: it registers the order and gives the buyer a link.
    ```
    POST /join/api/partners/pledges
    Authorization: Bearer hfp_…
-   {"order": "A-1001", "items": [{"ref": "mug", "quantity": 2}], "email": "optional"}
+   {"order": "A-1001", "email": "optional", "orderedAt": "optional ISO date"}
    ```
 
-   Answer: `{"order", "pledges", "claimUrl"}`. Safe to repeat; send it again with
-   a lower quantity after a partial refund. A full cancel or refund:
-   `POST /join/api/partners/pledges/cancel` with `{"order": "A-1001"}`.
+   Answer: `{"order", "pledge": "open", "claimUrl"}`. Safe to repeat. A
+   cancelled or fully refunded order: `POST /join/api/partners/pledges/cancel`
+   with `{"order": "A-1001"}` (sending the order again opens it again).
 3. The shop shows `claimUrl` on its thank-you page or in its order email. It
    opens `/keep-your-pledge`; after signing in or creating a free account the
-   pledges are the member's. A claimed link cannot be taken by someone else.
-   If `email` matches a member's verified email, the pledges attach at once.
+   pledge is the member's. A claimed link cannot be taken by someone else.
+   If `email` matches a member's verified email, the pledge attaches at once.
 
 Our own shop's orders arrive through the Shopify webhook and get the same claim
 link; buyers without an account get it by email (Resend template
-`hf-pledge-claim`, sent by its ID, variables `CLAIM_URL` and `COUNT`).
+`hf-pledge-claim`, sent by its ID, variables `CLAIM_URL` and `COUNT`). A partial
+refund keeps the pledge; a cancellation or full refund removes it. A drop's
+"pledges made, kept" counts the orders that hold one of its pieces.
 
 ## Calls from the site
 

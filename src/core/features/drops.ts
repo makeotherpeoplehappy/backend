@@ -1,13 +1,10 @@
-// "Notify me when this drop goes live". Shopify is the home for these
-// sign-ups (native email marketing): the backend adds the person as a
-// Shopify customer with email-marketing consent and a tag for the drop, and
-// Mickey emails that tag from Shopify Email when the drop goes live. The
-// backend keeps only a one-way hash per drop, for counting.
+// Drops (in Shopify): the list, state, stock and scheduled release. "Notify
+// me" sign-ups are the shop theme's native Shopify form (customer tag
+// notify-drop-<handle>); writeDropSignupToShopify only finishes sign-ups that
+// were queued before the shop moved to Shopify.
 
 import type { Deps, Env } from '../env';
 import { HttpError, iso, sha256Hex } from '../http';
-import type { Member } from '../identity';
-import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
 import { word } from '../wording';
 import { dropPledges } from './pledges';
@@ -33,7 +30,6 @@ export interface Drop {
 
 const CACHE_KEY = 'drops:list';
 const LAST_KEY = 'drops:last';
-const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
 
 interface DropCollection {
   id: string;
@@ -84,8 +80,6 @@ export async function listDrops(env: Env, deps: Deps): Promise<Drop[]> {
 
 export async function forgetDrops(env: Env): Promise<void> {
   await env.CACHE.delete(CACHE_KEY);
-  await env.CACHE.delete('shop:catalog');
-  await env.CACHE.delete('product-labels');
 }
 
 /**
@@ -107,36 +101,8 @@ async function nextDrop(env: Env, deps: Deps): Promise<Drop | null> {
   return (await listDrops(env, deps)).find((d) => Date.parse(d.dropDate!) > now) || null;
 }
 
+/** The Shopify customer tag for "Notify me" sign-ups to a drop (the theme's native form sets it). */
 export const dropTag = (slug: string) => `notify-drop-${slug}`.slice(0, 40);
-
-export async function signUpForDrop(env: Env, deps: Deps, input: { drop?: unknown; email?: unknown }, member: Member | null) {
-  const slug = typeof input.drop === 'string' && /^[a-z0-9-]{1,100}$/.test(input.drop) ? input.drop : null;
-  const drop = slug ? await findDrop(env, deps, slug) : await nextDrop(env, deps);
-  if (!drop) throw new HttpError(404, 'drop_not_found', 'err-drop-not-found');
-  const status = await effectiveStatus(env, deps, drop);
-  if (status !== 'upcoming') {
-    throw new HttpError(409, 'drop_not_upcoming', status === 'live' ? 'err-drop-live' : 'err-drop-closed');
-  }
-  const email = (member?.email || (typeof input.email === 'string' ? input.email : '')).trim().toLowerCase();
-  if (!EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'err-invalid-email');
-
-  const hash = await sha256Hex(`drop-signup|${env.LINK_SECRET}|${email}`);
-  const now = iso(deps.now());
-  const inserted = await env.DB.prepare(
-    `INSERT INTO drop_signups (drop_slug, email_hash, member_id, created_at) VALUES (?1, ?2, ?3, ?4) ON CONFLICT (drop_slug, email_hash) DO NOTHING`,
-  )
-    .bind(drop.slug, hash, member?.id ?? null, now)
-    .run();
-  if (inserted.meta.changes) {
-    await enqueue(env, deps, `drop-signup:${drop.slug}:${hash.slice(0, 32)}`, {
-      op: 'shopify.dropSignup',
-      email,
-      firstName: member?.first_name || null,
-      tag: dropTag(drop.slug),
-    }).run();
-  }
-  return { drop: drop.slug, name: drop.name, alreadySignedUp: !inserted.meta.changes };
-}
 
 /**
  * Run by the queue: adds or updates the Shopify customer, subscribes them
@@ -371,158 +337,4 @@ export async function shopDrops(env: Env, deps: Deps) {
   const current = (cur && out.find((d) => d.drop === cur.slug)) || null;
   const past = out.filter((d) => d !== current && d.status === 'sold_out').sort((a, b) => String(b.dropDate).localeCompare(String(a.dropDate)));
   return { current, past };
-}
-
-/**
- * The facts behind each product's scarcity label, by handle. True and specific
- * only; the site words them with the label texts in src/wording/en.json
- * (for example "Drop 01 · 64 of 100 left" or "Limited edition · 250 pieces"):
- *   drop pieces          name = the drop's name, size = the piece's edition size
- *   limited editions     name = null, size = Shopify field custom.edition_size
- *   everything else      no label
- * Cached for 60 seconds.
- */
-export interface ProductLabel {
-  name: string | null;
-  size: number | null;
-  left: number | null;
-  soldOut: boolean;
-}
-
-export async function productLabels(env: Env, deps: Deps): Promise<Record<string, ProductLabel>> {
-  const cached = (await env.CACHE.get('product-labels', 'json')) as Record<string, ProductLabel> | null;
-  if (cached) return cached;
-  const r = await adminGraphql<{
-    products: { nodes: { id: string; handle: string; tracksInventory: boolean; totalInventory: number; edition: { value: string } | null }[] };
-  }>(
-    env,
-    deps,
-    `query { products(first: 100, query: "status:active") { nodes { id handle tracksInventory totalInventory edition: metafield(namespace: "custom", key: "edition_size") { value } } } }`,
-  );
-  const drops = await listDrops(env, deps);
-  const dropOf = new Map<string, Drop>();
-  for (const d of drops) for (const id of d.productIds) if (!dropOf.has(id)) dropOf.set(id, d);
-  const labels: Record<string, ProductLabel> = {};
-  for (const p of r.products.nodes) {
-    const left = p.tracksInventory ? Math.max(0, p.totalInventory) : null;
-    const size = editionSize(p.edition?.value);
-    const d = dropOf.get(p.id);
-    if (d) {
-      // Each piece with its own edition size.
-      const pieces = size;
-      const status = await effectiveStatus(env, deps, d);
-      const soldOut = status === 'sold_out' || (status === 'live' && left === 0);
-      labels[p.handle] = { name: d.name, size: pieces, left: !soldOut && status === 'live' && left !== null && pieces ? Math.min(left, pieces) : null, soldOut };
-      continue;
-    }
-    if (size !== null) {
-      labels[p.handle] = { name: null, size, left: left !== null && left > 0 && left < size ? left : null, soldOut: left === 0 };
-    }
-  }
-  await env.CACHE.put('product-labels', JSON.stringify(labels), { expirationTtl: 60 });
-  return labels;
-}
-
-// ---------------------------------------------------------------------------
-// The whole shop in one answer, so the page can draw it at once: the current
-// drop, "Available now" and past drops, each with its products (from the
-// Shopify collection with the drop's address, or "available-now"), labels
-// included. Empty sections are left out. Cached for 60 seconds, and cleared
-// when a product or drop changes.
-// ---------------------------------------------------------------------------
-
-export const SHOP_CACHE = 'shop:catalog';
-export const AVAILABLE_NOW = 'available-now';
-
-interface ShopProduct {
-  handle: string;
-  title: string;
-  image: { url: string; alt: string } | null;
-  price: { amount: string; currencyCode: string } | null;
-  available: boolean;
-  label: ProductLabel | null;
-}
-
-async function collectionProducts(env: Env, deps: Deps, handle: string): Promise<Omit<ShopProduct, 'label'>[]> {
-  const r = await adminGraphql<{
-    collections: {
-      nodes: {
-        products: {
-          nodes: {
-            handle: string;
-            title: string;
-            status: string;
-            featuredMedia: { preview: { image: { url: string; altText: string | null } | null } | null } | null;
-            priceRangeV2: { minVariantPrice: { amount: string; currencyCode: string } } | null;
-            variants: { nodes: { availableForSale: boolean }[] };
-          }[];
-        };
-      }[];
-    };
-  }>(
-    env,
-    deps,
-    `query ($q: String!) { collections(first: 1, query: $q) { nodes { products(first: 48, sortKey: COLLECTION_DEFAULT) { nodes {
-       handle title status featuredMedia { preview { image { url altText } } } priceRangeV2 { minVariantPrice { amount currencyCode } }
-       variants(first: 20) { nodes { availableForSale } } } } } } }`,
-    { q: `handle:${handle}` },
-  );
-  const c = r.collections.nodes[0];
-  if (!c) return [];
-  return c.products.nodes
-    .filter((p) => p.status === 'ACTIVE')
-    .map((p) => ({
-      handle: p.handle,
-      title: p.title,
-      image: p.featuredMedia?.preview?.image ? { url: p.featuredMedia.preview.image.url, alt: p.featuredMedia.preview.image.altText || p.title } : null,
-      price: p.priceRangeV2?.minVariantPrice || null,
-      available: p.variants.nodes.some((v) => v.availableForSale),
-    }));
-}
-
-const SHOP_FRESH_MS = 60_000;
-
-async function buildShopCatalog(env: Env, deps: Deps) {
-  const { current, past } = await shopDrops(env, deps);
-  const labels = await productLabels(env, deps).catch(() => ({}) as Record<string, ProductLabel>);
-  const withLabels = (list: Omit<ShopProduct, 'label'>[]): ShopProduct[] => list.map((p) => ({ ...p, label: labels[p.handle] || null }));
-  const out = {
-    current: current ? { ...current, products: withLabels(await collectionProducts(env, deps, current.collection)) } : null,
-    availableNow: withLabels(await collectionProducts(env, deps, AVAILABLE_NOW)),
-    past: [] as unknown[],
-  };
-  for (const d of past) out.past.push({ ...d, products: withLabels(await collectionProducts(env, deps, d.collection)) });
-  await env.CACHE.put(SHOP_CACHE, JSON.stringify({ at: deps.now().getTime(), data: out }), { expirationTtl: 86_400 });
-  return out;
-}
-
-/**
- * The shop, always answered at once: a copy younger than a minute is served
- * as it is; an older copy is served too while a fresh one is made in the
- * background (`later`). Only the very first visit, or the first after a
- * product or drop changed, waits for Shopify.
- */
-export async function shopCatalog(env: Env, deps: Deps, later?: (p: Promise<unknown>) => void) {
-  const cached = (await env.CACHE.get(SHOP_CACHE, 'json')) as { at: number; data: unknown } | null;
-  if (cached && cached.data) {
-    if (deps.now().getTime() - cached.at > SHOP_FRESH_MS) {
-      const refresh = buildShopCatalog(env, deps).catch(() => undefined);
-      if (later) later(refresh);
-      else await refresh;
-    }
-    return cached.data;
-  }
-  return buildShopCatalog(env, deps);
-}
-
-/** Run by the timer so the stored copy stays fresh even when nobody visits. */
-export async function warmShop(env: Env, deps: Deps) {
-  await buildShopCatalog(env, deps);
-  return { warmed: true };
-}
-
-/** A product or drop changed: the shop and labels are worked out again on the next visit. */
-export async function forgetShop(env: Env): Promise<void> {
-  await env.CACHE.delete(SHOP_CACHE);
-  await env.CACHE.delete('product-labels');
 }

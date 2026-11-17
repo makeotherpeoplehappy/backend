@@ -11,8 +11,8 @@ import { actionState, markDone, mostDone, resolveActionRef, setLike, syncActions
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
-import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
-import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, warmShop } from './features/drops';
+import { ensureShopifyWebhooks } from './features/products';
+import { dropState, forgetDrops, scheduleDropReleases, shopDrops } from './features/drops';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
@@ -157,10 +157,6 @@ route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
   return json(await dropState(env, deps, slug && /^[a-z0-9-]{1,100}$/.test(slug) ? slug : null), 200, { 'Cache-Control': 'public, max-age=30' });
 });
 
-route('GET', '/api/products/labels', true, async ({ env, deps }) => json({ labels: await productLabels(env, deps) }, 200, { 'Cache-Control': 'public, max-age=30' }));
-
-route('GET', '/api/shop', true, async ({ env, deps, ctx }) => json(await shopCatalog(env, deps, (p) => ctx.waitUntil(p)), 200, { 'Cache-Control': 'public, max-age=30' }));
-
 route('GET', '/api/drops', true, async ({ env, deps }) => json(await shopDrops(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 
 // Ripple: invites and "I'm in".
@@ -218,17 +214,6 @@ route('POST', '/api/intents/:id/complete', true, async (c) => {
   const res = await once(c.env, c.deps, `m:${member.id}`, `intent-${id}`, 'intent', async () => json(await completeIntent(c.env, c.deps, member, id)));
   c.ctx.waitUntil(drain(c.env, c.deps, { limit: 5, deadlineMs: 10_000 }).catch(() => undefined));
   return res;
-});
-
-// "Notify me when this drop goes live". Signed in: the account's email is
-// used. Signed out: the visitor types an email and passes the bot check.
-route('POST', '/api/drops/notify', true, async ({ req, env, deps, ctx }) => {
-  const body = await readJson<{ drop?: unknown; email?: unknown; turnstileToken?: unknown }>(req);
-  const member = await optionalMember(req, env, deps);
-  if (!member) await requireHuman(req, env, deps, body.turnstileToken);
-  const result = await signUpForDrop(env, deps, body, member);
-  ctx.waitUntil(drain(env, deps, { limit: 3, deadlineMs: 10_000 }).catch(() => undefined));
-  return json(result, 201);
 });
 
 // KPIs for the /lab dashboard page.
@@ -318,14 +303,12 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
   const HOUR = 60 * 60 * 1000;
   const jobs: [string, string, number, () => Promise<unknown>][] = [
     ['sync-actions', 'syncActions', HOUR, () => syncActions(env, deps)],
-    ['sync-products', 'syncProducts', HOUR, () => syncAllProducts(env, deps)],
-    // Keeps Shopify's product and customer-deletion webhooks pointed here.
+    // Keeps Shopify's order, product and customer-deletion webhooks pointed here.
     ['shopify-webhooks', 'shopifyWebhooks', 24 * HOUR, () => ensureShopifyWebhooks(env, deps, `${baseUrl}/api/webhooks/shopify`)],
     ['backup', 'backup', 24 * HOUR, () => backupDatabase(env, deps)],
     // Phase 2: review in the CMS (the Webflow webhook is the fast path).
     ['review', 'review', 15 * 60 * 1000, () => reviewAll(env, deps, baseUrl)],
     // Phase 3: drops, counts and pledges.
-    ['warm-shop', 'warmShop', 0, () => warmShop(env, deps)],
     ['drop-releases', 'dropReleases', HOUR, () => scheduleDropReleases(env, deps)],
     ['write-counts', 'writeCounts', HOUR, () => writeCountsToCms(env, deps)],
     ['sync-orders', 'syncOrders', 6 * HOUR, () => syncRecentOrders(env, deps, { days: 3 })],
@@ -358,11 +341,6 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
 route('POST', '/api/admin/sync-actions', false, async ({ req, env, deps }) => {
   requireSecret(req, env.ADMIN_SECRET);
   return json(await syncActions(env, deps));
-});
-
-route('POST', '/api/admin/sync-products', false, async ({ req, env, deps }) => {
-  requireSecret(req, env.ADMIN_SECRET);
-  return json(await syncAllProducts(env, deps));
 });
 
 route('POST', '/api/admin/shopify-webhooks', false, async ({ req, env, deps, baseUrl }) => {
@@ -454,9 +432,9 @@ route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
       return json({ ok: true, deleted });
     }
     if (topic === 'products/create' || topic === 'products/update' || topic === 'products/delete') {
-      if (!body.id) return json({ ok: true, ignored: 'no product id' });
-      await forgetShop(env);
-      return json({ ok: true, ...(await syncOneProduct(env, deps, String(body.id), topic === 'products/delete')) });
+      // A drop's pieces or sizes may have changed: work drops out again.
+      await forgetDrops(env);
+      return json({ ok: true, refreshed: 'drops' });
     }
     if (topic === 'orders/create' || topic === 'orders/updated' || topic === 'orders/cancelled' || topic === 'orders/paid') {
       const order = orderFromWebhook(body);

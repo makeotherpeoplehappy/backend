@@ -44,10 +44,6 @@ export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<st
     await forgetDrops(env);
     return { ok: true, resync: 'actions' };
   }
-  if (collectionId === CMS.drops.id) {
-    await forgetDrops(env);
-    return { ok: true, refreshed: 'drops' };
-  }
   if ((collectionId === CMS.suggestions.id || collectionId === CMS.stories.id) && validId) {
     const item = await webflow.getItem(env, deps, collectionId, itemId);
     const change = item ? await reviewItem(env, deps, collectionId, item, baseUrl) : null;
@@ -219,7 +215,6 @@ export async function labKpis(env: Env, deps: Deps) {
     suggestionsWaiting: await n(`SELECT COUNT(*) AS n FROM suggestions WHERE status = 'new'`),
     stories: await n(`SELECT COUNT(*) AS n FROM stories`),
     storiesWaiting: await n(`SELECT COUNT(*) AS n FROM stories WHERE status = 'new'`),
-    dropSignups: await n(`SELECT COUNT(*) AS n FROM drop_signups`),
   };
   const daily = await many<{ day: string; done: number }>(
     `SELECT substr(done_at, 1, 10) AS day, COUNT(*) AS done FROM done_marks WHERE done_at >= ?1 GROUP BY day ORDER BY day`,
@@ -235,13 +230,11 @@ export async function labKpis(env: Env, deps: Deps) {
     `SELECT COALESCE(a.title, l.action_id) AS title, COUNT(*) AS likes FROM likes l LEFT JOIN actions a ON a.cms_item_id = l.action_id
      WHERE l.value = 1 GROUP BY l.action_id ORDER BY likes DESC LIMIT 5`,
   );
-  const drops = await many<{ drop: string; signups: number }>(`SELECT drop_slug AS "drop", COUNT(*) AS signups FROM drop_signups GROUP BY drop_slug ORDER BY signups DESC`);
   const health = {
     queuePending: await n(`SELECT COUNT(*) AS n FROM outbox WHERE status IN ('pending', 'running')`),
     queueFailed: await n(`SELECT COUNT(*) AS n FROM outbox WHERE status = 'dead'`),
     actionsMirrored: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
-    productsSynced: await n(`SELECT COUNT(*) AS n FROM product_sync WHERE state = 'live'`),
     jobs: await many<{ job: string; last_run_at: string }>(`SELECT job, last_run_at FROM job_runs ORDER BY job`),
   };
-  return { generatedAt: iso(now), environment: env.ENVIRONMENT || null, impact, engagement, daily, topActions, mostLiked, drops, health };
+  return { generatedAt: iso(now), environment: env.ENVIRONMENT || null, impact, engagement, daily, topActions, mostLiked, health };
 }

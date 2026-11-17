@@ -88,8 +88,7 @@
       tile(e.activeMembers7d, 'Active this week', fmt(e.activeMembers30d) + ' in 30 days'),
       tile(e.likes, 'Likes'),
       tile(e.suggestions, 'Suggestions', fmt(e.suggestionsWaiting) + ' waiting for review'),
-      tile(e.stories, 'Stories', fmt(e.storiesWaiting) + ' waiting for review'),
-      tile(e.dropSignups, 'Drop sign-ups')
+      tile(e.stories, 'Stories', fmt(e.storiesWaiting) + ' waiting for review')
     ]));
     root.appendChild(el('h2', { text: 'Actions done per day' }));
     root.appendChild(chart(k.daily || []));
@@ -98,13 +97,11 @@
       el('div', {}, [el('h2', { text: 'Most liked' }), table(['Action', 'Likes'], (k.mostLiked || []).map(function (a) { return [a.title, a.likes]; }))])
     ]);
     root.appendChild(two);
-    root.appendChild(el('div', { class: 'two' }, [
-      el('div', {}, [el('h2', { text: 'Drop sign-ups' }), table(['Drop', 'Sign-ups'], (k.drops || []).map(function (d) { return [d.drop, d.signups]; }))]),
+    root.appendChild(el('div', {}, [
       el('div', {}, [el('h2', { text: 'System health' }), table(['Check', 'Value'], [
         ['Writes waiting to retry', h.queuePending],
         ['Writes that failed', h.queueFailed],
-        ['Actions mirrored', h.actionsMirrored],
-        ['Products synced', h.productsSynced]
+        ['Actions mirrored', h.actionsMirrored]
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))])
     ]));
     root.appendChild(partnersPanel(k.me));

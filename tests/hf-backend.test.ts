@@ -147,37 +147,3 @@ describe('Site helper: resume after sign-in', () => {
   });
 });
 
-describe('Site helper: drop "Notify me" on the shop and product pages', () => {
-  const upcoming = { 'hf-drop-status': 'Upcoming', 'hf-drop-lead': 'drop-01-tee', 'hf-drop-date': 'December 1, 2026 12:00' };
-  type Notify = { dropNotify: () => Promise<boolean> };
-
-  it('shows the form above the products on /shop while the drop is upcoming', async () => {
-    const shop = el('hf-shop');
-    const b = fakeBrowser({ intentStatus: 201, signedIn: false, pathname: '/shop', elements: [shop], home: upcoming });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(await (b.window.HFB as Notify).dropNotify()).toBe(false); // already added once, never twice
-    expect(shop.inserted).toHaveLength(1);
-    expect(shop.inserted[0].where).toBe('beforebegin');
-    const form = shop.inserted[0].el;
-    expect(form.id).toBe('hfb-notify');
-    expect(form.children[0].textContent).toBe('The next drop goes live on December 1, 2026 12:00 ET. Get an email when it does.');
-  });
-
-  it("shows it on the lead product's page, but not on other products", async () => {
-    const lead = el('hf-product');
-    fakeBrowser({ intentStatus: 201, signedIn: true, pathname: '/products/drop-01-tee', elements: [lead], home: upcoming });
-    const other = el('hf-product');
-    fakeBrowser({ intentStatus: 201, signedIn: true, pathname: '/products/mug', elements: [other], home: upcoming });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(lead.inserted).toHaveLength(1);
-    expect(lead.inserted[0].el.children[0].textContent).toContain('Get an email at your account address when it does.');
-    expect(other.inserted).toHaveLength(0);
-  });
-
-  it('shows nothing once the drop is live', async () => {
-    const shop = el('hf-shop');
-    fakeBrowser({ intentStatus: 201, signedIn: false, pathname: '/shop', elements: [shop], home: { ...upcoming, 'hf-drop-status': 'Live' } });
-    await new Promise((r) => setTimeout(r, 0));
-    expect(shop.inserted).toHaveLength(0);
-  });
-});

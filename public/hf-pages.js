@@ -8,8 +8,9 @@
  *   Share your story #story-action       story form with photo, video and "with" line
  *   Do this with me  #hf-join-title      invite page ("I'm in", leave, own invite, removed action)
  *   Stories          /stories            stories with video players and "Report this story"
- *   Drop hero        #hf-drop-count      pieces left, pledges made and kept
  *   Actions          /actions            "Most done" list
+ *   Keep your pledge #hf-claim           a shop's pledges join the member's account
+ *   Sign-in window   HFP.auth()          sign in, create an account, reset a password
  *
  * Webflow keeps the layout and text; this script only adds behaviour and data.
  */
@@ -50,12 +51,6 @@
     if (text) e.textContent = text; else drop(e);
     return text ? e : null;
   }
-  // The drop's state, asked for once per page: the hero and "The pieces" both need it.
-  var dropStates = {};
-  function dropState(slug) {
-    var q = '/api/drops/state' + (slug ? '?drop=' + slug : '');
-    return dropStates[q] || (dropStates[q] = HFB.call(q, { auth: false }));
-  }
   function copyText(key, vars) {
     var t = (window.HFW && window.HFW[key]) || '';
     if (vars) Object.keys(vars).forEach(function (k) { t = t.split('{' + k + '}').join(vars[k] == null ? '' : String(vars[k])); });
@@ -73,19 +68,6 @@
     return out;
   }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  // "64 of 100 left" and "100 pledges made, 81 kept", worded in src/wording/en.json.
-  function leftText(left, quantity) { return copyText('facts-left', { left: left, quantity: quantity }); }
-  function pledgesText(p) { return copyText(p.made === 1 ? 'pledges-one' : 'pledges-many', { made: p.made, kept: p.kept }); }
-  /** A product's label from the backend's facts: "Drop 01 · 100 pieces", "… · 64 of 100 left", "… · Sold out". */
-  function labelText(l) {
-    if (!l) return '';
-    if (typeof l === 'string') return l;
-    var name = l.name || copyText('label-edition');
-    if (l.soldOut) return copyText('label-sold-out', { name: name });
-    if (l.left !== null && l.left !== undefined && l.size) return copyText('label-left', { name: name, left: l.left, size: l.size });
-    if (l.size) return copyText('label-pieces', { name: name, size: l.size });
-    return name;
-  }
   function day(iso) { try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return ''; } }
   function signedIn() { return !!(window.HF && HF.token && HF.token()); }
   function wait(test, ms) {
@@ -488,20 +470,6 @@
       }
     }
 
-    // Orders (from Shopify, as before)
-    if ($('hf-orders') && HF.load) {
-      try {
-        var c = await HF.load();
-        var o = (c && c.orders && c.orders.nodes) || [];
-        if (o.length) {
-          var ol = el('ul', { class: 'hfp-list' });
-          o.forEach(function (x) { ol.appendChild(el('li', { text: x.name + ' · ' + day(x.processedAt) + ' · ' + x.totalPrice.amount + ' ' + x.totalPrice.currencyCode })); });
-          $('hf-orders').innerHTML = '';
-          $('hf-orders').appendChild(ol);
-        }
-      } catch (e) {}
-    }
-
     // Settings and your data
     if (!$('hfp-settings') && so) {
       var box = el('div', { id: 'hfp-settings' });
@@ -896,31 +864,6 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Drop hero: pieces left, pledges made and kept
-  // ---------------------------------------------------------------------------
-  async function dropHero() {
-    var count = $('hf-drop-count');
-    if (!count || $('hfp-drop-facts')) return;
-    // "Coming soon", "Out now" and "Sold out" are Webflow elements in the hero. heroState()
-    // shows one at once (CMS status and launch time); the backend's answer (stock) has the last word.
-    var hero = count.parentNode;
-    heroState();
-    var m = /^\/drops\/([a-z0-9-]+)/.exec(location.pathname);
-    await wait(function () { return window.HFB; }, 10000);
-    var r = await dropState(m && m[1]);
-    if (!r.ok) return;
-    var d = r.data;
-    if (d.status && d.status !== 'unknown') showOnly(hero, d.status);
-    var facts = el('p', { id: 'hfp-drop-facts', class: 'hfp-muted' });
-    var parts = [];
-    if (d.status === 'live' && d.left !== null && d.quantity) parts.push(leftText(d.left, d.quantity));
-    if (d.pledges && d.pledges.made > 0) parts.push(pledgesText(d.pledges));
-    if (!parts.length) return;
-    facts.textContent = parts.join(' · ');
-    count.insertAdjacentElement('afterend', facts);
-  }
-
-  // ---------------------------------------------------------------------------
   // /actions: "Most done"
   // ---------------------------------------------------------------------------
   async function mostDone() {
@@ -935,341 +878,6 @@
     var box = el('section', { id: 'hfp-most-done', 'aria-labelledby': 'hfp-most-done-h' }, [el('h2', { id: 'hfp-most-done-h', text: copyText('most-done-h') }), ol]);
     var footer = document.querySelector('footer');
     footer ? footer.parentNode.insertBefore(box, footer) : document.body.appendChild(box);
-  }
-
-
-  // ---------------------------------------------------------------------------
-  // Shop: the current drop, then "Available now", then past drops. Each
-  // section shows a Shopify collection: the drop's address (drop-01) or
-  // "available-now". Empty sections hide themselves. Every product card and
-  // product page shows its edition label ("Drop 01 · 100 pieces").
-  // ---------------------------------------------------------------------------
-  var STORE = 'r40e0y-zs.myshopify.com';
-  // Shopify's own card (the fallback list): its buttons are worded in src/wording/en.json.
-  function cardHtml(previewOnly) {
-    return '<div class="hf-product"><shopify-media query="product.selectedOrFirstAvailableVariant.image" width="320" height="320"></shopify-media>' +
-      '<h3><shopify-data query="product.title"></shopify-data></h3><p><shopify-money query="product.selectedOrFirstAvailableVariant.price"></shopify-money></p>' +
-      '<button type="button" class="hf-button-light" shopify-attr--data-handle="product.handle" onclick="location.href=\'/products/\'+this.dataset.handle">' + esc(copyText('card-details')) + '</button>' +
-      (previewOnly ? '' : ' <button type="button" class="hf-button" onclick="document.getElementById(\'hf-cart\').addLine(event).showModal()" shopify-attr--disabled="!product.selectedOrFirstAvailableVariant.availableForSale">' + esc(copyText('card-add')) + '</button>') +
-      '</div>';
-  }
-  var SKELETON = '<div class="hfp-skeleton" aria-hidden="true"><div></div><p></p><p></p></div>';
-  function collectionGrid(handle, previewOnly) {
-    var g = el('div', { class: 'hfp-grid', 'aria-busy': 'true' });
-    // Grey placeholders hold the space until Shopify fills in the products.
-    var mo = new MutationObserver(function () {
-      if (g.querySelector('.hf-product')) { g.querySelectorAll('.hfp-skeleton').forEach(function (x) { x.remove(); }); g.removeAttribute('aria-busy'); mo.disconnect(); }
-    });
-    mo.observe(g, { childList: true, subtree: true });
-    g.innerHTML = SKELETON + SKELETON + SKELETON + '<shopify-context type="collection" handle="' + handle + '"><template><shopify-list-context type="product" query="collection.products" first="48"><template>' + cardHtml(previewOnly) + '</template></shopify-list-context></template></shopify-context>';
-    return g;
-  }
-  var GRID_CSS = '.hfp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:28px;margin:20px 0 8px}' +
-    '.hfp-grid shopify-context,.hfp-grid shopify-list-context{display:contents}.hfp-grid .hf-product h3{font-size:20px;margin:12px 0 4px}' +
-    '.hfp-grid shopify-media img{width:100%;height:auto;border-radius:8px;background:#eee}.hfp-shop-section{margin:0 0 56px}.hfp-past{opacity:.85}' +
-    '.hfp-skeleton div{aspect-ratio:1;border-radius:8px;background:#eee}.hfp-skeleton p{height:16px;margin:12px 0 0;border-radius:4px;background:#eee;max-width:70%}.hfp-skeleton p+p{max-width:35%}' +
-    '@media (prefers-reduced-motion:no-preference){.hfp-skeleton div,.hfp-skeleton p{animation:hfp-pulse 1.2s ease-in-out infinite alternate}}@keyframes hfp-pulse{to{opacity:.5}}';
-  function ensureShopify() {
-    if (!document.querySelector('script[src*="storefront/web-components"]')) {
-      document.head.appendChild(el('script', { type: 'module', src: 'https://cdn.shopify.com/storefront/web-components.js' }));
-    }
-    if (!document.querySelector('shopify-store')) document.body.appendChild(el('shopify-store', { 'store-domain': STORE, country: 'US', language: 'en' }));
-    if (!$('hf-cart')) document.body.appendChild(el('shopify-cart', { id: 'hf-cart' }));
-  }
-
-  /** A drop's own page: every piece in the drop, right there. */
-  async function dropPage() {
-    var m = /^\/drops\/([a-z0-9-]+)\/?$/.exec(location.pathname);
-    var box = $('hfp-pieces'); // "The pieces" heading and its line are in Webflow, inside the drop's box
-    if (!m || !box || box.getAttribute('data-hfp')) return;
-    box.setAttribute('data-hfp', '1');
-    await wait(function () { return window.HFB; }, 10000);
-    var r = await dropState(m[1]);
-    var upcoming = r.ok && r.data.status === 'upcoming';
-    document.head.appendChild(el('style', { text: GRID_CSS + '.hfp-card-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#eee}' }));
-    ensureShopify();
-    // The drop's pieces from the shop's one answer (fast); Shopify's own list as a fallback.
-    var shop = await HFB.call('/api/shop', { auth: false });
-    var all = shop.ok ? [shop.data.current].concat(shop.data.past || []).filter(Boolean) : [];
-    var found = all.filter(function (d) { return d.drop === m[1]; })[0];
-    box.classList.add('hfp-shop-section');
-    box.style.cssText = 'flex:1 1 100%;margin:0'; // full width under the image and text (.hf-drop wraps)
-    // Before launch the hero already says when the drop goes live, so the line under the heading waits.
-    if (!upcoming) showOnly(box, 'live');
-    box.appendChild(found ? grid(found.products, found.status === 'live') : collectionGrid(m[1], upcoming));
-    editionLabels(box);
-  }
-  function hideIfEmpty(sec) {
-    // An empty collection: hide the section once Shopify has answered (or after 6 seconds).
-    setTimeout(function () { if (!sec.querySelector('.hf-product')) sec.style.display = 'none'; }, 6000);
-  }
-
-  var labelsPromise = null;
-  function loadLabels() {
-    if (!labelsPromise) labelsPromise = HFB.call('/api/products/labels', { auth: false }).then(function (r) { return r.ok ? r.data.labels : {}; });
-    return labelsPromise;
-  }
-  /** Adds "Drop 01 · 100 pieces" or "Limited edition · 250 pieces" to each product card as it renders. */
-  function editionLabels(root) {
-    function paint(labels) {
-      root.querySelectorAll('.hf-product').forEach(function (card) {
-        if (card.querySelector('.hfp-edition')) return;
-        var b = card.querySelector('button[data-handle]');
-        var label = b && labelText(labels[b.getAttribute('data-handle')]);
-        if (!label) return;
-        var h = card.querySelector('h3') || card.firstChild;
-        card.insertBefore(el('p', { class: 'hfp-edition hf-drop-label', style: 'margin:12px 0 0', text: label }), h);
-      });
-    }
-    loadLabels().then(function (labels) {
-      paint(labels);
-      new MutationObserver(function () { paint(labels); }).observe(root, { childList: true, subtree: true });
-    });
-  }
-
-  async function productLabel() {
-    var m = /^\/products\/([^\/]+)/.exec(location.pathname);
-    var target = $('hf-product');
-    if (!m || !target || $('hfp-product-edition')) return;
-    await wait(function () { return window.HFB; }, 10000);
-    var labels = await loadLabels();
-    var label = labelText(labels[m[1]]);
-    if (!label) return;
-    var h1 = document.querySelector('h1');
-    (h1 || target).insertAdjacentElement('beforebegin', el('p', { id: 'hfp-product-edition', class: 'hf-drop-label', text: label }));
-  }
-
-  // The whole shop in one call, asked for as soon as this script runs.
-  var shopEarly = location.pathname === '/shop'
-    ? fetch((window.HFB ? HFB.base : '/join') + '/api/shop', { headers: { Accept: 'application/json' } })
-        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
-        .catch(function () { return { ok: false }; })
-    : null;
-
-  function money(p) {
-    if (!p) return '';
-    try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode }).format(Number(p.amount)); } catch (e) { return p.amount + ' ' + p.currencyCode; }
-  }
-
-  /** A product card drawn straight from the backend's answer; its wording is in src/wording/en.json. */
-  function productCard(p, canBuy) {
-    var href = '/products/' + p.handle;
-    var img = p.image ? el('a', { href: href, tabindex: '-1', 'aria-hidden': 'true' }, [
-      el('img', { class: 'hfp-card-img', src: p.image.url + (p.image.url.indexOf('?') >= 0 ? '&' : '?') + 'width=640', alt: p.image.alt || p.title, loading: 'lazy', width: '640', height: '640' }),
-    ]) : el('div', { class: 'hfp-card-img', 'aria-hidden': 'true' });
-    var buy = null;
-    if (canBuy && p.available) {
-      buy = el('span', { class: 'hfp-buy' });
-      buy.innerHTML = '<shopify-context type="product" handle="' + p.handle + '"><template><button type="button" class="hf-button" onclick="document.getElementById(\'hf-cart\').addLine(event).showModal()">' + esc(copyText('card-add')) + '</button></template></shopify-context>';
-    }
-    return el('div', { class: 'hf-product' }, [
-      img,
-      labelText(p.label) ? el('p', { class: 'hfp-edition hf-drop-label', style: 'margin:12px 0 0', text: labelText(p.label) }) : null,
-      el('h3', null, [el('a', { href: href, style: 'color:inherit;text-decoration:none', text: p.title })]),
-      el('p', { text: p.available ? money(p.price) : copyText('card-sold-out', { price: money(p.price) }) }),
-      el('div', { class: 'hfp-row', style: 'margin:8px 0 0' }, [el('a', { class: 'hf-button-light', href: href, text: copyText('card-details') }), buy]),
-    ]);
-  }
-  function grid(products, canBuy) {
-    return el('div', { class: 'hfp-grid' }, products.map(function (p) { return productCard(p, canBuy); }));
-  }
-
-  async function shopPage() {
-    var root = $('hf-shop');
-    if (location.pathname !== '/shop' || !root || root.getAttribute('data-hfp')) return;
-    root.setAttribute('data-hfp', '1');
-    var r = await shopEarly;
-    if (!r || !r.ok) { document.documentElement.setAttribute('data-hfp-shop', 'fallback'); return; } // the page's own list stays
-    var cur = r.data.current;
-    var past = r.data.past || [];
-    var now = r.data.availableNow || [];
-    document.head.appendChild(el('style', { text: GRID_CSS + '.hfp-card-img{display:block;width:100%;height:auto;aspect-ratio:1;object-fit:cover;border-radius:8px;background:#eee}' }));
-    root.innerHTML = '<shopify-store store-domain="' + STORE + '" country="US" language="en"></shopify-store><shopify-cart id="hf-cart"></shopify-cart>';
-    // The sections and their wording are Webflow elements under the shop (hidden until shown
-    // here); this fills in the data and shows the sections that have something in them.
-    var dropBox = $('hfp-shop-drop');
-    if (cur && dropBox) {
-      var facts = [];
-      if (cur.status === 'live' && cur.left !== null && cur.quantity) facts.push(leftText(cur.left, cur.quantity));
-      if (cur.pledges && cur.pledges.made > 0) facts.push(pledgesText(cur.pledges));
-      // The drop and its pieces sit in one box, apart from any other products below.
-      dropBox.classList.add('hfp-shop-section');
-      dropBox.style.marginTop = '0';
-      showOnly(dropBox, cur.status);
-      var h = fillText(dropBox, 'name', cur.name);
-      if (h) h.style.marginTop = '0';
-      fillText(dropBox, 'statement', cur.statement);
-      var details = fillText(dropBox, 'details', cur.detailsLine);
-      if (details) details.classList.add('hfp-muted');
-      var f = fillText(dropBox, 'facts', facts.join(' · '));
-      if (f) f.classList.add('hfp-muted');
-      var link = slot(dropBox, 'link');
-      if (link) link.setAttribute('href', '/drops/' + cur.drop);
-      var dropGrid = slot(dropBox, 'grid');
-      // Before launch the pieces are shown on the drop page only; the shop lists them once the drop is out.
-      if (dropGrid) { if (cur.products.length && cur.status === 'live') dropGrid.appendChild(grid(cur.products, true)); else drop(dropGrid); }
-      turnOn(dropBox);
-      wait(function () { return $('hfb-notify'); }, 8000).then(function (found) {
-        if (!found) return;
-        var form = $('hfb-notify');
-        var lab = form.querySelector('label');
-        var wording = copyText('notify-label'); // the same for members and visitors
-        if (lab && wording) lab.textContent = wording;
-        (details || dropBox.firstElementChild).insertAdjacentElement('afterend', form);
-      });
-    }
-    var nowBox = $('hfp-shop-now');
-    if (now.length && nowBox) {
-      nowBox.classList.add('hfp-shop-section');
-      if (!cur) nowBox.firstElementChild.style.marginTop = '0';
-      var line = nowBox.querySelector('p');
-      if (line) line.classList.add('hfp-muted');
-      var nowGrid = slot(nowBox, 'grid');
-      if (nowGrid) nowGrid.appendChild(grid(now, true));
-      turnOn(nowBox);
-    }
-    var pastBox = $('hfp-shop-past');
-    var template = pastBox && pastBox.querySelector('[data-hf-template="past-drop"]');
-    var withPieces = past.filter(function (d) { return d.products && d.products.length; });
-    if (template) {
-      drop(template);
-      withPieces.forEach(function (d) {
-        var item = template.cloneNode(true);
-        item.removeAttribute('data-hf-template');
-        fillText(item, 'name', d.name);
-        var q = fillText(item, 'statement', d.statement);
-        if (q) q.style.fontSize = '18px';
-        // "Sold out" (Webflow's text) unless there are pledges to count.
-        var pl = slot(item, 'pledges');
-        if (pl) { pl.classList.add('hfp-muted'); if (d.pledges && d.pledges.made) pl.textContent = pledgesText(d.pledges); }
-        var g = slot(item, 'grid');
-        if (g) g.appendChild(grid(d.products, false));
-        pastBox.appendChild(item);
-      });
-      if (withPieces.length) { pastBox.classList.add('hfp-shop-section', 'hfp-past'); turnOn(pastBox); }
-    }
-    document.documentElement.setAttribute('data-hfp-shop', 'ready');
-  }
-
-
-  // ---------------------------------------------------------------------------
-  // Site-wide parts that used to be separate Webflow scripts (now versioned here)
-  // ---------------------------------------------------------------------------
-
-  /** Drop hero (home page and /drops/...): the state label, button links and the countdown. */
-  function heroState() {
-    var s = $('hf-drop-status');
-    var c = $('hf-drop-count');
-    if (!s || !c || c.getAttribute('data-hfp-hero')) return;
-    c.setAttribute('data-hfp-hero', '1');
-    var hero = c.parentNode;
-    var q = $('hf-drop-qty');
-    var dt = $('hf-drop-date');
-    var lead = $('hf-drop-lead');
-    var sg = $('hf-drop-slug');
-    var cd = hero.querySelector('[data-hf-fill=countdown]');
-    // The CMS date has no time; take it from the details line ("12:00").
-    if (dt && !/\d:\d/.test(dt.textContent)) {
-      var y = ((hero.querySelector('.hf-drop-details') || {}).textContent || '').match(/\d{1,2}:\d\d/);
-      if (y) dt.textContent += ' ' + y[0];
-    }
-    var h = lead ? lead.textContent.trim() : '';
-    var pg = sg && sg.textContent.trim();
-    var st = s.textContent.trim().toLowerCase().replace(/ /g, '_');
-    var d = dt ? etTime(dt.textContent.trim()) : NaN;
-    hero.querySelectorAll('a[data-hf-show~=live]').forEach(function (a) { a.href = pg ? '/drops/' + pg : h ? '/products/' + h : '/shop'; });
-    if (q) hero.querySelectorAll('[data-hf-show~=sold_out]').forEach(function (e) { if (e.textContent.indexOf('{qty}') >= 0) e.textContent = e.textContent.replace('{qty}', q.textContent.trim()); });
-    if (st === 'sold_out') return showOnly(hero, st);
-    if (st === 'live' || (d && d <= Date.now())) return showOnly(hero, 'live');
-    showOnly(hero, 'upcoming');
-    if (d && cd) (function tick() {
-      var x = Math.floor((d - Date.now()) / 1000);
-      if (x <= 0) return showOnly(hero, 'live');
-      cd.textContent = Math.floor(x / 86400) + 'd ' + Math.floor((x % 86400) / 3600) + 'h ' + Math.floor((x % 3600) / 60) + 'm ' + (x % 60) + 's';
-      setTimeout(tick, 1000);
-    })();
-  }
-  /** "December 5, 2026 12:00" in New York time, as a timestamp. */
-  function etTime(r) {
-    var M = 'JanFebMarAprMayJunJulAugSepOctNovDec';
-    var m = r.match(/^(\w{3})\w* (\d+), (\d+) (\d+):(\d+)/);
-    if (!m) return NaN;
-    var a = Date.UTC(+m[3], M.indexOf(m[1]) / 3, +m[2], +m[4], +m[5]);
-    var o = {};
-    var N = 'numeric';
-    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: N, month: N, day: N, hour: N, minute: N })
-      .formatToParts(new Date(a)).forEach(function (x) { o[x.type] = +x.value; });
-    return 2 * a - Date.UTC(o.year, o.month - 1, o.day, o.hour, o.minute);
-  }
-
-  /** Header cart link: item count, and opens the cart drawer. */
-  function headerCart() {
-    var l = $('hf-cart-link');
-    var b = $('hf-cart-count');
-    if (!l || !b || l.getAttribute('data-hfp')) return;
-    l.setAttribute('data-hfp', '1');
-    function show(n) {
-      b.textContent = n;
-      b.style.display = n ? '' : 'none';
-      l.setAttribute('aria-label', n ? copyText(n === 1 ? 'cart-label-one' : 'cart-label-many', { n: n }) : copyText('cart-label'));
-    }
-    show(0);
-    function load() {
-      var id = '';
-      try { id = (localStorage.getItem('__shopify:cartId') || '').replace(/^"|"$/g, ''); } catch (e) {}
-      if (!id) return show(0);
-      fetch('https://' + STORE + '/api/2025-10/graphql.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'query($id:ID!){cart(id:$id){totalQuantity}}', variables: { id: id } }) })
-        .then(function (r) { return r.json(); })
-        .then(function (j) { show(j.data && j.data.cart ? j.data.cart.totalQuantity : 0); })
-        .catch(function () {});
-    }
-    function cart() { var c = $('hf-cart'); return c && c.showModal ? c : null; }
-    l.addEventListener('click', function (e) { var c = cart(); if (c) { e.preventDefault(); c.showModal(); } });
-    document.addEventListener('click', function () { if ($('hf-cart')) { setTimeout(load, 1200); setTimeout(load, 3000); } });
-    window.addEventListener('focus', load);
-    load();
-    if (location.hash === '#cart' && window.customElements) customElements.whenDefined('shopify-cart').then(function () { var c = cart(); if (c) c.showModal(); });
-  }
-
-  /** Cart drawer: checkout unlocks once the pledge is ticked. */
-  function cartPledge() {
-    var c = $('hf-cart');
-    if (!c || c.querySelector('.hf-pledge')) return;
-    document.head.appendChild(el('style', { text: '#hf-cart:not(.hf-pledged)::part(primary-button){opacity:.45;pointer-events:none}.hf-pledge{margin:4px 0 12px;padding:14px 16px;border:2px solid #6699CC;border-radius:12px;font-size:16px;line-height:1.4}.hf-pledge label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-weight:500}.hf-pledge input{margin-top:3px;width:18px;height:18px;accent-color:#222}.hf-pledge small{display:block;margin-top:2px;font-size:14px;font-weight:400;color:#555}' }));
-    var box = el('input', { type: 'checkbox', id: 'hf-pledge-box' });
-    var d = el('div', { class: 'hf-pledge' }, [el('label', null, [box, el('span', null, [copyText('cart-pledge-label'), el('small', { text: copyText('cart-pledge-hint') })])])]);
-    d.slot = 'extension';
-    c.appendChild(d);
-    var l = el('span', { text: copyText('cart-pledge') });
-    l.slot = 'checkout-button';
-    c.appendChild(l);
-    (function order() {
-      var r = c.shadowRoot;
-      if (!r) return setTimeout(order, 100);
-      if (r.querySelector('style[data-hf]')) return;
-      var st = el('style', { 'data-hf': '', text: 'div:has(> slot[name=extension]){display:flex;flex-direction:column}slot[name=extension]{display:block;order:1}div:has(> a[part=primary-button]){order:2}' });
-      r.appendChild(st);
-    })();
-    box.addEventListener('change', function () {
-      c.classList.toggle('hf-pledged', box.checked);
-      l.textContent = copyText(box.checked ? 'cart-checkout' : 'cart-pledge');
-    });
-  }
-
-  /** Before a drop launches, its pieces can't be added to the cart (shop and product pages). */
-  async function productGate() {
-    var m = /^\/products\/([^\/]+)/.exec(location.pathname);
-    if ((!m && location.pathname !== '/shop') || $('hfp-gate')) return;
-    var home = await fetch('/').then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; });
-    if (!home) return;
-    var d = new DOMParser().parseFromString(home, 'text/html');
-    function g(i) { var e = d.getElementById(i); return e ? e.textContent.trim() : ''; }
-    var lead = g('hf-drop-lead');
-    var at = new Date(g('hf-drop-date')).getTime();
-    if (!lead || g('hf-drop-status') !== 'Upcoming' || !at || at <= Date.now()) return;
-    var css = 'button[data-handle="' + lead + '"]+button{display:none}';
-    if (m && m[1] === lead) css += '#hf-product button[onclick*="addLine"]{display:none}';
-    document.head.appendChild(el('style', { id: 'hfp-gate', text: css }));
   }
 
 
@@ -1486,14 +1094,12 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, heroState, headerCart, claimPage, invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage, productGate];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, claimPage, invitePage, storiesPage, mostDone];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }
     });
     try { storyItemPage(); } catch (e) {}
-    // The cart drawer can be added later (the shop draws its own): try again for a few seconds.
-    [0, 1000, 3000, 6000].forEach(function (ms) { setTimeout(function () { try { cartPledge(); } catch (e) {} }, ms); });
   }
   // Start once the page and the interface text are there
   // (and Memberstack, which says who is signed in).

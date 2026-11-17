@@ -488,31 +488,9 @@ describe('Phase 3: stock and drop state', () => {
     expect(shop.past).toEqual([expect.objectContaining({ drop: 'drop-01', status: 'sold_out', collection: 'drop-01' })]);
   });
 
-  it('labels products truthfully: drop pieces with the drop, limited editions with their size, the rest with nothing', async () => {
-    await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
-    const base = { status: 'ACTIVE' as const, descriptionHtml: '', description: '' };
-    h.fake.products.push({ ...base, id: 'gid://shopify/Product/801', handle: 'print', title: 'Print', editionSize: 250 });
-    h.fake.products.push({ ...base, id: 'gid://shopify/Product/802', handle: 'mug', title: 'Mug' });
-    h.fake.inventory.set('gid://shopify/Product/801', 12);
-    const { labels } = await (await h.request('GET', '/api/products/labels')).json();
-    expect(labels).toEqual({ tee: { name: 'Drop 01', size: 100, left: null, soldOut: false }, print: { name: null, size: 250, left: 12, soldOut: false } });
-  });
 
-  it('answers the whole shop in one call, leaving out empty sections', async () => {
-    await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
-    const shop = await (await h.request('GET', '/api/shop')).json();
-    expect(shop.current).toMatchObject({ drop: 'drop-01', status: 'upcoming', products: [{ handle: 'tee', title: 'Tee', available: true, label: { name: 'Drop 01', size: 100, left: null, soldOut: false } }] });
-    expect(shop.availableNow).toEqual([]);
-    expect(shop.past).toEqual([]);
-    // Later visits get the stored copy at once, even when it is older than a minute.
-    h.fake.products[0].title = 'Tee, renamed';
-    h.clock.advance(5 * 60 * 1000);
-    const stale = await (await h.request('GET', '/api/shop')).json();
-    expect(stale.current.products[0].title).toBe('Tee');
-    await h.settle(); // the background refresh
-    const fresh = await (await h.request('GET', '/api/shop')).json();
-    expect(fresh.current.products[0].title).toBe('Tee, renamed');
-  });
+
+
 
   it('adds up every piece of a drop: total pieces, pieces left, and sold out only when all are gone', async () => {
     await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
@@ -523,8 +501,6 @@ describe('Phase 3: stock and drop state', () => {
     h.fake.inventory.set(MUG, 40);
     const a = await (await h.request('GET', '/api/drops/state')).json();
     expect(a).toMatchObject({ status: 'live', quantity: 200, left: 40, detailsLine: "200 pieces. Out now. Gone when they're gone." });
-    const { labels } = await (await h.request('GET', '/api/products/labels')).json();
-    expect(labels).toEqual({ tee: { name: 'Drop 01', size: 100, left: null, soldOut: true }, mug: { name: 'Drop 01', size: 100, left: 40, soldOut: false } });
     h.fake.inventory.set(MUG, 0);
     await h.env.CACHE.delete('drop-stock:drop-01');
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'sold_out', quantity: 200, left: 0 });
@@ -543,7 +519,7 @@ describe('Phase 3: stock and drop state', () => {
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'live', left: null });
   });
 
-  it('works out the status and details line from the date, and refuses sign-ups once live', async () => {
+  it('works out the status and details line from the date', async () => {
     await setupDrop({ dropDate: '2026-11-16T12:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, 100);
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({
@@ -553,8 +529,6 @@ describe('Phase 3: stock and drop state', () => {
     h.clock.advance(4 * 60 * 60 * 1000);
     await h.env.CACHE.delete('drop-stock:drop-01');
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'live', detailsLine: "100 pieces. Out now. Gone when they're gone." });
-    const late = await h.request('POST', '/api/drops/notify', { token: 'shcat_ana', body: { drop: 'drop-01' } });
-    expect(late.status).toBe(409);
   });
 
   it('holds drop products back in Shopify until the drop date, once', async () => {

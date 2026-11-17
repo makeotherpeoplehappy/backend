@@ -30,7 +30,7 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 html:not(.hf-in) [data-hf-auth=in],html.hf-in [data-hf-auth=out]{display:none!important}
 /* Header icons; the menu button swaps ☰ for ✕ while the menu is open (Webflow marks it w--open) */
 .hf-ico{display:block;flex:none}
-.hf-nav-button.w--open{background-color:transparent}
+.hf-nav-button.w--open{background-color:transparent;color:var(--colour--ink)}
 .hf-nav-button .hf-x,.hf-nav-button.w--open .hf-bars{display:none}
 .hf-nav-button.w--open .hf-x{display:block}
 /* Phone bar: the pin opens the phone's own location picker (an invisible select over the icon) */

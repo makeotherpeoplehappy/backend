@@ -133,7 +133,7 @@ results only as numbers.
    `{month, given, claimed, kept, total}` (pledges given, kept by the buyer in
    an account, turned into an action). On the first day of each month partners
    with a report email get last month's numbers (Resend template
-   `hf-partner-report`; variables `PARTNER`, `MONTH`, `GIVEN`, `CLAIMED`, `KEPT`,
+   "Partner monthly report" (`partners.ts` REPORT_TEMPLATE, by ID); variables `PARTNER`, `MONTH`, `GIVEN`, `CLAIMED`, `KEPT`,
    `TOTAL_GIVEN`, `TOTAL_CLAIMED`, `TOTAL_KEPT`).
 
 Our own shop's orders arrive through the Shopify webhook and get the same claim

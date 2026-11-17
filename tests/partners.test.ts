@@ -4,6 +4,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHarness, type Harness } from './harness';
+import { REPORT_TEMPLATE } from '../src/core/features/partners';
 
 let h: Harness;
 let key: string;
@@ -112,7 +113,7 @@ describe('Partner pledges', () => {
     h.clock.advance(2 * 60 * 60 * 1000);
     await tick();
     await h.settle();
-    const sent = h.fake.emails.filter((e) => e.template?.id === 'hf-partner-report');
+    const sent = h.fake.emails.filter((e) => e.template?.id === REPORT_TEMPLATE);
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toEqual(['shop@example.com']);
     expect(sent[0].template!.variables).toMatchObject({ PARTNER: 'Good Shop', MONTH: 'November 2026', GIVEN: 2, CLAIMED: 1, KEPT: 0, TOTAL_GIVEN: 2 });

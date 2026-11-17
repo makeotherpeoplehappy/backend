@@ -181,5 +181,50 @@ html .hf-footer-note{color:#AEB7C2;font-size:15px;margin-top:8px}
   html .hf-footer{margin-top:64px}
 }
 
+/* Phones first (Gen Z lives on their phones): thumb-sized targets, swipe rows, slim header, safe areas */
+a,button,select,input,label{touch-action:manipulation;-webkit-tap-highlight-color:rgba(102,153,204,.2)}
+html .hf-nav-brand{min-height:44px;display:flex;align-items:center}
+html .hf-back{min-height:44px;display:inline-flex;align-items:center}
+.hf-section-head>a{min-height:44px;display:inline-flex;align-items:center;font-weight:600}
+#hf-results .w-dyn-item>a,a.hf-h3{display:block;padding:6px 0}
+input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(--hf-blue-deep)}
+html .hf-footer{padding-bottom:calc(40px + env(safe-area-inset-bottom))}
+html .hf-button:active,html .hf-button-light:active,.hf-action-card:active{transform:scale(.98)}
+@media (max-width:767px){
+  html body{font-size:17px}
+  html .hf-nav-container{min-height:64px;padding-top:6px;padding-bottom:6px}
+  html .hf-nav-logo{height:28px}
+  /* Open menu: big rows, easy to hit */
+  html .hf-nav-menu{max-height:calc(100dvh - 64px);overflow-y:auto}
+  html .hf-nav-link{font-size:22px;font-weight:600;min-height:56px;padding:8px 0;width:100%;border-bottom:1px solid var(--hf-line)}
+  html .hf-nav-link.w--current{box-shadow:none;color:var(--hf-blue-deep)}
+  html .hf-loc-select{min-height:52px;font-size:17px;width:100%}
+  html .hf-nav-right{width:100%}
+  /* Main buttons span the width: easy to reach with a thumb */
+  .hf-hero .hf-button,.hf-actions .hf-button,.hf-actions .hf-button-light,.hf-split .hf-button-light,html .hf-box .hf-button{width:100%}
+  .hf-actions{flex-direction:column}
+  /* Hero: action first, then a shorter photo */
+  .hf-hero{gap:28px;padding-top:24px}
+  .hf-hero-photo{aspect-ratio:16/11}
+  /* Impact: three numbers side by side */
+  .hf-impact{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding-top:28px;padding-bottom:28px}
+  .hf-num{font-size:34px}
+  .hf-num-label{font-size:14px;line-height:1.35}
+  /* Steps: number beside the words */
+  .hf-step{display:grid;grid-template-columns:48px minmax(0,1fr);column-gap:16px;row-gap:2px;align-items:start}
+  .hf-step .hf-dot{grid-row:span 2;width:48px;height:48px;font-size:20px}
+  .hf-step h3{margin:4px 0 0;font-size:21px}
+  /* Action cards: a row you swipe */
+  .hf-grid-3:has(>.hf-action-card){display:flex;overflow-x:auto;scroll-snap-type:x mandatory;gap:12px;margin-left:calc(-1 * var(--hf-gutter));margin-right:calc(-1 * var(--hf-gutter));padding:4px var(--hf-gutter) 12px;scrollbar-width:none}
+  .hf-grid-3:has(>.hf-action-card)::-webkit-scrollbar{display:none}
+  .hf-grid-3>.hf-action-card{flex:0 0 82%;scroll-snap-align:start;min-height:160px}
+  .hf-section-head{margin-bottom:20px}
+  /* Story photo: wide, not square */
+  .hf-story-photo{aspect-ratio:16/11}
+  /* Footer: links as a tap list */
+  html .hf-footer-links{flex-direction:column;gap:0;width:100%}
+  html .hf-footer-link{min-height:48px;border-bottom:1px solid rgba(255,255,255,.12);width:100%}
+}
+
 /* Calm motion: off when the device asks */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}html .hf-action-card:hover{transform:none}}

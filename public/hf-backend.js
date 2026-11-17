@@ -1,6 +1,7 @@
 /*
- * Happiness Foundation backend helper for the Webflow site.
- * Load after the HF sign-in helper:
+ * Happiness Foundation backend helper for the Webflow site, loaded by the
+ * site's loader script. Sign-in is Memberstack's (its script is in the site
+ * head; window.$memberstackDom); window.HF below wraps it for the site.
  *   <script src="/join/hf-backend.js" data-turnstile-sitekey="..." defer></script>
  *
  * window.HFB gives the site:
@@ -18,6 +19,43 @@
   var INTENT_KEY = 'hfb_intent';
   var LOCAL_KEY = 'hfb_local_intent';
 
+  // Sign-in with Memberstack. window.HF keeps the shape the site's scripts use:
+  // token() is the member's Memberstack token (checked by the backend),
+  // signin() opens Memberstack's sign-in (with its email-code option),
+  // signout() signs out and goes home.
+  function ms() { return window.$memberstackDom || null; }
+  window.HF = {
+    token: function () {
+      var m = ms();
+      var t = m && m.getMemberCookie ? m.getMemberCookie() : null;
+      return t ? { a: t } : null;
+    },
+    signin: function () {
+      var m = ms();
+      if (!m) return;
+      m.openModal('LOGIN').then(function (r) {
+        try { m.hideModal(); } catch (e) {}
+        // Signed in: reload, and the remembered click (if any) is finished below.
+        if (r && (r.type === 'LOGIN' || r.type === 'SIGNUP')) location.reload();
+      });
+    },
+    finish: async function () { return false; },
+    load: async function () {
+      var m = ms();
+      if (!m) return null;
+      var r = await m.getCurrentMember();
+      return r && r.data ? { id: r.data.id } : null;
+    },
+    signout: async function () {
+      var m = ms();
+      try { if (m) await m.logout(); } catch (e) {}
+      location.href = '/';
+    },
+    sync: function () { return window.HFB && window.HFB.sync ? window.HFB.sync() : Promise.resolve(null); },
+  };
+  /** True once Memberstack has loaded (or when the page has no Memberstack). */
+  function signInReady() { return !!ms() || !document.querySelector('script[data-memberstack-app]'); }
+
   function store(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
   function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
 
@@ -32,12 +70,9 @@
     return t && t.a ? t.a : null;
   }
 
-  // Refreshes an expiring Shopify token through HF.api, which renews it.
+  // Memberstack keeps its own session; the token is read fresh each call.
   async function freshToken() {
-    var t = window.HF && window.HF.token && window.HF.token();
-    if (t && t.exp && t.exp <= Date.now() + 60000 && window.HF.api) {
-      try { await window.HF.api('{customer{id}}'); } catch (e) {}
-    }
+    await waitFor(signInReady, 10000);
     return token();
   }
 
@@ -208,11 +243,7 @@
   async function resume() {
     var id = read(INTENT_KEY);
     if (!id && !read(LOCAL_KEY)) return null;
-    await waitFor(function () { return !!window.HF; }, 10000);
-    // Back from Shopify sign-in: exchange the code for a token first.
-    if (/[?&]code=/.test(location.search) && window.HF && window.HF.finish) {
-      try { await window.HF.finish(); } catch (e) {}
-    }
+    await waitFor(signInReady, 10000);
     if (!token()) return null;
     if (!id) return resumeLocal();
     var r = await call('/api/intents/' + encodeURIComponent(id) + '/complete', { method: 'POST', key: 'intent-' + id });
@@ -362,7 +393,7 @@
     });
     return true;
   }
-  waitFor(function () { return !!window.HF && !!window.HFW; }, 10000).then(function () { return dropNotify(); }).catch(function () {});
+  waitFor(function () { return !!window.HFW && signInReady(); }, 10000).then(function () { return dropNotify(); }).catch(function () {});
 
   window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify, copy: copy, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor };
 

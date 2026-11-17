@@ -1272,11 +1272,74 @@
     document.head.appendChild(el('style', { id: 'hfp-gate', text: css }));
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Small site-wide helpers that used to sit in Webflow's site footer
+  // ---------------------------------------------------------------------------
+
+  /** An empty CMS list hides itself and the heading right before it. */
+  function emptyLists() {
+    document.querySelectorAll('.w-dyn-empty').forEach(function (e) {
+      var w = e.closest('.w-dyn-list');
+      if (!w) return;
+      var h = w.previousElementSibling;
+      w.style.display = 'none';
+      if (h && /^H[1-6]$/.test(h.tagName)) h.style.display = 'none';
+    });
+  }
+
+  /** /actions-by-time/1-hour also lists the quicker actions (and likewise for cost). */
+  function shorterAlsoFits() {
+    var m = location.pathname.match(/^\/(actions-by-time|actions-by-cost)\/([^\/]+)/);
+    if (!m) return;
+    var steps = {
+      'actions-by-time': ['1-minute', '5-minutes', '15-minutes', '30-minutes', '1-hour', '2-hours', 'half-a-day', '1-day', '1-week'],
+      'actions-by-cost': ['free', 'up-to-5', 'up-to-10', 'up-to-50', 'up-to-100', 'up-to-500', 'up-to-1000', 'up-to-5000'],
+    }[m[1]];
+    var i = steps.indexOf(m[2]);
+    if (i < 1) return;
+    var wrap = document.querySelector('.w-dyn-list');
+    if (!wrap) return;
+    var list = wrap.querySelector('.w-dyn-items');
+    if (!list) {
+      list = el('div', { class: 'w-dyn-items' });
+      wrap.appendChild(list);
+      var empty = wrap.querySelector('.w-dyn-empty');
+      if (empty) empty.style.display = 'none';
+    }
+    wrap.style.display = '';
+    var seen = {};
+    list.querySelectorAll('a').forEach(function (a) { seen[a.getAttribute('href')] = 1; });
+    steps.slice(0, i).reverse().forEach(function (s) {
+      fetch('/' + m[1] + '/' + s).then(function (r) { return r.text(); }).then(function (h) {
+        var d = new DOMParser().parseFromString(h, 'text/html');
+        d.querySelectorAll('.w-dyn-items > .w-dyn-item').forEach(function (it) {
+          var a = it.querySelector('a');
+          if (!a || seen[a.getAttribute('href')]) return;
+          seen[a.getAttribute('href')] = 1;
+          list.appendChild(document.importNode(it, true));
+        });
+      });
+    });
+  }
+
+  /** The location picker remembers its choice. */
+  function rememberLocation() {
+    var s = $('hf-loc');
+    if (!s || s.getAttribute('data-hfp')) return;
+    s.setAttribute('data-hfp', '1');
+    try { s.value = localStorage.getItem('hf_loc') || ''; } catch (e) {}
+    s.addEventListener('change', function () {
+      try { localStorage.setItem('hf_loc', s.value); } catch (e) {}
+      window.dispatchEvent(new Event('hf-loc'));
+    });
+  }
+
   function start() {
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [heroState, headerCart, invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage, productGate];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, heroState, headerCart, invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage, productGate];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }
@@ -1285,8 +1348,11 @@
     // The cart drawer can be added later (the shop draws its own): try again for a few seconds.
     [0, 1000, 3000, 6000].forEach(function (ms) { setTimeout(function () { try { cartPledge(); } catch (e) {} }, ms); });
   }
-  // Start once the page and the interface text are there.
-  function go() { wait(function () { return window.HFW; }, 10000).then(start); }
+  // Start once the page and the interface text are there
+  // (and Memberstack, which says who is signed in).
+  function go() {
+    wait(function () { return window.HFW && (window.$memberstackDom || !document.querySelector('script[data-memberstack-app]')); }, 10000).then(start);
+  }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
   else go();
 })();

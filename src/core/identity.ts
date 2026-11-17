@@ -1,17 +1,21 @@
 import type { Deps, Env } from './env';
 import { HttpError, UpstreamError, bearer, callUpstream, iso, sha256Hex } from './http';
+import { MEMBERSTACK_APP_ID } from './config';
 import { linkGuestPledges } from './features/pledges';
 
-export interface Customer {
-  /** gid://shopify/Customer/123 */
+/** A signed-in Memberstack member, as verified with Memberstack. */
+export interface Account {
+  /** Memberstack member ID, mem_... */
   id: string;
   firstName: string | null;
+  /** Only set once Memberstack has verified the address. */
   email: string | null;
 }
 
 export interface Member {
   id: number;
-  shopify_customer_id: string;
+  /** mem_... (Memberstack), or an old Shopify customer GID until that member signs in again. */
+  account_id: string;
   first_name: string | null;
   email: string | null;
   notify_invite_summary: number;
@@ -26,84 +30,100 @@ export interface Member {
 }
 
 // Verified tokens are remembered briefly so a page making several calls does
-// not ask Shopify each time. KV's shortest expiry is 60 seconds.
+// not ask Memberstack each time. KV's shortest expiry is 60 seconds.
 const TOKEN_CACHE_SECONDS = 60;
+const MEMBERSTACK = 'https://admin.memberstack.com';
 
-const CUSTOMER_QUERY = 'query { customer { id firstName emailAddress { emailAddress } } }';
+interface MemberstackMember {
+  id: string;
+  verified?: boolean;
+  auth?: { email?: string | null };
+  customFields?: Record<string, string | null | undefined>;
+}
 
-async function customerApiUrl(env: Env, deps: Deps): Promise<string> {
-  const cacheKey = `cfg:customer-api:${env.SHOPIFY_STORE_DOMAIN}`;
-  const cached = await env.CACHE.get(cacheKey);
-  if (cached) return cached;
-  const res = await callUpstream(
-    deps.fetch,
-    'shopify',
-    `https://${env.SHOPIFY_STORE_DOMAIN}/.well-known/customer-account-api`,
-    { headers: { Accept: 'application/json' } },
-  );
-  if (!res.ok) throw new UpstreamError('shopify', res.status, `Customer Account API discovery failed: ${res.status}`);
-  const body = (await res.json()) as { graphql_api?: string };
-  if (!body.graphql_api) throw new UpstreamError('shopify', 502, 'Customer Account API discovery returned no graphql_api');
-  await env.CACHE.put(cacheKey, body.graphql_api, { expirationTtl: 86_400 });
-  return body.graphql_api;
+/** Reads one member from Memberstack's Admin API (null when there is none). */
+export async function memberstackMember(env: Env, deps: Deps, id: string): Promise<Account | null> {
+  if (!env.MEMBERSTACK_SECRET_KEY) throw new UpstreamError('memberstack', 503, 'MEMBERSTACK_SECRET_KEY is not set');
+  const res = await callUpstream(deps.fetch, 'memberstack', `${MEMBERSTACK}/members/${encodeURIComponent(id)}`, {
+    headers: { 'X-API-KEY': env.MEMBERSTACK_SECRET_KEY, Accept: 'application/json' },
+  });
+  if (!res.ok) throw new UpstreamError('memberstack', res.status, `Memberstack member lookup answered ${res.status}`);
+  const m = ((await res.json()) as { data: MemberstackMember | null }).data;
+  if (!m?.id) return null;
+  const email = m.auth?.email?.trim().toLowerCase() || null;
+  const first = m.customFields?.['first-name'] || m.customFields?.firstName || null;
+  return { id: m.id, firstName: first ? String(first).trim().slice(0, 40) || null : null, email: m.verified ? email : null };
 }
 
 /**
- * Asks Shopify who owns this customer token. Returns null when Shopify says
- * the token is not valid (forged, expired or revoked). Throws UpstreamError
- * when Shopify cannot be reached, so a Shopify outage is never mistaken for
- * "signed out".
+ * Asks Memberstack who owns this member token. Returns null when Memberstack
+ * says the token is not valid, or when it was issued for another Memberstack
+ * app (every app's tokens share one signing key). Throws UpstreamError when
+ * Memberstack cannot be reached, so an outage is never mistaken for "signed out".
  */
-export async function verifyCustomerToken(env: Env, deps: Deps, token: string): Promise<Customer | null> {
+export async function verifyMemberToken(env: Env, deps: Deps, token: string): Promise<Account | null> {
   if (!token || token.length > 4096) return null;
   const cacheKey = `tok:${await sha256Hex(token)}`;
   const cached = await env.CACHE.get(cacheKey, 'json');
-  if (cached) return cached as Customer;
-
-  const url = await customerApiUrl(env, deps);
-  const res = await callUpstream(deps.fetch, 'shopify', url, {
+  if (cached) return cached as Account;
+  if (!env.MEMBERSTACK_SECRET_KEY) throw new UpstreamError('memberstack', 503, 'MEMBERSTACK_SECRET_KEY is not set');
+  const res = await callUpstream(deps.fetch, 'memberstack', `${MEMBERSTACK}/members/verify-token`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: token },
-    body: JSON.stringify({ query: CUSTOMER_QUERY }),
+    headers: { 'X-API-KEY': env.MEMBERSTACK_SECRET_KEY, 'Content-Type': 'application/json', Accept: 'application/json' },
+    body: JSON.stringify({ token }),
   });
-  if (res.status === 401 || res.status === 403) return null;
-  if (!res.ok) throw new UpstreamError('shopify', res.status, `Customer Account API answered ${res.status}`);
-  const body = (await res.json()) as {
-    data?: { customer?: { id: string; firstName?: string | null; emailAddress?: { emailAddress?: string | null } | null } | null };
-    errors?: { message?: string; extensions?: { code?: string } }[];
-  };
-  const customer = body.data?.customer;
-  if (!customer?.id) {
-    const unauthorised = body.errors?.some((e) => /UNAUTHORI[SZ]ED|ACCESS_DENIED/i.test(e.extensions?.code || '') || /unauthori/i.test(e.message || ''));
-    if (unauthorised || !body.errors) return null;
-    throw new UpstreamError('shopify', 502, `Customer Account API error: ${body.errors.map((e) => e.message).join('; ')}`);
+  if (res.status === 400) {
+    const body = (await res.json().catch(() => ({}))) as { code?: string };
+    // A bad member token is "signed out"; a bad secret key is a setup problem.
+    if (/invalid.?token/i.test(body.code || '') || !body.code) return null;
+    throw new UpstreamError('memberstack', 400, `Memberstack token check failed: ${body.code}`);
   }
-  const result: Customer = {
-    id: customer.id,
-    firstName: customer.firstName?.trim() || null,
-    email: customer.emailAddress?.emailAddress?.trim().toLowerCase() || null,
-  };
-  await env.CACHE.put(cacheKey, JSON.stringify(result), { expirationTtl: TOKEN_CACHE_SECONDS });
-  return result;
+  if (!res.ok) throw new UpstreamError('memberstack', res.status, `Memberstack token check answered ${res.status}`);
+  const t = ((await res.json()) as { data?: { id?: string; type?: string; aud?: string } }).data;
+  if (!t?.id || (t.type && t.type !== 'member') || t.aud !== MEMBERSTACK_APP_ID) return null;
+  const account = await memberstackMember(env, deps, t.id);
+  if (!account) return null;
+  await env.CACHE.put(cacheKey, JSON.stringify(account), { expirationTtl: TOKEN_CACHE_SECONDS });
+  return account;
 }
 
-/** Creates or refreshes the member row from verified Shopify data. */
-export async function upsertMember(env: Env, deps: Deps, customer: Customer): Promise<Member> {
+/**
+ * Creates or refreshes the member row for a Memberstack account. A member from
+ * before the move to Memberstack (an old Shopify account) is taken over the
+ * first time someone signs in with the same verified email, so their history
+ * carries over.
+ */
+export async function upsertMember(env: Env, deps: Deps, account: Account): Promise<Member> {
   const now = iso(deps.now());
-  const row = await env.DB.prepare(
-    `INSERT INTO members (shopify_customer_id, first_name, email, created_at, updated_at)
-     VALUES (?1, ?2, ?3, ?4, ?4)
-     ON CONFLICT (shopify_customer_id) DO UPDATE SET
-       first_name = excluded.first_name,
-       email = excluded.email,
-       updated_at = CASE WHEN members.first_name IS excluded.first_name AND members.email IS excluded.email
-                         THEN members.updated_at ELSE excluded.updated_at END
-     RETURNING *`,
-  )
-    .bind(customer.id, customer.firstName, customer.email, now)
-    .first<Member>();
+  let row = await env.DB.prepare(`SELECT * FROM members WHERE account_id = ?1`).bind(account.id).first<Member>();
+  if (!row && account.email) {
+    row = await env.DB.prepare(
+      `UPDATE members SET account_id = ?1, updated_at = ?3
+       WHERE id = (SELECT id FROM members WHERE email = ?2 AND deleted_at IS NULL AND account_id NOT LIKE 'mem\\_%' ESCAPE '\\' AND account_id NOT LIKE 'deleted:%' ORDER BY id LIMIT 1)
+       RETURNING *`,
+    )
+      .bind(account.id, account.email, now)
+      .first<Member>();
+  }
+  if (row) {
+    const first = account.firstName ?? row.first_name;
+    const email = account.email ?? row.email;
+    if (first !== row.first_name || email !== row.email) {
+      row = (await env.DB.prepare(`UPDATE members SET first_name = ?2, email = ?3, updated_at = ?4 WHERE id = ?1 RETURNING *`)
+        .bind(row.id, first, email, now)
+        .first<Member>())!;
+    }
+  } else {
+    row = await env.DB.prepare(
+      `INSERT INTO members (account_id, first_name, email, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)
+       ON CONFLICT (account_id) DO UPDATE SET updated_at = excluded.updated_at
+       RETURNING *`,
+    )
+      .bind(account.id, account.firstName, account.email, now)
+      .first<Member>();
+  }
   if (!row) throw new Error('member upsert returned nothing');
-  // Orders placed without an account join the member when that email signs in.
+  // Shop orders placed with this email join the member once it is verified.
   if (row.email) await linkGuestPledges(env, row);
   return row;
 }
@@ -112,17 +132,17 @@ export async function upsertMember(env: Env, deps: Deps, customer: Customer): Pr
 export async function optionalMember(req: Request, env: Env, deps: Deps): Promise<Member | null> {
   const token = bearer(req);
   if (!token) return null;
-  const customer = await verifyCustomerToken(env, deps, token);
-  if (!customer) return null;
-  return upsertMember(env, deps, customer);
+  const account = await verifyMemberToken(env, deps, token);
+  if (!account) return null;
+  return upsertMember(env, deps, account);
 }
 
 export async function requireMember(req: Request, env: Env, deps: Deps): Promise<Member> {
   const token = bearer(req);
   if (!token) throw signInRequired();
-  const customer = await verifyCustomerToken(env, deps, token);
-  if (!customer) throw signInRequired();
-  return upsertMember(env, deps, customer);
+  const account = await verifyMemberToken(env, deps, token);
+  if (!account) throw signInRequired();
+  return upsertMember(env, deps, account);
 }
 
 function signInRequired(): HttpError {

@@ -37,6 +37,10 @@ export interface Env {
   ADMIN_SECRET: string;
   /** Signs links in emails (unsubscribe). */
   LINK_SECRET: string;
+  /** Memberstack secret key (sk_... or sk_sb_...): checks member sign-ins. */
+  MEMBERSTACK_SECRET_KEY?: string;
+  /** Signing secret of the Memberstack webhook (whsec_...). */
+  MEMBERSTACK_WEBHOOK_SECRET?: string;
   /** Comma-separated emails of the accounts allowed to open /lab. Optional. */
   LAB_EMAILS?: string;
 }

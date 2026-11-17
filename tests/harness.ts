@@ -2,6 +2,7 @@
 // from Miniflare, the same runtime Webflow Cloud uses, with fake Shopify,
 // Webflow, Resend and Turnstile services behind an injected fetch.
 
+import { MEMBERSTACK_APP_ID } from '../src/core/config';
 import { readFileSync, readdirSync } from 'node:fs';
 import { Miniflare } from 'miniflare';
 import { createApp } from '../src/core/app';
@@ -16,6 +17,8 @@ export interface FakeCustomer {
   id: string;
   firstName: string | null;
   email: string | null;
+  /** Memberstack: whether the member's email is verified (default true). */
+  verified?: boolean;
   actionsTaken?: string; // raw metafield JSON
   actionVotes?: string;
 }
@@ -67,6 +70,8 @@ export class FakeServices {
   /** Webflow creates the item but the answer is lost (network drop). */
   webflowLoseNextCreateResponse = false;
   shopifyDown = false;
+  /** Memberstack's Admin API is unreachable. */
+  memberstackDown = false;
   /** Admin API token currently accepted (issued by the client credentials grant). */
   adminToken: string | null = null;
   adminTokensIssued = 0;
@@ -93,7 +98,7 @@ export class FakeServices {
   }
 
   signIn(token: string, c: Partial<FakeCustomer> = {}): FakeCustomer {
-    const customer: FakeCustomer = { id: c.id || `gid://shopify/Customer/${1000 + this.tokens.size}`, firstName: c.firstName ?? 'Ana', email: c.email ?? `${token}@example.com`, ...c };
+    const customer: FakeCustomer = { id: c.id || `mem_${1000 + this.tokens.size}`, firstName: c.firstName ?? 'Ana', email: c.email ?? `${token}@example.com`, ...c };
     this.tokens.set(token, customer);
     if (!this.customers.find((x) => x.id === customer.id)) this.customers.push(customer);
     return customer;
@@ -118,11 +123,20 @@ export class FakeServices {
 
     // Shopify Customer Account API
     if (url.href === `https://${STORE}/.well-known/customer-account-api`) return j({ graphql_api: CUSTOMER_API });
-    if (url.href === CUSTOMER_API) {
-      if (this.shopifyDown) return j({ errors: 'down' }, 503);
-      const c = this.tokens.get(headers.get('Authorization') || '');
-      if (!c) return j({ errors: [{ message: 'Unauthorized' }] }, 401);
-      return j({ data: { customer: { id: c.id, firstName: c.firstName, emailAddress: c.email ? { emailAddress: c.email } : null } } });
+    // Memberstack Admin API: member token check and member lookup.
+    if (url.origin === 'https://admin.memberstack.com') {
+      if (this.memberstackDown) return new Response('down', { status: 503 });
+      if (headers.get('X-API-KEY') !== 'sk_sb_test') return j({ code: 'validation/invalid-secret-key', message: 'Invalid secret key' }, 400);
+      if (url.pathname === '/members/verify-token' && method === 'POST') {
+        const c = this.tokens.get(String((body as { token?: string })?.token || ''));
+        if (!c) return j({ code: 'INVALID_TOKEN', message: 'Invalid token' }, 400);
+        return j({ data: { id: c.id, type: 'member', iat: 1, exp: 2, aud: c.id.startsWith('mem_other') ? 'app_other' : MEMBERSTACK_APP_ID, iss: 'https://api.memberstack.com' } });
+      }
+      const m = /^\/members\/([^/]+)$/.exec(url.pathname);
+      if (m && method === 'GET') {
+        const c = [...this.tokens.values()].find((x) => x.id === decodeURIComponent(m[1]));
+        return j({ data: c ? { id: c.id, verified: c.verified ?? true, auth: { email: c.email }, customFields: c.firstName ? { 'first-name': c.firstName } : {} } : null });
+      }
     }
 
     // Shopify Dev Dashboard app: client credentials grant
@@ -417,6 +431,8 @@ export async function createHarness(): Promise<Harness> {
     SHOPIFY_CLIENT_SECRET: 'shopify_webhook_secret',
     WEBFLOW_API_TOKEN: 'wf_test',
     RESEND_API_KEY: 're_test',
+    MEMBERSTACK_SECRET_KEY: 'sk_sb_test',
+    MEMBERSTACK_WEBHOOK_SECRET: 'whsec_' + btoa('memberstack-webhook-secret'),
     EMAIL_FROM: 'Happiness Foundation <hello@happiness.foundation>',
     ERROR_EMAIL_TO: 'mickey@example.com',
     TURNSTILE_SECRET_KEY: 'ts_secret',

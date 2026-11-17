@@ -8,20 +8,19 @@ import { createHarness, type Harness } from './harness';
 let h: Harness;
 let actionA: string;
 
-function addDrop(slug: string, status: string, onFrontPage = false) {
-  h.fake.collection(CMS.drops.id).push({
-    id: h.fake.newId(),
-    isDraft: false,
-    live: true,
-    fieldData: { name: slug.replace(/-/g, ' '), slug, status, 'show-on-front-page': onFrontPage },
-  });
+function addDrop(slug: string, dropDate: string) {
+  h.fake.shopCollections.set(slug, []);
+  h.fake.dropCollections.set(slug, { title: slug.replace(/-/g, ' '), dropDate });
 }
 
 beforeEach(async () => {
   h = await createHarness();
   actionA = h.fake.addAction('compliment-a-stranger', 'Compliment a stranger');
-  addDrop('drop-01', CMS.drops.status.upcoming, true);
-  addDrop('drop-00', CMS.drops.status.live);
+  addDrop('drop-01', '2026-12-05T17:00:00.000Z');
+  addDrop('drop-00', '2026-11-01T17:00:00.000Z');
+  // Drop 00 is on sale now: one piece with stock.
+  h.fake.shopCollections.set('drop-00', ['gid://shopify/Product/900']);
+  h.fake.inventory.set('gid://shopify/Product/900', 5);
 });
 
 afterEach(async () => {
@@ -88,6 +87,8 @@ describe('Drop "notify me" sign-ups', () => {
   });
 
   it('a Shopify outage loses nothing: the sign-up is retried', async () => {
+    await h.request('GET', '/api/drops/state'); // the drop list was read before the outage
+    await h.env.CACHE.delete('drops:list'); // ...but its one-minute copy has run out
     h.fake.shopifyDown = true;
     const real = h.app.deps.fetch;
     h.app.deps.fetch = (async (input: RequestInfo | URL, init?: RequestInit) =>

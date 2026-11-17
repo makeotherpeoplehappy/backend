@@ -80,6 +80,25 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `POST /api/admin/shopify-webhooks` | `ADMIN_SECRET` | Register the Shopify webhooks (products, customer deletion) for this address |
 | `POST /api/webhooks/shopify` | Shopify (HMAC) | `customers/delete`, `customers/redact`, `products/create`, `products/update`, `products/delete` |
 
+## Drops (in Shopify)
+
+A drop is a Shopify collection with a **Drop date** (collection field
+`custom.drop_date`, date and time). Everything else is worked out:
+
+- **Pieces:** the collection's products. Each piece's size is its **Edition size**
+  (product field `custom.edition_size`); the drop's total is the sizes added up.
+- **Status:** upcoming before the drop date, live after it, sold out once every
+  piece is gone.
+- **Current drop** (home page, `/api/drops/state` without a name): the newest drop
+  on sale, else the next one coming up, else the most recent one.
+- **Early buying is impossible:** each upcoming drop's products are scheduled in
+  Shopify to publish at the drop date (needs the app scopes `read_publications`
+  and `write_publications`).
+- **Pledges:** every product sold in the shop makes pledges; a drop's
+  "pledges made, kept" adds up the pledges of its products.
+- **Notify me:** Shopify customers tagged `notify-drop-<handle>`; send the "it's
+  live" email with Shopify Email.
+
 ## Partner pledges
 
 Any shop can give its buyers pledges, ours included (partner 1). The shop never

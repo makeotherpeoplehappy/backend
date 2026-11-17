@@ -316,28 +316,12 @@ describe('Phase 3: counts', () => {
 const PRODUCT = 'gid://shopify/Product/555';
 const OTHER = 'gid://shopify/Product/777';
 
+/** Drop 01: a Shopify collection with a drop date and one piece, the tee (edition size = quantity). */
 async function setupDrop(opts: { dropDate?: string; quantity?: number } = {}) {
-  const leadItem = h.fake.newId();
-  h.fake.collection(CMS.products.id).push({ id: leadItem, isDraft: false, live: true, fieldData: { name: 'Tee', slug: 'tee', 'shopify-id': PRODUCT } });
-  await h.db(`INSERT INTO product_sync (shopify_id, cms_item_id, source_hash, state, synced_at) VALUES (?1, ?2, 'x', 'live', '2026-11-16')`, PRODUCT, leadItem);
-  const drop = {
-    id: h.fake.newId(),
-    isDraft: false,
-    live: true,
-    fieldData: {
-      name: 'Drop 01',
-      slug: 'drop-01',
-      status: CMS.drops.status.upcoming,
-      'show-on-front-page': true,
-      'drop-date': opts.dropDate ?? '2026-12-05T17:00:00.000Z',
-      quantity: opts.quantity ?? 100,
-      'details-line': 'typed by hand',
-      'lead-product': leadItem,
-      'products-in-this-drop': [leadItem],
-    } as Record<string, unknown>,
-  };
-  h.fake.collection(CMS.drops.id).push(drop);
-  return drop;
+  h.fake.products.push({ id: PRODUCT, handle: 'tee', title: 'Tee', status: 'ACTIVE', descriptionHtml: '', description: '', editionSize: opts.quantity ?? 100 });
+  h.fake.shopCollections.set('drop-01', [PRODUCT]);
+  h.fake.dropCollections.set('drop-01', { title: 'Drop 01', dropDate: opts.dropDate ?? '2026-12-05T17:00:00.000Z' });
+  return { slug: 'drop-01' };
 }
 
 function orderPayload(id: number, opts: { email?: string; customerId?: number | null; qty?: number; product?: number; at?: string; refunds?: unknown[]; cancelled?: boolean } = {}) {
@@ -497,12 +481,8 @@ describe('Phase 3: stock and drop state', () => {
   it('lists the current drop and past drops for the shop, each with its collection', async () => {
     await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, 0);
-    h.fake.collection(CMS.drops.id).push({
-      id: h.fake.newId(),
-      isDraft: false,
-      live: true,
-      fieldData: { name: 'Drop 02', slug: 'drop-02', statement: 'Be the reason.', 'drop-date': '2026-12-20T17:00:00.000Z', quantity: 50 },
-    });
+    h.fake.shopCollections.set('drop-02', []);
+    h.fake.dropCollections.set('drop-02', { title: 'Drop 02', description: 'Be the reason.', dropDate: '2026-12-20T17:00:00.000Z' });
     const shop = await (await h.request('GET', '/api/drops')).json();
     expect(shop.current).toMatchObject({ drop: 'drop-02', status: 'upcoming', collection: 'drop-02', statement: 'Be the reason.' });
     expect(shop.past).toEqual([expect.objectContaining({ drop: 'drop-01', status: 'sold_out', collection: 'drop-01' })]);
@@ -511,7 +491,6 @@ describe('Phase 3: stock and drop state', () => {
   it('labels products truthfully: drop pieces with the drop, limited editions with their size, the rest with nothing', async () => {
     await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
     const base = { status: 'ACTIVE' as const, descriptionHtml: '', description: '' };
-    h.fake.products.push({ ...base, id: PRODUCT, handle: 'tee', title: 'Tee' });
     h.fake.products.push({ ...base, id: 'gid://shopify/Product/801', handle: 'print', title: 'Print', editionSize: 250 });
     h.fake.products.push({ ...base, id: 'gid://shopify/Product/802', handle: 'mug', title: 'Mug' });
     h.fake.inventory.set('gid://shopify/Product/801', 12);
@@ -521,8 +500,6 @@ describe('Phase 3: stock and drop state', () => {
 
   it('answers the whole shop in one call, leaving out empty sections', async () => {
     await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
-    h.fake.products.push({ id: PRODUCT, handle: 'tee', title: 'Tee', status: 'ACTIVE', descriptionHtml: '', description: '' });
-    h.fake.shopCollections.set('drop-01', [PRODUCT]);
     const shop = await (await h.request('GET', '/api/shop')).json();
     expect(shop.current).toMatchObject({ drop: 'drop-01', status: 'upcoming', products: [{ handle: 'tee', title: 'Tee', available: true, label: { name: 'Drop 01', size: 100, left: null, soldOut: false } }] });
     expect(shop.availableNow).toEqual([]);
@@ -538,14 +515,10 @@ describe('Phase 3: stock and drop state', () => {
   });
 
   it('adds up every piece of a drop: total pieces, pieces left, and sold out only when all are gone', async () => {
-    const drop = await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
+    await setupDrop({ dropDate: '2026-11-15T17:00:00.000Z' });
     const MUG = 'gid://shopify/Product/803';
-    const mugItem = h.fake.newId();
-    await h.db(`INSERT INTO product_sync (shopify_id, cms_item_id, source_hash, state, synced_at) VALUES (?1, ?2, 'x', 'live', '2026-11-16')`, MUG, mugItem);
-    drop.fieldData['products-in-this-drop'] = [drop.fieldData['lead-product'], mugItem];
-    const base = { status: 'ACTIVE' as const, descriptionHtml: '', description: '' };
-    h.fake.products.push({ ...base, id: PRODUCT, handle: 'tee', title: 'Tee', editionSize: 100 });
-    h.fake.products.push({ ...base, id: MUG, handle: 'mug', title: 'Mug', editionSize: 100 });
+    h.fake.products.push({ status: 'ACTIVE', descriptionHtml: '', description: '', id: MUG, handle: 'mug', title: 'Mug', editionSize: 100 });
+    h.fake.shopCollections.set('drop-01', [PRODUCT, MUG]);
     h.fake.inventory.set(PRODUCT, 0);
     h.fake.inventory.set(MUG, 40);
     const a = await (await h.request('GET', '/api/drops/state')).json();
@@ -557,11 +530,11 @@ describe('Phase 3: stock and drop state', () => {
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'sold_out', quantity: 200, left: 0 });
   });
 
-  it("uses the drop's Quantity when a piece has no edition size", async () => {
+  it('gives no total when a piece has no edition size', async () => {
     await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
-    h.fake.products.push({ status: 'ACTIVE', descriptionHtml: '', description: '', id: PRODUCT, handle: 'tee', title: 'Tee' });
+    h.fake.products[0].editionSize = undefined;
     h.fake.inventory.set(PRODUCT, 100);
-    expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'upcoming', quantity: 100 });
+    expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'upcoming', quantity: null });
   });
 
   it('hides the line when inventory is not tracked', async () => {
@@ -570,16 +543,16 @@ describe('Phase 3: stock and drop state', () => {
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'live', left: null });
   });
 
-  it('keeps Status and the details line in the CMS in step with the date, and refuses sign-ups once live', async () => {
-    const drop = await setupDrop({ dropDate: '2026-11-16T12:00:00.000Z' });
+  it('works out the status and details line from the date, and refuses sign-ups once live', async () => {
+    await setupDrop({ dropDate: '2026-11-16T12:00:00.000Z' });
     h.fake.inventory.set(PRODUCT, 100);
-    await tick();
-    expect(drop.fieldData['details-line']).toBe("100 pieces. Drops November 16 at 07:00 ET. Gone when they're gone.");
-    expect(drop.fieldData.status).toBe(CMS.drops.status.upcoming);
+    expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({
+      status: 'upcoming',
+      detailsLine: "100 pieces. Drops November 16 at 07:00 ET. Gone when they're gone.",
+    });
     h.clock.advance(4 * 60 * 60 * 1000);
-    await tick();
-    expect(drop.fieldData.status).toBe(CMS.drops.status.live);
-    expect(drop.fieldData['details-line']).toBe("100 pieces. Out now. Gone when they're gone.");
+    await h.env.CACHE.delete('drop-stock:drop-01');
+    expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'live', detailsLine: "100 pieces. Out now. Gone when they're gone." });
     const late = await h.request('POST', '/api/drops/notify', { token: 'shcat_ana', body: { drop: 'drop-01' } });
     expect(late.status).toBe(409);
   });

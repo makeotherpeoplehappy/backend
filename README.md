@@ -54,7 +54,7 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `RESEND_API_KEY` | yes | Resend API key for happiness.foundation (sending access only) |
 | `MEMBERSTACK_SECRET_KEY` | yes | Memberstack secret key (`sk_sb_…` in test mode, `sk_…` live): checks member sign-ins |
 | `MEMBERSTACK_WEBHOOK_SECRET` | yes | Signing secret of the Memberstack webhook (`whsec_…`), endpoint `/join/api/memberstack/webhook` (events: member updated, member deleted) |
-| `EMAIL_FROM` | no | e.g. `Happiness Foundation <hello@happiness.foundation>` |
+| `EMAIL_FROM` | no | e.g. `Happiness Foundation <team@happiness.foundation>` |
 | `ERROR_EMAIL_TO` | no | Where error reports go |
 | `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key |
 | `JOBS_SECRET` | yes | Long random string; the 5-minute timer sends it |

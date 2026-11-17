@@ -24,7 +24,7 @@ export interface Env {
   WEBFLOW_API_TOKEN: string;
 
   RESEND_API_KEY: string;
-  /** e.g. Happiness Foundation <hello@happiness.foundation> */
+  /** e.g. Happiness Foundation <team@happiness.foundation> */
   EMAIL_FROM: string;
   /** Where error reports go. */
   ERROR_EMAIL_TO: string;

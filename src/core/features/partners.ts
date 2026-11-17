@@ -1,5 +1,5 @@
-// Partner pledges: any shop (ours is partner 1) registers the pledges that come
-// with an order, server to server, and gets back a "Keep your pledge" link for
+// Partner pledges: any shop (ours is partner 1) registers the pledge that comes
+// with an order (one per purchase), server to server, and gets back a "Keep your pledge" link for
 // the buyer. Signing in on the foundation with that link makes the pledges the
 // member's. No customer data has to be shared; an email is optional and only
 // used to attach the pledges automatically to a member with that verified email.
@@ -9,12 +9,11 @@ import type { Deps, Env } from '../env';
 import { HttpError, base64url, bearer, hmac, iso, sha256Hex } from '../http';
 import type { Member } from '../identity';
 import { enqueue } from '../queue';
-import { recomputeKeeps } from './pledges';
+import { ORDER_LINE, recomputeKeeps } from './pledges';
 
 export const OWN_SHOP = 1;
 /** Resend template "hf-pledge-claim", by its ID: its alias became hf-pledge-claim-1 in Resend, and an ID never changes. */
 export const CLAIM_TEMPLATE = 'bbdab255-e4eb-40f2-95cf-7081e3f24486';
-const MAX_PIECES = 100;
 
 export interface Partner {
   id: number;
@@ -62,7 +61,6 @@ async function memberIdForEmail(env: Env, email: string | null): Promise<number 
 
 interface PledgeBody {
   order?: unknown;
-  items?: unknown;
   orderedAt?: unknown;
   email?: unknown;
 }
@@ -72,20 +70,13 @@ function invalid(field: string): HttpError {
 }
 
 /**
- * POST /api/partners/pledges: registers (or brings up to date) the pledges of
- * one order. Safe to repeat. Lowering an item's quantity cancels its extra pledges.
+ * POST /api/partners/pledges: registers the pledge of one order (one pledge
+ * per purchase): {order, email?, orderedAt?}. Safe to repeat; sending a
+ * cancelled order again opens its pledge again.
  */
 export async function registerPledges(env: Env, deps: Deps, partner: Partner, body: PledgeBody, baseUrl: string) {
   const order = typeof body.order === 'string' ? body.order.trim() : '';
   if (!order || order.length > 100) throw invalid('order');
-  if (!Array.isArray(body.items) || !body.items.length || body.items.length > 50) throw invalid('items');
-  const items = body.items.map((it) => {
-    const i = it as { ref?: unknown; quantity?: unknown };
-    const ref = typeof i.ref === 'string' ? i.ref.trim() : '';
-    const quantity = Number(i.quantity);
-    if (!ref || ref.length > 100 || !Number.isInteger(quantity) || quantity < 0 || quantity > MAX_PIECES) throw invalid('items');
-    return { ref, quantity };
-  });
   const orderedAt = body.orderedAt === undefined ? iso(deps.now()) : new Date(String(body.orderedAt));
   if (typeof orderedAt !== 'string' && Number.isNaN(orderedAt.getTime())) throw invalid('orderedAt');
   const when = typeof orderedAt === 'string' ? orderedAt : orderedAt.toISOString();
@@ -93,26 +84,16 @@ export async function registerPledges(env: Env, deps: Deps, partner: Partner, bo
   const orderRef = `${partner.slug}:${order}`;
   const claim = await ensureClaim(env, deps, partner.id, orderRef);
   const memberId = await memberIdForEmail(env, email);
-  const stmts: D1PreparedStatement[] = [];
-  for (const it of items) {
-    for (let piece = 1; piece <= it.quantity; piece++) {
-      stmts.push(
-        env.DB.prepare(
-          `INSERT INTO pledges (order_ref, line_ref, piece, partner_id, claim_id, buyer_email, member_id, ordered_at, status)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 'open')
-           ON CONFLICT (order_ref, line_ref, piece) DO UPDATE SET
-             status = CASE WHEN pledges.status = 'cancelled' THEN 'open' ELSE pledges.status END`,
-        ).bind(orderRef, it.ref, piece, partner.id, claim.id, memberId ? null : email, memberId, when),
-      );
-    }
-    stmts.push(
-      env.DB.prepare(`UPDATE pledges SET status = 'cancelled', kept_by_done_mark_id = NULL WHERE order_ref = ?1 AND line_ref = ?2 AND piece > ?3 AND status != 'cancelled'`).bind(orderRef, it.ref, it.quantity),
-    );
-  }
-  await env.DB.batch(stmts);
+  await env.DB.prepare(
+    `INSERT INTO pledges (order_ref, line_ref, piece, partner_id, claim_id, buyer_email, member_id, ordered_at, status)
+     VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, ?7, 'open')
+     ON CONFLICT (order_ref, line_ref, piece) DO UPDATE SET
+       status = CASE WHEN pledges.status = 'cancelled' THEN 'open' ELSE pledges.status END`,
+  )
+    .bind(orderRef, ORDER_LINE, partner.id, claim.id, memberId ? null : email, memberId, when)
+    .run();
   await recomputeOwners(env, orderRef);
-  const open = await env.DB.prepare(`SELECT COUNT(*) AS n FROM pledges WHERE order_ref = ?1 AND status != 'cancelled'`).bind(orderRef).first<{ n: number }>();
-  return { order, pledges: open?.n ?? 0, claimUrl: claimUrl(baseUrl, claim.code) };
+  return { order, pledge: 'open', claimUrl: claimUrl(baseUrl, claim.code) };
 }
 
 /** POST /api/partners/pledges/cancel: the order was cancelled or refunded in full. */

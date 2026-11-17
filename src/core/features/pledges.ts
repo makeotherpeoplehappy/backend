@@ -1,6 +1,7 @@
-// Pledges (Phase 3): one per piece sold, taken from Shopify orders. A pledge
-// is kept when the buyer marks an action done after the order date; one done
-// mark keeps one pledge, oldest open pledge first.
+// Pledges: one per purchase (order), from our Shopify shop or a partner shop.
+// A pledge is kept when the buyer marks an action done after the order date;
+// one done mark keeps one pledge, oldest open pledge first. A partial refund
+// keeps the pledge; a cancellation or full refund removes it.
 
 import type { Deps, Env } from '../env';
 import { iso } from '../http';
@@ -79,47 +80,44 @@ async function memberFor(env: Env, order: Order): Promise<number | null> {
   return null;
 }
 
+/** Every purchase has one pledge, stored as line "order", piece 1. */
+export const ORDER_LINE = 'order';
+
 /**
- * Records an order's pledges, or brings them up to date after a cancellation
- * or refund. Safe to run again for the same order.
+ * Records an order's pledge, or brings it up to date after a cancellation or
+ * refund. Safe to run again for the same order.
  */
 export async function ingestOrder(env: Env, deps: Deps, order: Order) {
   const memberId = await memberFor(env, order);
+  const lines = order.lines.filter((l) => l.quantity > 0);
+  if (!lines.length) return { order: order.orderId, member: memberId, pledges: {} };
   const drops = await dropOfProduct(env, deps);
-  const stmts: D1PreparedStatement[] = [];
-  const affectedDrops = new Set<string>();
-  for (const line of order.lines) {
-    const drop = line.productId ? drops.get(line.productId) || null : null;
-    if (drop) affectedDrops.add(drop);
-    const live = order.cancelled ? 0 : Math.max(0, line.quantity - line.refunded);
-    for (let piece = 1; piece <= line.quantity; piece++) {
-      stmts.push(
-        env.DB.prepare(
-          `INSERT INTO pledges (order_ref, line_ref, piece, drop_id, buyer_email, member_id, ordered_at, status, product_id)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'open', ?8)
-           ON CONFLICT (order_ref, line_ref, piece) DO UPDATE SET
-             member_id = COALESCE(pledges.member_id, excluded.member_id),
-             drop_id = COALESCE(excluded.drop_id, pledges.drop_id)`,
-        ).bind(order.orderId, line.lineId, piece, drop, memberId ? null : order.email, memberId, order.orderedAt, line.productId),
-      );
-    }
-    // Refunded or cancelled pieces come out, the highest piece numbers first.
-    stmts.push(
-      env.DB.prepare(
-        `UPDATE pledges SET status = 'cancelled', kept_by_done_mark_id = NULL
-         WHERE order_ref = ?1 AND line_ref = ?2 AND piece > ?3 AND status != 'cancelled'`,
-      ).bind(order.orderId, line.lineId, live),
-    );
-  }
-  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-  // Our shop is partner 1: the order's pledges get a claim link for the buyer.
+  // The pledge counts for a drop when the order holds one of its pieces.
+  const dropLine = lines.find((l) => l.productId && drops.has(l.productId));
+  const drop = dropLine ? drops.get(dropLine.productId!)! : null;
+  const live = !order.cancelled && lines.some((l) => l.quantity - l.refunded > 0);
+  await env.DB.batch([
+    env.DB.prepare(
+      `INSERT INTO pledges (order_ref, line_ref, piece, drop_id, buyer_email, member_id, ordered_at, status, product_id)
+       VALUES (?1, ?2, 1, ?3, ?4, ?5, ?6, 'open', ?7)
+       ON CONFLICT (order_ref, line_ref, piece) DO UPDATE SET
+         member_id = COALESCE(pledges.member_id, excluded.member_id),
+         drop_id = COALESCE(excluded.drop_id, pledges.drop_id)`,
+    ).bind(order.orderId, ORDER_LINE, drop, memberId ? null : order.email, memberId, order.orderedAt, (dropLine || lines[0]).productId),
+    // Cancelled or fully refunded: the pledge comes out.
+    env.DB.prepare(`UPDATE pledges SET status = 'cancelled', kept_by_done_mark_id = NULL WHERE order_ref = ?1 AND status != 'cancelled' AND ?2 = 0`).bind(
+      order.orderId,
+      live ? 1 : 0,
+    ),
+  ]);
+  // Our shop is partner 1: the order's pledge gets a claim link for the buyer.
   const claim = await ensureClaim(env, deps, OWN_SHOP, order.orderId);
   await env.DB.prepare(`UPDATE pledges SET claim_id = ?1, partner_id = ?2 WHERE order_ref = ?3 AND claim_id IS NULL`).bind(claim.id, OWN_SHOP, order.orderId).run();
   const owners = await env.DB.prepare(`SELECT DISTINCT member_id FROM pledges WHERE order_ref = ?1 AND member_id IS NOT NULL`)
     .bind(order.orderId)
     .all<{ member_id: number }>();
   for (const o of owners.results) await recomputeKeeps(env, o.member_id);
-  for (const d of affectedDrops) await env.CACHE.delete(`drop-pledges:${d}`);
+  if (drop) await env.CACHE.delete(`drop-pledges:${drop}`);
   const counts = await env.DB.prepare(`SELECT status, COUNT(*) AS n FROM pledges WHERE order_ref = ?1 GROUP BY status`).bind(order.orderId).all<{ status: string; n: number }>();
   return { order: order.orderId, member: memberId, pledges: Object.fromEntries(counts.results.map((c) => [c.status, c.n])) };
 }

@@ -98,10 +98,11 @@ A drop is a Shopify collection with a **Drop date** (collection field
 - **Notify me:** Shopify customers tagged `notify-drop-<handle>`; send the "it's
   live" email with Shopify Email.
 
-## Partner pledges
+## Pledge API (the Make Someone Happy pledge)
 
-Every purchase comes with one pledge, in any shop: ours (partner 1) or a
-partner's. The shop never needs the buyer's account: it registers the order and
+What buyers and brands see is the **Make Someone Happy pledge**: every purchase
+comes with one. Shops add it through the **Pledge API**. It works in any shop:
+ours (partner 1) or a partner's. The shop never needs the buyer's account: it registers the order and
 gives the buyer a link.
 
 1. In `/lab`, an owner adds the partner under **Partners**. The key (`hfp_…`) is

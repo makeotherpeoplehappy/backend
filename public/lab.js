@@ -166,7 +166,7 @@
     var list = el('div');
     var msg = el('p', { role: 'status', 'aria-live': 'polite' });
     msg.style.cssText = 'margin:8px 0 0;font-size:14px;white-space:pre-line;word-break:break-all';
-    panel.appendChild(el('p', { text: 'Shops that register pledges. A buyer keeps their pledges through the link the shop gives them. Partner 1 is our own shop.' }));
+    panel.appendChild(el('p', { text: 'Shops connected through the Pledge API: every purchase comes with a Make Someone Happy pledge, which the buyer keeps through the link the shop gives them. Partner 1 is our own shop.' }));
     panel.appendChild(list);
     if (owner) {
       var form = el('form', { novalidate: '' });
@@ -186,7 +186,7 @@
         if (!r.ok) { msg.textContent = (r.data && r.data.message) || 'That did not work.'; return; }
         draw(r.data);
         input.value = '';
-        msg.textContent = 'Partner added. Give them this key now; it is not shown again:\n' + r.data.key + '\nThey send it as "Authorization: Bearer <key>" to ' + window.HFB.base + '/api/partners/pledges (see the README).';
+        msg.textContent = 'Partner added. Give them this Pledge API key now; it is not shown again:\n' + r.data.key + '\nThey send it as "Authorization: Bearer <key>" to ' + window.HFB.base + '/api/partners/pledges (see "Pledge API" in the README).';
       });
       panel.appendChild(form);
     }

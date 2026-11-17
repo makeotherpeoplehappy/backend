@@ -882,6 +882,22 @@
   }
 
 
+  // Header button (Webflow element with class hf-nav-cta, linking to /account):
+  // "Join free" opens the create-account window for visitors; members see
+  // "My account". Worded in src/wording/en.json (nav-join, nav-account).
+  function headerAccount() {
+    var b = document.querySelector('.hf-nav-cta');
+    if (!b || b.getAttribute('data-hfp-cta')) return;
+    b.setAttribute('data-hfp-cta', '1');
+    if (signedIn()) { b.textContent = copyText('nav-account'); return; }
+    b.textContent = copyText('nav-join');
+    b.addEventListener('click', function (e) {
+      if (!window.HFP || !window.HFP.auth || signedIn()) return;
+      e.preventDefault();
+      window.HFP.auth('signup');
+    });
+  }
+
   // Home page impact numbers: Webflow elements with data-hf-fill="impact-people",
   // "impact-actions" or "impact-stories" get the live count (they keep their
   // Webflow text until it arrives, and keep it if the backend can't answer).
@@ -1111,7 +1127,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, impactNumbers, claimPage, invitePage, storiesPage, mostDone];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, storiesPage, mostDone];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

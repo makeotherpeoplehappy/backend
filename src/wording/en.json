@@ -235,5 +235,7 @@
   "auth-err-taken": "There is already an account with this email. Sign in instead.",
   "auth-err-password": "Please use a password of at least 8 characters.",
   "auth-err-code": "That code did not work. Please check it and try again.",
-  "auth-err-other": "That did not work. Please try again."
+  "auth-err-other": "That did not work. Please try again.",
+  "nav-join": "Join free",
+  "nav-account": "My account"
 }

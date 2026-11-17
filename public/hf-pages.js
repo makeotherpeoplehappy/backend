@@ -383,6 +383,22 @@
   // An extra account section, drawn as the same card as the Webflow ones.
   function section(title, kids) { return el('div', { class: 'hf-acct-card' }, [el('h2', { class: 'hf-acct-card-title', text: title })].concat(kids)); }
 
+  // The account page shows at once: the site head marks a signed-in visitor (html.hf-in) so the
+  // signed-in layout is there from the first paint; the last account data seen on this device
+  // fills it straight away, and fresh data from the backend replaces it moments later. The saved
+  // copy belongs to this sign-in only (keyed by the end of its token) and goes on sign-out.
+  var ME_CACHE = 'hfp_me';
+  var accountMe = null;
+  function signInMark() { try { return (localStorage.getItem('_ms-mid') || '').slice(-16); } catch (e) { return ''; } }
+  function cachedMe() {
+    try {
+      var c = JSON.parse(localStorage.getItem(ME_CACHE) || 'null');
+      return c && c.mark && c.mark === signInMark() ? c.me : null;
+    } catch (e) { return null; }
+  }
+  function cacheMe(me) { try { localStorage.setItem(ME_CACHE, JSON.stringify({ mark: signInMark(), me: me })); } catch (e) {} }
+  function forgetMe() { try { localStorage.removeItem(ME_CACHE); } catch (e) {} }
+
   async function accountPage() {
     var inn = $('hf-acct-in');
     var out = $('hf-acct-out');
@@ -390,17 +406,36 @@
     inn.setAttribute('data-hfp', '1');
     var si = $('hf-signin');
     var so = $('hf-signout');
+    function showIn() {
+      if (out) out.style.display = 'none';
+      inn.style.display = 'block';
+      inn.setAttribute('data-hf-on', '1');
+    }
+    var early = cachedMe();
+    if (early) { showIn(); renderAccount(early); }
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (si) si.addEventListener('click', function (e) { e.preventDefault(); HF.signin(); });
-    if (so) so.addEventListener('click', function (e) { e.preventDefault(); HF.signout(); });
+    if (so) so.addEventListener('click', function (e) { e.preventDefault(); forgetMe(); HF.signout(); });
     if (HF.finish) { try { await HF.finish(); } catch (e) {} }
-    if (!signedIn()) return;
+    await wait(function () { return !!window.$memberstackDom; }, 5000);
+    if (!signedIn()) {
+      // Not signed in after all (an old sign-in): show the sign-in view.
+      forgetMe();
+      document.documentElement.classList.remove('hf-in');
+      inn.removeAttribute('data-hf-on');
+      inn.style.display = '';
+      if (out) out.style.display = '';
+      return;
+    }
     var r = await HFB.call('/api/me');
     if (!r.ok) return;
-    var me = r.data;
-    if (out) out.style.display = 'none';
-    inn.style.display = 'block';
-    inn.setAttribute('data-hf-on', '1');
+    cacheMe(r.data);
+    showIn();
+    renderAccount(r.data);
+  }
+
+  function renderAccount(me) {
+    var inn = $('hf-acct-in');
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
     var tally = $('hf-tally');
@@ -468,13 +503,15 @@
       var card = ah.closest('.hf-acct-card') || ah;
       var holder = card.parentNode;
       // Saved for later
-      if (me.saved && me.saved.length && !$('hfp-saved')) {
+      if ($('hfp-saved')) ($('hfp-saved').closest('.hf-acct-card') || $('hfp-saved')).remove();
+      if ($('hfp-invites')) $('hfp-invites').remove();
+      if (me.saved && me.saved.length) {
         var sv = el('ul', { class: 'hfp-list', id: 'hfp-saved' });
         me.saved.forEach(function (d) { sv.appendChild(el('li', { class: 'hfp-item' }, [el('a', { class: 'hfp-item-title', href: '/action/' + d.slug, text: d.title })])); });
         holder.insertBefore(section(copyText('acct-saved-h'), [sv]), card === ah ? ah.previousElementSibling : card);
       }
       // Invites
-      if (!$('hfp-invites')) {
+      {
         var inv = el('div', { id: 'hfp-invites' });
         if (me.joinedMyInvites.length) {
           var j = el('ul', { class: 'hfp-list' });
@@ -505,7 +542,14 @@
 
     // Settings and your data: the section, form and boxes are built in Webflow (#hfp-settings);
     // this fills them in and saves each change.
+    accountMe = me;
     var setBox = $('hfp-settings');
+    var nameNow = $('hfp-share-name');
+    if (nameNow && document.activeElement !== nameNow) nameNow.value = me.name || '';
+    ['invite_summary', 'story_approved', 'suggestion_live', 'pledge_reminder'].forEach(function (kind) {
+      var cb = $('hfp-n-' + kind);
+      if (cb) cb.checked = me.settings && me.settings[kind] ? true : false;
+    });
     if (setBox && !setBox.getAttribute('data-hfp')) {
       setBox.setAttribute('data-hfp', '1');
       var setForm = $('hf-settings-form');
@@ -537,7 +581,7 @@
       var dl = $('hfp-download');
       if (dl) dl.addEventListener('click', function (e) {
         e.preventDefault();
-        var blob = new Blob([JSON.stringify(me, null, 2)], { type: 'application/json' });
+        var blob = new Blob([JSON.stringify(accountMe, null, 2)], { type: 'application/json' });
         var a = el('a', { href: URL.createObjectURL(blob), download: 'happiness-foundation-my-data.json' });
         document.body.appendChild(a);
         a.click();
@@ -549,7 +593,7 @@
         if (!window.confirm(copyText('acct-delete-confirm'))) return;
         var rr = await HFB.call('/api/me', { method: 'DELETE' });
         delMsg.textContent = rr.ok ? copyText('acct-deleted') : msgOf(rr);
-        if (rr.ok) setTimeout(function () { HF.signout(); }, 2500);
+        if (rr.ok) { forgetMe(); setTimeout(function () { HF.signout(); }, 2500); }
       });
     }
   }

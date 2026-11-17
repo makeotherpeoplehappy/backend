@@ -47,6 +47,8 @@
     },
     signout: async function () {
       var m = ms();
+      // The account page keeps a copy of the member's data on this device; it goes with the sign-in.
+      try { localStorage.removeItem('hfp_me'); } catch (e) {}
       try { if (m) await m.logout(); } catch (e) {}
       location.href = '/';
     },

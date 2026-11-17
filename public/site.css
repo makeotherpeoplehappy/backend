@@ -45,6 +45,14 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 /* A story shows one thing: its video if it has one, otherwise its photo */
 .hf-story:has(.hf-story-video:not(.w-dyn-bind-empty)) .hf-story-media{display:none}
 
+/* Account: a signed-in visitor sees their page from the first paint. The site head marks the page
+   (html.hf-in) when this browser holds a sign-in; until the data arrives the numbers are faint and
+   the "nothing yet" texts stay hidden. */
+html.hf-in #hf-acct-out{display:none!important}
+html.hf-in #hf-acct-in[data-hf-show]{display:block!important}
+html.hf-in #hf-acct-in:not([data-hf-on]) :is(#hf-tally,#hf-name){opacity:.25}
+html.hf-in #hf-acct-in:not([data-hf-on]) :is(#hf-pledges,#hf-actions,#hfp-ripple){visibility:hidden}
+
 /* Swipe row on phones: no scrollbar */
 .hf-card-row{scrollbar-width:none}.hf-card-row::-webkit-scrollbar{display:none}
 

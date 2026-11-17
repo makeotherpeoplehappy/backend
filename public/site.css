@@ -25,13 +25,21 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 :is(.hf-section,.hf-band-sky,.hf-band-ink,.hf-band-blue)>h1:first-child{margin-top:0}
 :is(.hf-section,.hf-band-sky,.hf-band-ink,.hf-band-blue,.hf-impact)+.hf-footer{margin-top:0}
 
-/* Header: with "Sign in" showing, it takes the free space on tablets and the button sits next to it */
-@media (max-width:991px){.hf-nav-signin[data-hf-on]+.hf-nav-cta{margin-left:8px}}
-/* The narrowest phones (under 350 px): the logo and "Join free" keep their room; "Sign in" is in the Join window instead */
-@media (max-width:349px){.hf-nav-signin{display:none!important}}
+/* Header: signed-in and signed-out parts. The site head marks a signed-in browser (html.hf-in) before the
+   first paint, and the page script corrects it if the sign-in has run out, so the header never flips. */
+html:not(.hf-in) [data-hf-auth=in],html.hf-in [data-hf-auth=out]{display:none!important}
+/* Header icons; the menu button swaps ☰ for ✕ while the menu is open (Webflow marks it w--open) */
+.hf-ico{display:block;flex:none}
+.hf-nav-button.w--open{background-color:transparent}
+.hf-nav-button .hf-x,.hf-nav-button.w--open .hf-bars{display:none}
+.hf-nav-button.w--open .hf-x{display:block}
+/* Phone bar: the pin opens the phone's own location picker (an invisible select over the icon) */
+.hf-loc-mini{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none}
+/* Avatar with a profile photo: the photo fills the circle, the initial steps aside */
+.hf-nav-avatar[data-hf-photo] span{display:none}
 
 /* Current page in the menu (Webflow's "Current" state) */
-.hf-nav-link.w--current{color:var(--colour--deep-blue);box-shadow:inset 0 -3px 0 var(--colour--brand-blue)}
+.hf-nav-link.w--current{color:var(--colour--ink);box-shadow:inset 0 -2px 0 var(--colour--ink)}
 @media (max-width:767px){.hf-nav-link.w--current{box-shadow:none}}
 
 /* The action finder's heading is bigger than other box headings */

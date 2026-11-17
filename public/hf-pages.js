@@ -415,6 +415,8 @@
     if (early) { showIn(); renderAccount(early); }
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (si) si.addEventListener('click', function (e) { e.preventDefault(); HF.signin(); });
+    var jn = $('hf-join');
+    if (jn) jn.addEventListener('click', function (e) { e.preventDefault(); if (HF.signup) HF.signup(); else HF.signin(); });
     if (so) so.addEventListener('click', function (e) { e.preventDefault(); forgetMe(); HF.signout(); });
     if (HF.finish) { try { await HF.finish(); } catch (e) {} }
     await wait(function () { return !!window.$memberstackDom; }, 5000);
@@ -434,7 +436,48 @@
     renderAccount(r.data);
   }
 
+  // Profile photo (Account > Settings): kept on the member in Memberstack, shown in the header avatar.
+  var PHOTO_MAX = 5 * 1024 * 1024;
+  function photoRow() {
+    var add = $('hfp-photo');
+    var remove = $('hfp-photo-remove');
+    if (!add || add.getAttribute('data-hfp')) return;
+    add.setAttribute('data-hfp', '1');
+    var msg = function (t) { var m = $('hfp-settings-msg'); if (m) m.textContent = t; };
+    var showRemove = function (m) { if (remove) { if (m && m.profileImage) remove.setAttribute('data-hf-on', '1'); else remove.removeAttribute('data-hf-on'); } };
+    window.addEventListener('hf-member', function (e) { showRemove(e.detail); });
+    var picked = function (m) { if (m) window.dispatchEvent(new CustomEvent('hf-member', { detail: m })); };
+    var input = el('input', { type: 'file', accept: 'image/*', hidden: '' });
+    add.parentNode.appendChild(input);
+    add.addEventListener('click', function (e) { e.preventDefault(); input.click(); });
+    var ms = function () { return window.$memberstackDom; };
+    input.addEventListener('change', async function () {
+      var f = input.files && input.files[0];
+      input.value = '';
+      if (!f) return;
+      if (!/^image\//.test(f.type)) { msg(copyText('photo-not-image')); return; }
+      if (f.size > PHOTO_MAX) { msg(copyText('photo-too-big')); return; }
+      msg(copyText('photo-saving'));
+      try {
+        await ms().updateMemberProfileImage({ profileImage: f });
+        var r = await ms().getCurrentMember();
+        picked(r && r.data);
+        msg(copyText('photo-saved'));
+      } catch (e) { msg(copyText('photo-failed')); }
+    });
+    if (remove) remove.addEventListener('click', async function (e) {
+      e.preventDefault();
+      try {
+        await ms().deleteMemberProfileImage();
+        var r = await ms().getCurrentMember();
+        picked(r && r.data);
+        msg(copyText('photo-removed'));
+      } catch (er) { msg(copyText('photo-failed')); }
+    });
+  }
+
   function renderAccount(me) {
+    photoRow();
     var inn = $('hf-acct-in');
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
@@ -955,25 +998,70 @@
   // Header button (Webflow element with class hf-nav-cta, linking to /account):
   // "Join free" opens the create-account window for visitors; members see
   // "My account". Worded in src/wording/en.json (nav-join, nav-account).
+  // ---------------------------------------------------------------------------
+  // Header. Built in Webflow: parts marked data-hf-auth="out" (Sign in, Join free, the phone's account
+  // icon) or "in" (avatar, the phone's location pin) show by sign-in state, through html.hf-in (set by
+  // the site head before the first paint; corrected here once Memberstack has loaded). The avatar
+  // shows the member's Memberstack profile photo, or the first letter of their first name (or email).
+  // ---------------------------------------------------------------------------
+  function memberSaved() { try { return JSON.parse(localStorage.getItem('_ms-mem') || 'null'); } catch (e) { return null; } }
+  function avatarFill(m) {
+    if (!m) return;
+    var first = (m.customFields && m.customFields['first-name']) || '';
+    var email = (m.auth && m.auth.email) || m.email || '';
+    var initial = String(first || email).trim().charAt(0).toUpperCase();
+    document.querySelectorAll('.hf-nav-avatar, [data-hf-avatar]').forEach(function (a) {
+      var s = a.querySelector('[data-hf-fill="avatar-initial"]');
+      if (s) s.textContent = initial;
+      if (m.profileImage) {
+        a.style.backgroundImage = 'url("' + String(m.profileImage).replace(/["\\]/g, '') + '")';
+        a.setAttribute('data-hf-photo', '1');
+      } else {
+        a.style.backgroundImage = '';
+        a.removeAttribute('data-hf-photo');
+      }
+    });
+  }
+  window.addEventListener('hf-member', function (e) { avatarFill(e.detail); });
+
   function headerAccount() {
-    var b = document.querySelector('.hf-nav-cta');
-    if (!b || b.getAttribute('data-hfp-cta')) return;
-    b.setAttribute('data-hfp-cta', '1');
-    if (signedIn()) { b.textContent = copyText('nav-account'); return; }
-    b.textContent = copyText('nav-join');
-    // Visitors who already have an account: the "Sign in" link built in Webflow (data-hf-show="signed-out").
+    var root = document.documentElement;
+    if (root.getAttribute('data-hfp-header')) return;
+    root.setAttribute('data-hfp-header', '1');
+    if (root.classList.contains('hf-in')) avatarFill(memberSaved());
     document.querySelectorAll('.hf-nav-signin').forEach(function (si) {
-      si.setAttribute('data-hf-on', '1');
       si.addEventListener('click', function (e) {
         if (!window.HFP || !window.HFP.auth || signedIn()) return;
         e.preventDefault();
         window.HFP.auth('signin');
       });
     });
-    b.addEventListener('click', function (e) {
-      if (!window.HFP || !window.HFP.auth || signedIn()) return;
-      e.preventDefault();
-      window.HFP.auth('signup');
+    document.querySelectorAll('.hf-nav-cta').forEach(function (b) {
+      b.addEventListener('click', function (e) {
+        if (!window.HFP || !window.HFP.auth || signedIn()) return;
+        e.preventDefault();
+        window.HFP.auth('signup');
+      });
+    });
+    // The phone's location pin: an invisible copy of the location picker over the icon.
+    var loc = $('hf-loc');
+    document.querySelectorAll('.hf-loc-mini').forEach(function (mini) {
+      if (!loc) return;
+      mini.innerHTML = loc.innerHTML;
+      mini.value = loc.value;
+      mini.addEventListener('change', function () {
+        loc.value = mini.value;
+        loc.dispatchEvent(new Event('change'));
+      });
+      loc.addEventListener('change', function () { mini.value = loc.value; });
+    });
+    // Once sign-in has loaded: the real state, and the member's latest name and photo.
+    wait(function () { return !!window.$memberstackDom || !document.querySelector('script[data-memberstack-app]'); }, 8000).then(async function () {
+      if (!signedIn()) { root.classList.remove('hf-in'); return; }
+      root.classList.add('hf-in');
+      var ms = window.$memberstackDom;
+      if (!ms || !ms.getCurrentMember) return;
+      try { var r = await ms.getCurrentMember(); if (r && r.data) window.dispatchEvent(new CustomEvent('hf-member', { detail: r.data })); } catch (e) {}
     });
   }
 

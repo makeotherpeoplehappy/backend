@@ -211,6 +211,10 @@
   "auth-err-password": "Please use a password of at least 8 characters.",
   "auth-err-code": "That code did not work. Please check it and try again.",
   "auth-err-other": "That did not work. Please try again.",
-  "nav-join": "Join free",
-  "nav-account": "My account"
+  "photo-not-image": "Please choose a photo (an image file).",
+  "photo-too-big": "That photo is too large. Please choose one under 5 MB.",
+  "photo-saving": "Saving your photo…",
+  "photo-saved": "Your photo is saved.",
+  "photo-removed": "Your photo is removed.",
+  "photo-failed": "That did not work. Please try again."
 }

@@ -375,3 +375,82 @@ describe('Drop hero (home page)', () => {
   });
 });
 
+
+describe('Sign-in window', () => {
+  async function authPage() {
+    const p = await page('/account', '<a class="w-nav-brand" href="/"><img src="https://site.test/logo.png" alt="Happiness Foundation"></a>', () => undefined);
+    const done: { fn: string; arg: unknown }[] = [];
+    const fake = (fn: string, fail?: { code: string; message: string }) => async (arg: unknown) => {
+      done.push({ fn, arg });
+      if (fail) throw fail;
+      return { data: {} };
+    };
+    const ms: Record<string, unknown> = {
+      loginMemberEmailPassword: fake('login', { code: 'invalid-credentials', message: 'Invalid credentials' }),
+      signupMemberEmailPassword: fake('signup'),
+      sendMemberResetPasswordEmail: fake('reset'),
+      resetMemberPassword: fake('newPassword'),
+    };
+    const w = p.window as unknown as Record<string, unknown> & { HFP: { auth: (m: string) => void } };
+    w.$memberstackDom = ms;
+    let reloads = 0;
+    Object.defineProperty(p.window.location, 'reload', { value: () => void reloads++, configurable: true });
+    const fill = (name: string, value: string) => {
+      const i = p.document.querySelector(`#hfp-auth input[name="${name}"]`) as unknown as { value: string };
+      i.value = value;
+    };
+    const submit = async () => {
+      (p.document.querySelector('#hfp-auth form') as unknown as { requestSubmit: () => void }).requestSubmit();
+      await p.settle();
+    };
+    const text = () => p.document.getElementById('hfp-auth')?.textContent || '';
+    return { ...p, w, done, fill, submit, text, reloads: () => reloads };
+  }
+
+  it('is ours: our logo and wording, no Memberstack window, and a way to create an account', async () => {
+    const a = await authPage();
+    a.w.HFP.auth('signin');
+    const img = a.document.querySelector('#hfp-auth img.hfp-auth-logo') as unknown as { getAttribute: (n: string) => string };
+    expect(img.getAttribute('alt')).toBe('Happiness Foundation');
+    expect(a.text()).toContain(WORDING['auth-to-signup']);
+    expect(a.text()).toContain(WORDING['auth-google']);
+    expect(a.text().toLowerCase()).not.toContain('memberstack');
+  });
+
+  it('creates an account with the first name, and reloads signed in', async () => {
+    const a = await authPage();
+    a.w.HFP.auth('signin');
+    (a.document.querySelector('#hfp-auth .hfp-auth-links button:last-child') as unknown as { click: () => void }).click();
+    expect(a.text()).toContain(WORDING['auth-signup-title']);
+    a.fill('first-name', 'Tess');
+    a.fill('email', 'tess@example.com');
+    a.fill('password', 'short');
+    await a.submit();
+    expect(a.text()).toContain(WORDING['auth-err-password']);
+    a.fill('password', 'long enough');
+    await a.submit();
+    expect(a.done).toEqual([{ fn: 'signup', arg: { email: 'tess@example.com', password: 'long enough', customFields: { 'first-name': 'Tess' } } }]);
+    expect(a.reloads()).toBe(1);
+  });
+
+  it('shows our own message when the password is wrong, and resets a password with the emailed code', async () => {
+    const a = await authPage();
+    a.w.HFP.auth('signin');
+    a.fill('email', 'tess@example.com');
+    a.fill('password', 'wrong one');
+    await a.submit();
+    expect(a.text()).toContain(WORDING['auth-err-wrong']);
+    (a.document.querySelector('#hfp-auth .hfp-auth-links button') as unknown as { click: () => void }).click();
+    a.fill('email', 'tess@example.com');
+    await a.submit();
+    expect(a.text()).toContain('We sent a code to tess@example.com');
+    a.fill('code', '123456');
+    a.fill('password', 'a new password');
+    await a.submit();
+    expect(a.done.slice(1)).toEqual([
+      { fn: 'reset', arg: { email: 'tess@example.com' } },
+      { fn: 'newPassword', arg: { token: '123456', newPassword: 'a new password' } },
+    ]);
+    expect(a.text()).toContain(WORDING['auth-reset-done']);
+  });
+});

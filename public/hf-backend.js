@@ -21,24 +21,23 @@
 
   // Sign-in with Memberstack. window.HF keeps the shape the site's scripts use:
   // token() is the member's Memberstack token (checked by the backend),
-  // signin() opens Memberstack's sign-in (with its email-code option),
+  // signin() and signup() open our own sign-in window (HFP.auth in hf-pages.js),
   // signout() signs out and goes home.
   function ms() { return window.$memberstackDom || null; }
+  function openAuth(mode) {
+    if (window.HFP && window.HFP.auth) return window.HFP.auth(mode);
+    var m = ms();
+    if (m) m.openModal(mode === 'signup' ? 'SIGNUP' : 'LOGIN').then(function (r) { try { m.hideModal(); } catch (e) {} if (r && (r.type === 'LOGIN' || r.type === 'SIGNUP')) location.reload(); });
+  }
   window.HF = {
     token: function () {
       var m = ms();
       var t = m && m.getMemberCookie ? m.getMemberCookie() : null;
       return t ? { a: t } : null;
     },
-    signin: function () {
-      var m = ms();
-      if (!m) return;
-      m.openModal('LOGIN').then(function (r) {
-        try { m.hideModal(); } catch (e) {}
-        // Signed in: reload, and the remembered click (if any) is finished below.
-        if (r && (r.type === 'LOGIN' || r.type === 'SIGNUP')) location.reload();
-      });
-    },
+    signin: function () { openAuth('signin'); },
+    /** Create-an-account window; signed up, the page reloads. */
+    signup: function () { openAuth('signup'); },
     finish: async function () { return false; },
     load: async function () {
       var m = ms();

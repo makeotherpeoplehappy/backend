@@ -20,6 +20,7 @@ import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, 
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
 import { memberstackWebhook } from './features/memberstack';
+import { addPartner, cancelPledges, claimEmails, claimPledges, listPartners, partnerFromRequest, registerPledges, setPartnerActive } from './features/partners';
 import { customerGid } from './shopify';
 
 type Params = Record<string, string>;
@@ -265,6 +266,31 @@ route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) 
   return json(out);
 });
 
+// Partner pledges: a partner shop registers an order's pledges with its key
+// and gets the buyer's "Keep your pledge" link (README, "Partner pledges").
+route('POST', '/api/partners/pledges', false, async ({ req, env, deps, baseUrl }) =>
+  json(await registerPledges(env, deps, await partnerFromRequest(env, req), await readJson(req), baseUrl)),
+);
+route('POST', '/api/partners/pledges/cancel', false, async ({ req, env }) => json(await cancelPledges(env, await partnerFromRequest(env, req), await readJson(req))));
+// The buyer, signed in on the foundation, keeps the pledges of their link.
+route('POST', '/api/pledges/claim', true, async ({ req, env, deps }) => json(await claimPledges(env, deps, await requireMember(req, env, deps), await readJson(req))));
+
+// Partners on /lab: anyone with access sees them; owners add and switch them off.
+route('GET', '/api/lab/partners', true, async ({ req, env, deps }) => {
+  await assertLabAccess(env, await requireMember(req, env, deps));
+  return json(await listPartners(env));
+});
+route('POST', '/api/lab/partners', true, async ({ req, env, deps }) => {
+  const me = await assertLabAccess(env, await requireMember(req, env, deps));
+  if (!me.owner) throw new HttpError(403, 'owner_only', 'Only an owner can do this.');
+  return json(await addPartner(env, deps, me.email, await readJson(req)));
+});
+route('PATCH', '/api/lab/partners', true, async ({ req, env, deps }) => {
+  const me = await assertLabAccess(env, await requireMember(req, env, deps));
+  if (!me.owner) throw new HttpError(403, 'owner_only', 'Only an owner can do this.');
+  return json(await setPartnerActive(env, await readJson(req)));
+});
+
 // Memberstack: member updates and deletions (signed by Svix).
 route('POST', '/api/memberstack/webhook', false, async ({ req, env, deps }) => memberstackWebhook(env, deps, req));
 
@@ -305,6 +331,8 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['write-counts', 'writeCounts', HOUR, () => writeCountsToCms(env, deps)],
     ['sync-orders', 'syncOrders', 6 * HOUR, () => syncRecentOrders(env, deps, { days: 3 })],
     ['pledge-reminders', 'pledgeReminders', HOUR, () => pledgeReminders(env, deps, baseUrl)],
+    // Buyers from our shop get their "Keep your pledge" link.
+    ['claim-emails', 'claimEmails', 0, () => claimEmails(env, deps, baseUrl)],
     // Phase 4: one summary email a day per inviter.
     ['invite-summaries', 'inviteSummaries', 24 * HOUR, () => inviteSummaries(env, deps, baseUrl)],
   ];

@@ -74,9 +74,9 @@ describe('Check 1: a call with a forged or expired token is refused', () => {
     expect(m).toEqual({ first_name: 'Ana', email: 'ana@example.com' });
   });
 
-  it('treats a Shopify outage as "try again", not as signed out', async () => {
+  it('treats a Memberstack outage as "try again", not as signed out', async () => {
     h.fake.signIn('shcat_ana');
-    h.fake.shopifyDown = true;
+    h.fake.memberstackDown = true;
     const res = await h.request('GET', '/api/me', { token: 'shcat_ana' });
     expect(res.status).toBe(503);
   });
@@ -448,7 +448,7 @@ describe('Check 7: deleting a test member removes their stories and name; counts
     const [sugItem] = h.fake.collection(CMS.suggestions.id);
     expect(sugItem.fieldData).toMatchObject({ 'submitted-by': '', email: '' });
     expect(await h.db('SELECT member_id FROM suggestions')).toEqual([{ member_id: null }]);
-    const names = await h.db(`SELECT * FROM members WHERE first_name = 'Tess' OR email = 'tess@example.com' OR shopify_customer_id = 'gid://shopify/Customer/7002'`);
+    const names = await h.db(`SELECT * FROM members WHERE first_name = 'Tess' OR email = 'tess@example.com' OR account_id = 'gid://shopify/Customer/7002'`);
     expect(names).toHaveLength(0);
     const after = await (await h.request('GET', `/api/actions/${actionA}/state`)).json();
     expect(after.count).toBe(11);

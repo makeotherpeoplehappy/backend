@@ -33,7 +33,20 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
   const calls: { method: string; url: string; headers: Record<string, string>; body?: unknown }[] = [];
   let signinCalls = 0;
   const location = { pathname: opts.pathname ?? '/account', search: opts.search ?? '', href: '', origin: 'https://site.test' };
-  const window: Record<string, unknown> = { HFW: SITE_WORDING };
+  const window: Record<string, unknown> = {
+    HFW: SITE_WORDING,
+    // Memberstack's browser script (window.$memberstackDom).
+    $memberstackDom: {
+      getMemberCookie: () => (opts.signedIn ? 'shcat_test' : undefined),
+      openModal: async () => {
+        signinCalls++;
+        return { type: 'CLOSED' };
+      },
+      hideModal: () => undefined,
+      getCurrentMember: async () => ({ data: opts.signedIn ? { id: 'mem_1' } : null }),
+      logout: async () => undefined,
+    },
+  };
   const HF = {
     token: () => (opts.signedIn ? { a: 'shcat_test', exp: Date.now() + 3600_000 } : null),
     signin: () => {
@@ -42,7 +55,6 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
     finish: async () => true,
     load: async () => ({ id: 'gid://shopify/Customer/1', firstName: 'Ana' }),
   };
-  window.HF = HF;
   const fetch = async (url: string, init: { method?: string; headers?: Record<string, string>; body?: string } = {}) => {
     const method = init.method || 'GET';
     calls.push({ method, url, headers: init.headers || {}, body: init.body ? JSON.parse(init.body) : undefined });
@@ -96,7 +108,6 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
     Promise,
     Uint8Array,
   };
-  (context.window as Record<string, unknown>).HF = HF;
   vm.createContext(context);
   vm.runInContext(SOURCE, context);
   return { window, storage, calls, location, events, signins: () => signinCalls };

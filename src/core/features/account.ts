@@ -120,7 +120,7 @@ export async function deleteMemberData(env: Env, deps: Deps, memberId: number): 
     env.DB.prepare(`DELETE FROM request_keys WHERE scope = ?1`).bind(`m:${memberId}`),
     env.DB.prepare(`DELETE FROM daily_usage WHERE member_id = ?1`).bind(memberId),
     env.DB.prepare(
-      `UPDATE members SET shopify_customer_id = 'deleted:' || id, first_name = NULL, email = NULL, share_name = NULL,
+      `UPDATE members SET account_id = 'deleted:' || id, first_name = NULL, email = NULL, share_name = NULL,
          notify_invite_summary = 0, notify_story_approved = 0, notify_suggestion_live = 0, notify_pledge_reminder = 0,
          deleted_at = ?2, updated_at = ?2
        WHERE id = ?1`,
@@ -132,7 +132,7 @@ export async function deleteMemberData(env: Env, deps: Deps, memberId: number): 
 }
 
 export async function deleteMemberByCustomerId(env: Env, deps: Deps, customerGid: string): Promise<boolean> {
-  const m = await env.DB.prepare(`SELECT id FROM members WHERE shopify_customer_id = ?1`).bind(customerGid).first<{ id: number }>();
+  const m = await env.DB.prepare(`SELECT id FROM members WHERE account_id = ?1`).bind(customerGid).first<{ id: number }>();
   if (!m) return false;
   await deleteMemberData(env, deps, m.id);
   return true;

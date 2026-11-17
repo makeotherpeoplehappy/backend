@@ -1,6 +1,9 @@
 // Fixed IDs from the Happiness Foundation Webflow site. These are not
 // secrets; keys and tokens are read from environment variables (see env.ts).
 
+/** The foundation site's Memberstack app (public ID; tokens from other apps are refused). */
+export const MEMBERSTACK_APP_ID = 'app_cmwkphy3a00030ste4jkeglrs';
+
 export const CMS = {
   siteId: '6af7e827a9216ac8b164c1cb',
   actions: {

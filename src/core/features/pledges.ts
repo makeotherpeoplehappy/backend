@@ -76,11 +76,9 @@ async function dropOfProduct(env: Env, deps: Deps): Promise<Map<string, string>>
   return map;
 }
 
+// The shop's customer accounts are separate from foundation members
+// (Memberstack), so an order joins the member with the same verified email.
 async function memberFor(env: Env, order: Order): Promise<number | null> {
-  if (order.customerId) {
-    const m = await env.DB.prepare(`SELECT id FROM members WHERE shopify_customer_id = ?1 AND deleted_at IS NULL`).bind(order.customerId).first<{ id: number }>();
-    if (m) return m.id;
-  }
   if (order.email) {
     const m = await env.DB.prepare(`SELECT id FROM members WHERE email = ?1 AND deleted_at IS NULL ORDER BY id LIMIT 1`).bind(order.email).first<{ id: number }>();
     if (m) return m.id;

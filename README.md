@@ -52,6 +52,8 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `SHOPIFY_ADMIN_API_VERSION` | no | Optional, default `2026-07` |
 | `WEBFLOW_API_TOKEN` | yes | Site API token with CMS read and write |
 | `RESEND_API_KEY` | yes | Resend API key for happiness.foundation (sending access only) |
+| `MEMBERSTACK_SECRET_KEY` | yes | Memberstack secret key (`sk_sb_…` in test mode, `sk_…` live): checks member sign-ins |
+| `MEMBERSTACK_WEBHOOK_SECRET` | yes | Signing secret of the Memberstack webhook (`whsec_…`), endpoint `/join/api/memberstack/webhook` (events: member updated, member deleted) |
 | `EMAIL_FROM` | no | e.g. `Happiness Foundation <hello@happiness.foundation>` |
 | `ERROR_EMAIL_TO` | no | Where error reports go |
 | `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key |

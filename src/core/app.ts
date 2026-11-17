@@ -19,6 +19,7 @@ import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } 
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
+import { memberstackWebhook } from './features/memberstack';
 import { customerGid } from './shopify';
 
 type Params = Record<string, string>;
@@ -263,6 +264,9 @@ route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) 
   ctx.waitUntil(drain(env, deps, { limit: 5, deadlineMs: 10_000 }).catch(() => undefined));
   return json(out);
 });
+
+// Memberstack: member updates and deletions (signed by Svix).
+route('POST', '/api/memberstack/webhook', false, async ({ req, env, deps }) => memberstackWebhook(env, deps, req));
 
 // --- Email links ------------------------------------------------------------
 

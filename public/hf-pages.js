@@ -896,6 +896,15 @@
     b.setAttribute('data-hfp-cta', '1');
     if (signedIn()) { b.textContent = copyText('nav-account'); return; }
     b.textContent = copyText('nav-join');
+    // Visitors who already have an account: the "Sign in" link built in Webflow (data-hf-show="signed-out").
+    document.querySelectorAll('.hf-nav-signin, .hf-nav-signin-menu').forEach(function (si) {
+      si.setAttribute('data-hf-on', '1');
+      si.addEventListener('click', function (e) {
+        if (!window.HFP || !window.HFP.auth || signedIn()) return;
+        e.preventDefault();
+        window.HFP.auth('signin');
+      });
+    });
     b.addEventListener('click', function (e) {
       if (!window.HFP || !window.HFP.auth || signedIn()) return;
       e.preventDefault();
@@ -1020,7 +1029,7 @@
 
   // Sign-in window: our own look and wording, with Memberstack doing the work
   // behind it (no Memberstack window or logo). Modes: signin, signup, reset.
-  var AUTH_CSS = '#hfp-auth{border:0;border-radius:28px;padding:32px 28px 26px;width:min(440px,calc(100vw - 32px));box-sizing:border-box;color:#111418;font-family:inherit;box-shadow:0 24px 60px rgba(17,20,24,.25)}' +
+  var AUTH_CSS = '#hfp-auth{border:0;border-radius:28px;padding:32px 28px 26px;width:min(440px,calc(100vw - 32px));max-height:calc(100dvh - 32px);overflow-y:auto;overscroll-behavior:contain;box-sizing:border-box;color:#111418;font-family:inherit;box-shadow:0 24px 60px rgba(17,20,24,.25)}' +
     '#hfp-auth::backdrop{background:rgba(17,20,24,.55)}#hfp-auth h2{font-family:"Inter Tight",Inter,Arial,sans-serif;font-weight:800;font-size:30px;letter-spacing:-.02em;margin:14px 0 18px;text-align:center}' +
     '#hfp-auth .hfp-auth-logo{display:block;height:34px;width:auto;margin:0 auto}#hfp-auth label{display:block;font-size:16px;font-weight:600;margin:14px 0 6px}' +
     '#hfp-auth input{display:block;width:100%;box-sizing:border-box;min-height:52px;padding:10px 16px;border:2px solid #C9D6E5;border-radius:14px;font:inherit;font-size:17px;color:#111418;background:#fff}' +
@@ -1119,7 +1128,7 @@
       else links.appendChild(link('auth-back', 'signin'));
       dlg.appendChild(links);
       var first = form.querySelector('input');
-      if (first && dlg.open) first.focus();
+      if (first && dlg.open) { first.focus({ preventScroll: true }); dlg.scrollTop = 0; }
     }
 
     draw(mode === 'signup' ? 'signup' : 'signin');
@@ -1127,8 +1136,10 @@
     dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
     document.body.appendChild(dlg);
     if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    // Open at the top (logo and title in view), even when the window is taller than the screen.
     var f = dlg.querySelector('form input');
-    if (f) f.focus();
+    if (f) f.focus({ preventScroll: true });
+    dlg.scrollTop = 0;
   }
   window.HFP.auth = openAuth;
 

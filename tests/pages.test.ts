@@ -312,7 +312,7 @@ describe('Sign-in window', () => {
 });
 
 describe('Header button', () => {
-  const HTML = '<header><a class="hf-nav-cta" href="/account">Account</a></header>';
+  const HTML = '<header><a class="hf-nav-signin" data-hf-show="signed-out" href="/account">Sign in</a><a class="hf-nav-cta" href="/account">Account</a></header>';
   it('invites visitors to join free, opening the create-account window', async () => {
     const p = await page('/', HTML, () => undefined, { signedIn: false });
     const b = p.document.querySelector('.hf-nav-cta') as unknown as { textContent: string; click: () => void };
@@ -323,9 +323,20 @@ describe('Header button', () => {
     expect(opened).toEqual(['signup']);
   });
 
-  it('shows members "My account"', async () => {
+  it('shows visitors a Sign in link that opens the sign-in window', async () => {
+    const p = await page('/', HTML, () => undefined, { signedIn: false });
+    const s = p.document.querySelector('.hf-nav-signin') as unknown as { getAttribute: (n: string) => string | null; click: () => void };
+    expect(s.getAttribute('data-hf-on')).toBe('1');
+    const opened: string[] = [];
+    (p.window as unknown as { HFP: { auth: (m: string) => void } }).HFP.auth = (m) => void opened.push(m);
+    s.click();
+    expect(opened).toEqual(['signin']);
+  });
+
+  it('shows members "My account" and keeps the Sign in link hidden', async () => {
     const p = await page('/', HTML, () => undefined);
     expect(p.document.querySelector('.hf-nav-cta')!.textContent).toBe(WORDING['nav-account']);
+    expect(p.document.querySelector('.hf-nav-signin')!.getAttribute('data-hf-on')).toBeNull();
   });
 });
 

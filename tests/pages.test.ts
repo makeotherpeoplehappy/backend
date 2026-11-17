@@ -170,7 +170,7 @@ describe('Invite page', () => {
   });
 });
 
-const STORY_HTML = `<h1>Share your story</h1><p id="hf-story-note"></p><div class="hf-form"><div class="w-form"><form id="native"><input id="story-action"></form></div></div>`;
+const STORY_HTML = `<h1>Share your story</h1><p id="hf-story-note"></p><div class="w-form hf-form" data-hf-show="story-form"><form id="hf-story-form"><p id="hf-story-title">Your action</p><p id="hf-story-status"></p><label for="hfp-story-text">Your story</label><textarea id="hfp-story-text"></textarea><input type="file" id="hfp-photo"><div id="hfp-photo-area"></div><input id="hfp-photo-desc"><input id="hfp-video"><div id="hfp-with"></div><label class="w-checkbox"><input type="checkbox" id="hfp-show-name"><span class="w-form-label">Show my first name</span></label><label class="w-checkbox"><input type="checkbox" id="hfp-consent" required><span class="w-form-label">Everyone agreed</span></label><input type="submit" value="Share my story"></form><div class="w-form-done" style="display:none"><p>Thank you for sharing.</p></div><div class="w-form-fail" style="display:none"><p>Did not send.</p></div></div>`;
 
 describe('Share your story', () => {
   it('needs the consent tick, then sends the story to the backend', async () => {
@@ -178,8 +178,9 @@ describe('Share your story', () => {
       if (path.startsWith('/api/stories/mine')) return { data: { done: true, story: null, withCandidates: [{ id: 2, name: 'Ben' }], name: 'Ana' } };
       if (m === 'POST' && path === '/api/stories') return { status: 201, data: { id: 1, status: 'new', body } };
     });
-    expect(p.document.getElementById('native')).toBeNull();
-    const form = p.document.querySelector('form')!;
+    expect(p.document.querySelector('[data-hf-show]')!.getAttribute('data-hf-on')).toBe('1');
+    expect(p.document.getElementById('hf-story-title')!.textContent).toBe('cook');
+    const form = p.document.getElementById('hf-story-form')!;
     (p.document.getElementById('hfp-story-text') as unknown as HTMLTextAreaElement).value = 'We cooked.';
     (p.document.getElementById('hfp-with-2') as unknown as HTMLInputElement).checked = true;
     form.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
@@ -191,7 +192,8 @@ describe('Share your story', () => {
     await p.settle();
     const sent = p.calls.find((c) => c.method === 'POST')!;
     expect(sent.body).toMatchObject({ actionId: 'cook', text: 'We cooked.', consent: true, showName: true, withMemberIds: [2] });
-    expect(p.document.body.textContent).toContain('Thank you for sharing.');
+    expect((p.document.querySelector('.w-form-done') as unknown as HTMLElement).style.display).toBe('block');
+    expect((form as unknown as HTMLElement).style.display).toBe('none');
   });
 
   it('sends a member who has not done the action back to it', async () => {
@@ -200,37 +202,17 @@ describe('Share your story', () => {
   });
 });
 
-describe('Suggest an action (no Webflow form)', () => {
-  it('builds its own form and sends the idea to the backend', async () => {
-    const p = await page('/suggest-an-action', '<h1>Suggest an action</h1><p class="hf-lead">Know a small way?</p>', (m, path) => (m === 'POST' && path === '/api/suggestions' ? { status: 201, data: { id: 1 } } : undefined));
-    (p.document.getElementById('Idea') as unknown as HTMLTextAreaElement).value = 'Bring soup to a sick neighbour';
-    p.document.getElementById('hfp-suggest')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
-    await p.settle();
-    expect(p.calls.find((c) => c.method === 'POST')!.body).toEqual({ text: 'Bring soup to a sick neighbour' });
-    expect(p.document.body.textContent).toContain('Thank you. Your idea is with us.');
-  });
-});
-
-describe('Share your story (no Webflow form)', () => {
-  it('builds the story form after the note', async () => {
-    const p = await page('/share-your-story?action=cook', '<h1>Share your story</h1><p id="hf-story-note"></p>', (_m, path) =>
-      path.startsWith('/api/stories/mine') ? { data: { done: true, story: null, withCandidates: [], name: 'Ana' } } : undefined,
-    );
-    expect(p.document.getElementById('hfp-story-text')).toBeTruthy();
-    expect(p.document.getElementById('hfp-consent')).toBeTruthy();
-  });
-});
-
 describe('Suggest an action', () => {
   it('sends the idea to the backend instead of the Webflow form', async () => {
-    const html = `<div class="w-form"><form id="wf-form-Suggest-an-action"><label for="name">Name</label><input id="name"><label for="email">Email</label><input id="email" required><textarea id="Idea"></textarea><input type="submit" value="Send"></form></div>`;
+    const html = `<div class="w-form"><form id="wf-form-Suggest-an-action"><label for="name">Name</label><input id="name"><label for="email">Email</label><input id="email" required><textarea id="Idea"></textarea><input type="submit" value="Send"></form><div class="w-form-done" style="display:none"><p>Thank you. Your idea is with us.</p></div><div class="w-form-fail" style="display:none"></div></div>`;
     const p = await page('/suggest-an-action', html, (m, path) => (m === 'POST' && path === '/api/suggestions' ? { status: 201, data: { id: 1 } } : undefined));
     expect((p.document.getElementById('email') as unknown as HTMLInputElement).required).toBe(false);
     (p.document.getElementById('Idea') as unknown as HTMLTextAreaElement).value = 'Leave a note on a bike';
     p.document.getElementById('wf-form-Suggest-an-action')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
     await p.settle();
     expect(p.calls.find((c) => c.method === 'POST')!.body).toEqual({ text: 'Leave a note on a bike' });
-    expect(p.document.body.textContent).toContain('Thank you. Your idea is with us.');
+    expect((p.document.querySelector('.w-form-done') as unknown as HTMLElement).style.display).toBe('block');
+    expect((p.document.getElementById('wf-form-Suggest-an-action') as unknown as HTMLElement).style.display).toBe('none');
   });
 });
 

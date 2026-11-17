@@ -328,3 +328,21 @@ describe('Sign-in window', () => {
     expect(a.text()).toContain(WORDING['auth-reset-done']);
   });
 });
+
+describe('Header button', () => {
+  const HTML = '<header><a class="hf-nav-cta" href="/account">Account</a></header>';
+  it('invites visitors to join free, opening the create-account window', async () => {
+    const p = await page('/', HTML, () => undefined, { signedIn: false });
+    const b = p.document.querySelector('.hf-nav-cta') as unknown as { textContent: string; click: () => void };
+    expect(b.textContent).toBe(WORDING['nav-join']);
+    const opened: string[] = [];
+    (p.window as unknown as { HFP: { auth: (m: string) => void } }).HFP.auth = (m) => void opened.push(m);
+    b.click();
+    expect(opened).toEqual(['signup']);
+  });
+
+  it('shows members "My account"', async () => {
+    const p = await page('/', HTML, () => undefined);
+    expect(p.document.querySelector('.hf-nav-cta')!.textContent).toBe(WORDING['nav-account']);
+  });
+});

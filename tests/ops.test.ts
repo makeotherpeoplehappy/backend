@@ -121,6 +121,18 @@ describe('/lab access managed on the page', () => {
   });
 });
 
+describe('Public impact numbers', () => {
+  it('counts people made happy, actions to choose from and stories on the site, for anyone', async () => {
+    h.fake.signIn('shcat_ana', { email: 'ana@example.com' });
+    h.fake.signIn('shcat_ben', { email: 'ben@example.com' });
+    await h.request('POST', '/api/actions/compliment-a-stranger/done', { token: 'shcat_ana' });
+    await h.request('POST', '/api/actions/compliment-a-stranger/done', { token: 'shcat_ben' });
+    const res = await h.request('GET', '/api/impact');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ peopleMadeHappy: 2, actions: 1, stories: 0 });
+  });
+});
+
 describe('/lab KPIs', () => {
   it('only accounts on the allow-list can read them', async () => {
     h.fake.signIn('shcat_ana', { email: 'ana@example.com' });

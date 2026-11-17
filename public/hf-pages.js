@@ -9,6 +9,7 @@
  *   Do this with me  #hf-join-title      invite page ("I'm in", leave, own invite, removed action)
  *   Stories          /stories            stories with video players and "Report this story"
  *   Actions          /actions            "Most done" list
+ *   Home             [data-hf-fill=impact-*]  live impact numbers
  *   Keep your pledge #hf-claim           a shop's pledges join the member's account
  *   Sign-in window   HFP.auth()          sign in, create an account, reset a password
  *
@@ -78,16 +79,16 @@
 
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
-    '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#a11}' +
-    '.hfp-muted{color:#555}.hfp-small{font-size:15px}.hfp-card{border:2px solid #222;border-radius:12px;padding:20px;margin:16px 0}' +
+    '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
-    '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:8px;overflow:hidden;background:#eee}' +
+    '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
-    '.hfp-photo{display:block;width:100%;max-width:640px;border-radius:8px;margin:0 0 12px}' +
-    '.hfp-list{list-style:none;padding:0;margin:8px 0 16px}.hfp-list li{padding:10px 0;border-bottom:1px solid #e5e5e5}' +
-    '.hfp-field{margin:0 0 16px}.hfp-check{display:flex;gap:10px;align-items:flex-start;margin:0 0 12px}.hfp-check input{margin-top:5px;width:18px;height:18px;flex:none}' +
+    '.hfp-photo{display:block;width:100%;max-width:640px;border-radius:16px;margin:0 0 12px}' +
+    '.hfp-list{list-style:none;padding:0;margin:8px 0 16px}.hfp-list li{padding:12px 0;border-bottom:1px solid #E3E8EF}' +
+    '.hfp-field{margin:0 0 16px}.hfp-check{display:flex;gap:12px;align-items:flex-start;margin:0 0 12px}.hfp-check input{margin-top:4px;width:22px;height:22px;flex:none;accent-color:#2E5E8E}' +
     '.hfp-check label{font-size:17px;font-weight:400;line-height:1.5;margin:0;cursor:pointer}' +
-    '.hfp-pill{display:inline-block;font-size:13px;padding:2px 10px;border-radius:999px;border:1px solid #bbb;margin-left:8px}' +
+    '.hfp-pill{display:inline-block;font-size:14px;font-weight:600;padding:2px 12px;border-radius:999px;background:#EEF4FA;color:#2E5E8E;margin-left:8px}' +
     '[aria-disabled=true].hf-button,[aria-disabled=true].hf-button-light,button[disabled]{opacity:.55;cursor:default}';
   document.head.appendChild(el('style', { text: css }));
 
@@ -881,6 +882,38 @@
   }
 
 
+  // Header button (Webflow element with class hf-nav-cta, linking to /account):
+  // "Join free" opens the create-account window for visitors; members see
+  // "My account". Worded in src/wording/en.json (nav-join, nav-account).
+  function headerAccount() {
+    var b = document.querySelector('.hf-nav-cta');
+    if (!b || b.getAttribute('data-hfp-cta')) return;
+    b.setAttribute('data-hfp-cta', '1');
+    if (signedIn()) { b.textContent = copyText('nav-account'); return; }
+    b.textContent = copyText('nav-join');
+    b.addEventListener('click', function (e) {
+      if (!window.HFP || !window.HFP.auth || signedIn()) return;
+      e.preventDefault();
+      window.HFP.auth('signup');
+    });
+  }
+
+  // Home page impact numbers: Webflow elements with data-hf-fill="impact-people",
+  // "impact-actions" or "impact-stories" get the live count (they keep their
+  // Webflow text until it arrives, and keep it if the backend can't answer).
+  async function impactNumbers() {
+    var slots = document.querySelectorAll('[data-hf-fill^="impact-"]');
+    if (!slots.length) return;
+    await wait(function () { return window.HFB; }, 10000);
+    var r = await HFB.call('/api/impact', { auth: false });
+    if (!r.ok) return;
+    var map = { 'impact-people': r.data.peopleMadeHappy, 'impact-actions': r.data.actions, 'impact-stories': r.data.stories };
+    slots.forEach(function (e) {
+      var v = map[e.getAttribute('data-hf-fill')];
+      if (typeof v === 'number') e.textContent = v.toLocaleString();
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // Small site-wide helpers that used to sit in Webflow's site footer
   // ---------------------------------------------------------------------------
@@ -978,17 +1011,17 @@
 
   // Sign-in window: our own look and wording, with Memberstack doing the work
   // behind it (no Memberstack window or logo). Modes: signin, signup, reset.
-  var AUTH_CSS = '#hfp-auth{border:2px solid #6699CC;border-radius:16px;padding:28px 24px 22px;width:min(420px,calc(100vw - 32px));box-sizing:border-box;color:#222;font-family:inherit}' +
-    '#hfp-auth::backdrop{background:rgba(0,0,0,.45)}#hfp-auth h2{font-size:28px;margin:12px 0 16px;text-align:center}' +
-    '#hfp-auth .hfp-auth-logo{display:block;height:34px;width:auto;margin:0 auto}#hfp-auth label{display:block;font-size:15px;font-weight:500;margin:12px 0 4px}' +
-    '#hfp-auth input{display:block;width:100%;box-sizing:border-box;min-height:44px;padding:9px 14px;border:1px solid #bbb;border-radius:999px;font:inherit;font-size:16px;color:#222}' +
-    '#hfp-auth input:focus{border-color:#222;outline:none}#hfp-auth .hfp-auth-go,#hfp-auth .hfp-auth-google{display:flex;gap:10px;justify-content:center;align-items:center;width:100%;min-height:46px;margin:18px 0 0;border-radius:999px;font:inherit;font-size:17px;font-weight:500;cursor:pointer}' +
-    '#hfp-auth .hfp-auth-go{background:#6699CC;border:2px solid #6699CC;color:#fff}#hfp-auth .hfp-auth-go:hover{background:#4D7FB3;border-color:#4D7FB3}' +
-    '#hfp-auth .hfp-auth-google{background:#fff;border:2px solid #6699CC;color:#222;margin-top:0}#hfp-auth .hfp-auth-google:hover{background:#f2f6fb}#hfp-auth button[disabled]{opacity:.55;cursor:default}' +
-    '#hfp-auth .hfp-auth-or{display:flex;align-items:center;gap:10px;margin:16px 0;color:#555;font-size:15px}#hfp-auth .hfp-auth-or::before,#hfp-auth .hfp-auth-or::after{content:"";flex:1;border-top:1px solid #ddd}' +
-    '#hfp-auth .hfp-auth-links{display:flex;flex-direction:column;gap:8px;align-items:center;margin:16px 0 0;font-size:15px}' +
-    '#hfp-auth .hfp-auth-x{position:absolute;top:10px;right:12px;background:none;border:0;font-size:26px;line-height:1;cursor:pointer;color:#555}' +
-    '#hfp-auth .hfp-status{text-align:center;font-size:15px;margin:12px 0 0}#hfp-auth .hfp-status:empty{display:none}';
+  var AUTH_CSS = '#hfp-auth{border:0;border-radius:28px;padding:32px 28px 26px;width:min(440px,calc(100vw - 32px));box-sizing:border-box;color:#111418;font-family:inherit;box-shadow:0 24px 60px rgba(17,20,24,.25)}' +
+    '#hfp-auth::backdrop{background:rgba(17,20,24,.55)}#hfp-auth h2{font-family:"Inter Tight",Inter,Arial,sans-serif;font-weight:800;font-size:30px;letter-spacing:-.02em;margin:14px 0 18px;text-align:center}' +
+    '#hfp-auth .hfp-auth-logo{display:block;height:34px;width:auto;margin:0 auto}#hfp-auth label{display:block;font-size:16px;font-weight:600;margin:14px 0 6px}' +
+    '#hfp-auth input{display:block;width:100%;box-sizing:border-box;min-height:52px;padding:10px 16px;border:2px solid #C9D6E5;border-radius:14px;font:inherit;font-size:17px;color:#111418;background:#fff}' +
+    '#hfp-auth input:focus{border-color:#2E5E8E;outline:3px solid rgba(102,153,204,.35);outline-offset:1px}#hfp-auth .hfp-auth-go,#hfp-auth .hfp-auth-google{display:flex;gap:10px;justify-content:center;align-items:center;width:100%;min-height:54px;margin:20px 0 0;border-radius:999px;font:inherit;font-size:18px;font-weight:700;cursor:pointer}' +
+    '#hfp-auth .hfp-auth-go{background:#2E5E8E;border:0;color:#fff}#hfp-auth .hfp-auth-go:hover{background:#1F4468}' +
+    '#hfp-auth .hfp-auth-google{background:#fff;border:2px solid #111418;color:#111418;margin-top:0;font-weight:600}#hfp-auth .hfp-auth-google:hover{background:#EEF4FA}#hfp-auth button[disabled]{opacity:.55;cursor:default}' +
+    '#hfp-auth .hfp-auth-or{display:flex;align-items:center;gap:10px;margin:16px 0;color:#3D434C;font-size:15px}#hfp-auth .hfp-auth-or::before,#hfp-auth .hfp-auth-or::after{content:"";flex:1;border-top:1px solid #E3E8EF}' +
+    '#hfp-auth .hfp-auth-links{display:flex;flex-direction:column;gap:6px;align-items:center;margin:18px 0 0;font-size:16px}#hfp-auth .hfp-auth-links .hfp-link{min-height:40px;color:#2E5E8E;font-weight:600}' +
+    '#hfp-auth .hfp-auth-x{position:absolute;top:12px;right:14px;width:44px;height:44px;background:none;border:0;border-radius:999px;font-size:28px;line-height:1;cursor:pointer;color:#3D434C}#hfp-auth .hfp-auth-x:hover{background:#EEF4FA}' +
+    '#hfp-auth .hfp-status{text-align:center;font-size:16px;margin:12px 0 0}#hfp-auth .hfp-status:empty{display:none}';
 
   function authError(e, mode) {
     var t = String((e && (e.code || '')) + ' ' + (e && e.message || '')).toLowerCase();
@@ -1094,7 +1127,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, claimPage, invitePage, storiesPage, mostDone];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, storiesPage, mostDone];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

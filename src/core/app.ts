@@ -17,7 +17,7 @@ import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecent
 import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
-import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, removeLabAccess } from './features/ops';
+import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, publicImpact, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
 import { memberstackWebhook } from './features/memberstack';
 import { addPartner, cancelPledges, claimEmails, claimPledges, listPartners, partnerFromRequest, registerPledges, setPartnerActive } from './features/partners';
@@ -91,6 +91,7 @@ route('POST', '/api/actions/:id/done', true, memberWrite('done', async ({ env, d
 
 route('DELETE', '/api/actions/:id/done', true, memberWrite('undo', async ({ env, deps, params }, m) => undoDone(env, deps, m, await resolveActionRef(env, deps, params.id))));
 
+route('GET', '/api/impact', true, async ({ env }) => json(await publicImpact(env), 200, { 'Cache-Control': 'public, max-age=300' }));
 route('GET', '/api/most-done', true, async ({ env }) => json(await mostDone(env), 200, { 'Cache-Control': 'public, max-age=60' }));
 
 route(

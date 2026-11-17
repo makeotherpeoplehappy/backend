@@ -186,11 +186,14 @@ export async function partnerReport(env: Env, partnerId: number, month: string) 
 /** Job: on the first days of a month, each partner with a report email gets last month's numbers (once). */
 export async function partnerReports(env: Env, deps: Deps) {
   const month = lastMonth(deps.now());
+  // Only partners that existed during that month: one set up this month has nothing to report yet.
+  const thisMonthStart = `${iso(deps.now()).slice(0, 7)}-01`;
   const due = await env.DB.prepare(
     `SELECT id, name, report_email AS email FROM partners
-     WHERE id != ?1 AND active = 1 AND report_email IS NOT NULL AND (last_report_month IS NULL OR last_report_month < ?2)`,
+     WHERE id != ?1 AND active = 1 AND report_email IS NOT NULL AND (last_report_month IS NULL OR last_report_month < ?2)
+       AND created_at < ?3`,
   )
-    .bind(OWN_SHOP, month)
+    .bind(OWN_SHOP, month, thisMonthStart)
     .all<{ id: number; name: string; email: string }>();
   const label = new Date(`${month}-01T00:00:00Z`).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
   for (const p of due.results) {

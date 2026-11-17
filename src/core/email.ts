@@ -13,6 +13,11 @@ export interface EmailMessage {
   tags?: { name: string; value: string }[];
 }
 
+/** Resend templates take every variable as text (a number is refused with 422), so numbers go as strings. */
+function textVariables(t: NonNullable<EmailMessage['template']>) {
+  return { id: t.id, variables: Object.fromEntries(Object.entries(t.variables).map(([k, v]) => [k, String(v)])) };
+}
+
 /** Sends one email through Resend: plain text, or a Resend template (its wording is edited in Resend). */
 export async function sendEmail(env: Env, deps: Deps, msg: EmailMessage, idempotencyKey?: string): Promise<void> {
   const res = await callUpstream(deps.fetch, 'email', 'https://api.resend.com/emails', {
@@ -24,7 +29,7 @@ export async function sendEmail(env: Env, deps: Deps, msg: EmailMessage, idempot
     },
     body: JSON.stringify(
       msg.template
-        ? { from: env.EMAIL_FROM, to: [msg.to], template: msg.template, headers: msg.headers, tags: msg.tags }
+        ? { from: env.EMAIL_FROM, to: [msg.to], template: textVariables(msg.template), headers: msg.headers, tags: msg.tags }
         : { from: env.EMAIL_FROM, to: [msg.to], subject: msg.subject, text: msg.text, headers: msg.headers, tags: msg.tags },
     ),
   });

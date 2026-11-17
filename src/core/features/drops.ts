@@ -11,7 +11,7 @@ import type { Member } from '../identity';
 import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
 import * as webflow from '../webflow';
-import { siteWording, word, type Wording } from '../wording';
+import { word } from '../wording';
 import { dropPledges } from './pledges';
 
 export interface Drop {
@@ -223,14 +223,14 @@ export async function effectiveStatus(env: Env, deps: Deps, drop: Drop, left?: n
 
 const ET = 'America/New_York';
 
-/** "100 pieces. Drops December 5 at 12:00 ET. Gone when they're gone.", worded in Webflow ("details-..." keys). */
-export function detailsLineFor(drop: Pick<Drop, 'quantity' | 'dropDate'>, status: Drop['status'], w: Wording): string | null {
+/** "100 pieces. Drops December 5 at 12:00 ET. Gone when they're gone.", worded in src/wording/en.json ("details-..." keys). */
+export function detailsLineFor(drop: Pick<Drop, 'quantity' | 'dropDate'>, status: Drop['status']): string | null {
   if (!drop.quantity || !drop.dropDate) return null;
   const d = new Date(drop.dropDate);
   const day = new Intl.DateTimeFormat('en-US', { timeZone: ET, month: 'long', day: 'numeric' }).format(d);
   const time = new Intl.DateTimeFormat('en-US', { timeZone: ET, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d);
   const key = status === 'sold_out' ? 'details-sold-out' : status === 'live' ? 'details-live' : 'details-upcoming';
-  return word(w, key, { n: drop.quantity, day, time }) || null;
+  return word(key, { n: drop.quantity, day, time }) || null;
 }
 
 /** What the drop hero needs: status, countdown target, stock and pledges. */
@@ -246,7 +246,7 @@ export async function dropState(env: Env, deps: Deps, slug: string | null) {
     dropDate: drop.dropDate,
     quantity,
     left,
-    detailsLine: detailsLineFor({ quantity, dropDate: drop.dropDate }, status, await siteWording(env, deps)) || drop.detailsLine,
+    detailsLine: detailsLineFor({ quantity, dropDate: drop.dropDate }, status) || drop.detailsLine,
     pledges: await dropPledges(env, drop.slug),
   };
 }
@@ -271,7 +271,7 @@ export async function updateDropsInCms(env: Env, deps: Deps) {
     const { quantity, left } = await dropStock(env, deps, d).catch(() => NO_STOCK(d));
     const status = await effectiveStatus(env, deps, d, left);
     if (status === 'unknown') continue;
-    const line = detailsLineFor({ quantity, dropDate: d.dropDate }, status, await siteWording(env, deps));
+    const line = detailsLineFor({ quantity, dropDate: d.dropDate }, status);
     const fieldData: Record<string, unknown> = {};
     if (d.status !== status) fieldData.status = STATUS_ID[status];
     if (line && line !== d.detailsLine) fieldData['details-line'] = line;
@@ -371,7 +371,7 @@ export async function shopDrops(env: Env, deps: Deps) {
       dropDate: d.dropDate,
       quantity,
       left,
-      detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status, await siteWording(env, deps)) || d.detailsLine,
+      detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status) || d.detailsLine,
       onFrontPage: d.onFrontPage,
       collection: d.slug,
       pledges: await dropPledges(env, d.slug),
@@ -384,7 +384,7 @@ export async function shopDrops(env: Env, deps: Deps) {
 
 /**
  * The facts behind each product's scarcity label, by handle. True and specific
- * only; the site words them with the label texts in Webflow's footer
+ * only; the site words them with the label texts in src/wording/en.json
  * (for example "Drop 01 · 64 of 100 left" or "Limited edition · 250 pieces"):
  *   drop pieces          name = the drop's name, size = the piece's edition size
  *   limited editions     name = null, size = Shopify field custom.edition_size

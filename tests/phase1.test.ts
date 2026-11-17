@@ -30,9 +30,6 @@ async function drainAll() {
 }
 
 // ---------------------------------------------------------------------------
-/** Deps for calling backend functions directly: the fake services and the site's address. */
-const siteDeps = () => ({ fetch: h.fake.fetch as typeof fetch, now: () => h.clock.now, site: SITE });
-
 describe('Check 1: a call with a forged or expired token is refused', () => {
   it('refuses a forged token', async () => {
     const res = await h.request('POST', `/api/actions/${actionA}/done`, { token: 'shcat_forged' });

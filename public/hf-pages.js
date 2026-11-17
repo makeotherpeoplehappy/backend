@@ -34,9 +34,9 @@
     return e;
   }
   function status(cls) { return el('p', { class: cls || 'hfp-status', role: 'status', 'aria-live': 'polite' }); }
-  // Text kept in Webflow. [data-hf-show="x"] is shown once the script turns it on
-  // (the site head hides it until then), [data-hf-fill="x"] receives data, and
-  // [data-hf-copy="x"] holds wording the script reads but never shows.
+  // Page content is in Webflow: [data-hf-show="x"] is shown once the script turns
+  // it on (site.css hides it until then) and [data-hf-fill="x"] receives data.
+  // Interface text comes from src/wording/en.json (window.HFW, via /join/hf-wording.js).
   function showOnly(root, key) {
     root.querySelectorAll('[data-hf-show]').forEach(function (e) {
       if ((' ' + e.getAttribute('data-hf-show') + ' ').indexOf(' ' + key + ' ') >= 0) e.setAttribute('data-hf-on', ''); else e.removeAttribute('data-hf-on');
@@ -57,8 +57,7 @@
     return dropStates[q] || (dropStates[q] = HFB.call(q, { auth: false }));
   }
   function copyText(key, vars) {
-    var e = document.querySelector('[data-hf-copy="' + key + '"]');
-    var t = e ? e.textContent.trim() : '';
+    var t = (window.HFW && window.HFW[key]) || '';
     if (vars) Object.keys(vars).forEach(function (k) { t = t.split('{' + k + '}').join(vars[k] == null ? '' : String(vars[k])); });
     return t;
   }
@@ -74,7 +73,7 @@
     return out;
   }
   function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
-  // "64 of 100 left" and "100 pledges made, 81 kept", worded in Webflow's footer.
+  // "64 of 100 left" and "100 pledges made, 81 kept", worded in src/wording/en.json.
   function leftText(left, quantity) { return copyText('facts-left', { left: left, quantity: quantity }); }
   function pledgesText(p) { return copyText(p.made === 1 ? 'pledges-one' : 'pledges-many', { made: p.made, kept: p.kept }); }
   /** A product's label from the backend's facts: "Drop 01 · 100 pieces", "… · 64 of 100 left", "… · Sold out". */
@@ -902,11 +901,10 @@
   async function dropHero() {
     var count = $('hf-drop-count');
     if (!count || $('hfp-drop-facts')) return;
-    // "Coming soon", "Out now" and "Sold out" are Webflow elements in the hero; show the one
-    // for the drop's state: the CMS status at once, then the backend's (stock, launch time).
+    // "Coming soon", "Out now" and "Sold out" are Webflow elements in the hero. heroState()
+    // shows one at once (CMS status and launch time); the backend's answer (stock) has the last word.
     var hero = count.parentNode;
-    var cms = $('hf-drop-status');
-    if (cms && cms.textContent.trim()) showOnly(hero, cms.textContent.trim().toLowerCase().replace(/ /g, '_'));
+    heroState();
     var m = /^\/drops\/([a-z0-9-]+)/.exec(location.pathname);
     await wait(function () { return window.HFB; }, 10000);
     var r = await dropState(m && m[1]);
@@ -947,7 +945,7 @@
   // product page shows its edition label ("Drop 01 · 100 pieces").
   // ---------------------------------------------------------------------------
   var STORE = 'r40e0y-zs.myshopify.com';
-  // Shopify's own card (the fallback list): its buttons are worded in Webflow's footer.
+  // Shopify's own card (the fallback list): its buttons are worded in src/wording/en.json.
   function cardHtml(previewOnly) {
     return '<div class="hf-product"><shopify-media query="product.selectedOrFirstAvailableVariant.image" width="320" height="320"></shopify-media>' +
       '<h3><shopify-data query="product.title"></shopify-data></h3><p><shopify-money query="product.selectedOrFirstAvailableVariant.price"></shopify-money></p>' +
@@ -1053,7 +1051,7 @@
     try { return new Intl.NumberFormat(undefined, { style: 'currency', currency: p.currencyCode }).format(Number(p.amount)); } catch (e) { return p.amount + ' ' + p.currencyCode; }
   }
 
-  /** A product card drawn straight from the backend's answer; its wording is in Webflow's footer. */
+  /** A product card drawn straight from the backend's answer; its wording is in src/wording/en.json. */
   function productCard(p, canBuy) {
     var href = '/products/' + p.handle;
     var img = p.image ? el('a', { href: href, tabindex: '-1', 'aria-hidden': 'true' }, [
@@ -1153,17 +1151,142 @@
     document.documentElement.setAttribute('data-hfp-shop', 'ready');
   }
 
+
+  // ---------------------------------------------------------------------------
+  // Site-wide parts that used to be separate Webflow scripts (now versioned here)
+  // ---------------------------------------------------------------------------
+
+  /** Drop hero (home page and /drops/...): the state label, button links and the countdown. */
+  function heroState() {
+    var s = $('hf-drop-status');
+    var c = $('hf-drop-count');
+    if (!s || !c || c.getAttribute('data-hfp-hero')) return;
+    c.setAttribute('data-hfp-hero', '1');
+    var hero = c.parentNode;
+    var q = $('hf-drop-qty');
+    var dt = $('hf-drop-date');
+    var lead = $('hf-drop-lead');
+    var sg = $('hf-drop-slug');
+    var cd = hero.querySelector('[data-hf-fill=countdown]');
+    // The CMS date has no time; take it from the details line ("12:00").
+    if (dt && !/\d:\d/.test(dt.textContent)) {
+      var y = ((hero.querySelector('.hf-drop-details') || {}).textContent || '').match(/\d{1,2}:\d\d/);
+      if (y) dt.textContent += ' ' + y[0];
+    }
+    var h = lead ? lead.textContent.trim() : '';
+    var pg = sg && sg.textContent.trim();
+    var st = s.textContent.trim().toLowerCase().replace(/ /g, '_');
+    var d = dt ? etTime(dt.textContent.trim()) : NaN;
+    hero.querySelectorAll('a[data-hf-show~=live]').forEach(function (a) { a.href = pg ? '/drops/' + pg : h ? '/products/' + h : '/shop'; });
+    if (q) hero.querySelectorAll('[data-hf-show~=sold_out]').forEach(function (e) { if (e.textContent.indexOf('{qty}') >= 0) e.textContent = e.textContent.replace('{qty}', q.textContent.trim()); });
+    if (st === 'sold_out') return showOnly(hero, st);
+    if (st === 'live' || (d && d <= Date.now())) return showOnly(hero, 'live');
+    showOnly(hero, 'upcoming');
+    if (d && cd) (function tick() {
+      var x = Math.floor((d - Date.now()) / 1000);
+      if (x <= 0) return showOnly(hero, 'live');
+      cd.textContent = Math.floor(x / 86400) + 'd ' + Math.floor((x % 86400) / 3600) + 'h ' + Math.floor((x % 3600) / 60) + 'm ' + (x % 60) + 's';
+      setTimeout(tick, 1000);
+    })();
+  }
+  /** "December 5, 2026 12:00" in New York time, as a timestamp. */
+  function etTime(r) {
+    var M = 'JanFebMarAprMayJunJulAugSepOctNovDec';
+    var m = r.match(/^(\w{3})\w* (\d+), (\d+) (\d+):(\d+)/);
+    if (!m) return NaN;
+    var a = Date.UTC(+m[3], M.indexOf(m[1]) / 3, +m[2], +m[4], +m[5]);
+    var o = {};
+    var N = 'numeric';
+    new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hourCycle: 'h23', year: N, month: N, day: N, hour: N, minute: N })
+      .formatToParts(new Date(a)).forEach(function (x) { o[x.type] = +x.value; });
+    return 2 * a - Date.UTC(o.year, o.month - 1, o.day, o.hour, o.minute);
+  }
+
+  /** Header cart link: item count, and opens the cart drawer. */
+  function headerCart() {
+    var l = $('hf-cart-link');
+    var b = $('hf-cart-count');
+    if (!l || !b || l.getAttribute('data-hfp')) return;
+    l.setAttribute('data-hfp', '1');
+    function show(n) {
+      b.textContent = n;
+      b.style.display = n ? '' : 'none';
+      l.setAttribute('aria-label', n ? copyText(n === 1 ? 'cart-label-one' : 'cart-label-many', { n: n }) : copyText('cart-label'));
+    }
+    show(0);
+    function load() {
+      var id = '';
+      try { id = (localStorage.getItem('__shopify:cartId') || '').replace(/^"|"$/g, ''); } catch (e) {}
+      if (!id) return show(0);
+      fetch('https://' + STORE + '/api/2025-10/graphql.json', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ query: 'query($id:ID!){cart(id:$id){totalQuantity}}', variables: { id: id } }) })
+        .then(function (r) { return r.json(); })
+        .then(function (j) { show(j.data && j.data.cart ? j.data.cart.totalQuantity : 0); })
+        .catch(function () {});
+    }
+    function cart() { var c = $('hf-cart'); return c && c.showModal ? c : null; }
+    l.addEventListener('click', function (e) { var c = cart(); if (c) { e.preventDefault(); c.showModal(); } });
+    document.addEventListener('click', function () { if ($('hf-cart')) { setTimeout(load, 1200); setTimeout(load, 3000); } });
+    window.addEventListener('focus', load);
+    load();
+    if (location.hash === '#cart' && window.customElements) customElements.whenDefined('shopify-cart').then(function () { var c = cart(); if (c) c.showModal(); });
+  }
+
+  /** Cart drawer: checkout unlocks once the pledge is ticked. */
+  function cartPledge() {
+    var c = $('hf-cart');
+    if (!c || c.querySelector('.hf-pledge')) return;
+    document.head.appendChild(el('style', { text: '#hf-cart:not(.hf-pledged)::part(primary-button){opacity:.45;pointer-events:none}.hf-pledge{margin:4px 0 12px;padding:14px 16px;border:2px solid #6699CC;border-radius:12px;font-size:16px;line-height:1.4}.hf-pledge label{display:flex;gap:10px;align-items:flex-start;cursor:pointer;font-weight:500}.hf-pledge input{margin-top:3px;width:18px;height:18px;accent-color:#222}.hf-pledge small{display:block;margin-top:2px;font-size:14px;font-weight:400;color:#555}' }));
+    var box = el('input', { type: 'checkbox', id: 'hf-pledge-box' });
+    var d = el('div', { class: 'hf-pledge' }, [el('label', null, [box, el('span', null, [copyText('cart-pledge-label'), el('small', { text: copyText('cart-pledge-hint') })])])]);
+    d.slot = 'extension';
+    c.appendChild(d);
+    var l = el('span', { text: copyText('cart-pledge') });
+    l.slot = 'checkout-button';
+    c.appendChild(l);
+    (function order() {
+      var r = c.shadowRoot;
+      if (!r) return setTimeout(order, 100);
+      if (r.querySelector('style[data-hf]')) return;
+      var st = el('style', { 'data-hf': '', text: 'div:has(> slot[name=extension]){display:flex;flex-direction:column}slot[name=extension]{display:block;order:1}div:has(> a[part=primary-button]){order:2}' });
+      r.appendChild(st);
+    })();
+    box.addEventListener('change', function () {
+      c.classList.toggle('hf-pledged', box.checked);
+      l.textContent = copyText(box.checked ? 'cart-checkout' : 'cart-pledge');
+    });
+  }
+
+  /** Before a drop launches, its pieces can't be added to the cart (shop and product pages). */
+  async function productGate() {
+    var m = /^\/products\/([^\/]+)/.exec(location.pathname);
+    if ((!m && location.pathname !== '/shop') || $('hfp-gate')) return;
+    var home = await fetch('/').then(function (r) { return r.ok ? r.text() : ''; }).catch(function () { return ''; });
+    if (!home) return;
+    var d = new DOMParser().parseFromString(home, 'text/html');
+    function g(i) { var e = d.getElementById(i); return e ? e.textContent.trim() : ''; }
+    var lead = g('hf-drop-lead');
+    var at = new Date(g('hf-drop-date')).getTime();
+    if (!lead || g('hf-drop-status') !== 'Upcoming' || !at || at <= Date.now()) return;
+    var css = 'button[data-handle="' + lead + '"]+button{display:none}';
+    if (m && m[1] === lead) css += '#hf-product button[onclick*="addLine"]{display:none}';
+    document.head.appendChild(el('style', { id: 'hfp-gate', text: css }));
+  }
+
   function start() {
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage];
+    var parts = [heroState, headerCart, invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage, productGate];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }
     });
     try { storyItemPage(); } catch (e) {}
+    // The cart drawer can be added later (the shop draws its own): try again for a few seconds.
+    [0, 1000, 3000, 6000].forEach(function (ms) { setTimeout(function () { try { cartPledge(); } catch (e) {} }, ms); });
   }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
-  else start();
+  // Start once the page and the interface text are there.
+  function go() { wait(function () { return window.HFW; }, 10000).then(start); }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', go);
+  else go();
 })();

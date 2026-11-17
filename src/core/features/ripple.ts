@@ -2,7 +2,7 @@
 // actions led to N more". One mechanic: a record of one member's action
 // leading to another's.
 
-import { siteWording, word } from '../wording';
+import { word } from '../wording';
 import type { Deps, Env } from '../env';
 import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
@@ -247,19 +247,18 @@ export async function invitePreview(env: Env, deps: Deps, code: string, baseUrl:
   if (!inv) return Response.redirect(`${site}/actions`, 302);
   const action = await getAction(env, deps, inv.actionId).catch(() => null);
   const name = inv.inviterDeleted ? null : inv.inviterName;
-  // Worded in Webflow: the same texts as the invite page, plus the preview's own.
-  const w = await siteWording(env, deps);
+  // The same texts as the invite page, plus the preview's own (src/wording/en.json).
   const title =
     action?.status === 'published'
-      ? word(w, inv.kind === 'with_me' ? 'inv-share-with' : 'inv-share-pass', { name: name || word(w, 'inv-someone'), title: action.title })
-      : word(w, 'invite-preview-title');
-  const description = (!inv.inviterDeleted && inv.note) || action?.short_answer || word(w, 'site-tagline');
+      ? word(inv.kind === 'with_me' ? 'inv-share-with' : 'inv-share-pass', { name: name || word('inv-someone'), title: action.title })
+      : word('invite-preview-title');
+  const description = (!inv.inviterDeleted && inv.note) || action?.short_answer || word('site-tagline');
   const image = `${baseUrl}/share-invite.png`;
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <title>${esc(title)}</title>
 <meta name="robots" content="noindex">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="${esc(word(w, 'site-name'))}">
+<meta property="og:site_name" content="${esc(word('site-name'))}">
 <meta property="og:title" content="${esc(title)}">
 <meta property="og:description" content="${esc(description)}">
 <meta property="og:image" content="${esc(image)}">

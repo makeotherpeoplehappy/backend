@@ -2,7 +2,6 @@
 // from Miniflare, the same runtime Webflow Cloud uses, with fake Shopify,
 // Webflow, Resend and Turnstile services behind an injected fetch.
 
-import { FOOTER_HTML } from './wording';
 import { readFileSync, readdirSync } from 'node:fs';
 import { Miniflare } from 'miniflare';
 import { createApp } from '../src/core/app';
@@ -114,8 +113,6 @@ export class FakeServices {
       body = Object.fromEntries(init.body.entries());
     }
     this.calls.push({ method, url: url.href, body });
-    // The published site's home page carries the "Site wording" block the backend reads.
-    if (method === 'GET' && url.href === `${SITE}/`) return new Response(FOOTER_HTML, { status: 200, headers: { 'Content-Type': 'text/html' } });
     const headers = new Headers(init.headers);
     const j = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json' } });
 

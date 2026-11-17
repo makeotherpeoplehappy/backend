@@ -4,20 +4,29 @@
 
 import { readFileSync } from 'node:fs';
 import { Window } from 'happy-dom';
-import { describe, expect, it } from 'vitest';
-import { FOOTER_HTML, PAGE_WORDING, WORDING } from './wording';
+import { afterEach, describe, expect, it } from 'vitest';
+import { WORDING } from './wording';
 
 const SOURCE = readFileSync(new URL('../public/hf-pages.js', import.meta.url), 'utf8');
 
 type Handler = (method: string, path: string, body: unknown) => { status?: number; data: unknown } | undefined;
 
+// Every simulated page is closed after its test, so its timers (countdowns,
+// retries) don't keep running and slow the tests after it.
+const OPEN: Window[] = [];
+afterEach(async () => {
+  for (const w of OPEN.splice(0)) await w.happyDOM.close();
+});
+
 async function page(path: string, html: string, handler: Handler, opts: { signedIn?: boolean } = {}) {
   const window = new Window({ url: `https://site.test${path}` });
+  OPEN.push(window);
   const document = window.document;
-  document.body.innerHTML = html + FOOTER_HTML + '<div data-hf-pages hidden></div>';
+  document.body.innerHTML = html + '<div data-hf-pages hidden></div>';
   const calls: { method: string; path: string; body: unknown }[] = [];
   const signIns: unknown[] = [];
   const w = window as unknown as Record<string, unknown>;
+  w.HFW = WORDING;
   w.HF = { token: () => (opts.signedIn === false ? null : { a: 'tok' }), finish: async () => false, load: async () => null, signin: () => undefined, signout: () => undefined };
   w.HFB = {
     base: '/join',
@@ -227,7 +236,7 @@ describe('Suggest an action', () => {
 
 // The shop's sections as they are built in Webflow (the wording lives there).
 const SHOP_WEBFLOW = `<h1>Shop</h1><div id="hf-shop"></div>
-<div id="hfp-shop-drop" class="hf-box" data-hf-show="drop"><p class="hf-drop-label" data-hf-show="live">Out now</p><h2 id="hfp-shop-drop-h" data-hf-fill="name">Drop name</h2><p class="hf-drop-quote" data-hf-fill="statement">Statement</p><p id="hfp-shop-drop-details" data-hf-fill="details">Details line</p><p data-hf-fill="facts">Pieces left and pledges</p><div><a class="hf-story-link" data-hf-fill="link" href="/shop">See the pieces →</a></div><p data-hf-copy="notify-label">Get an email when the drop goes live.</p><div data-hf-fill="grid"></div></div>
+<div id="hfp-shop-drop" class="hf-box" data-hf-show="drop"><p class="hf-drop-label" data-hf-show="live">Out now</p><h2 id="hfp-shop-drop-h" data-hf-fill="name">Drop name</h2><p class="hf-drop-quote" data-hf-fill="statement">Statement</p><p id="hfp-shop-drop-details" data-hf-fill="details">Details line</p><p data-hf-fill="facts">Pieces left and pledges</p><div><a class="hf-story-link" data-hf-fill="link" href="/shop">See the pieces →</a></div><div data-hf-fill="grid"></div></div>
 <div id="hfp-shop-now" data-hf-show="now"><h2 id="hfp-shop-now-h">Available now</h2><p>Every piece comes with a pledge: take an action that makes someone else happy.</p><div data-hf-fill="grid"></div></div>
 <div id="hfp-shop-past" data-hf-show="past"><h2 id="hfp-shop-past-h">Past drops</h2><div data-hf-template="past-drop"><h3 data-hf-fill="name">Drop name</h3><p class="hf-drop-quote" data-hf-fill="statement">Statement</p><p data-hf-fill="pledges">Sold out</p><div data-hf-fill="grid"></div></div></div>`;
 const on = (e: Element | null) => !!e && e.hasAttribute('data-hf-on');
@@ -343,44 +352,26 @@ describe('Wording from Webflow', () => {
   });
 });
 
-describe('Drop hero script (Webflow)', () => {
-  const HERO = readFileSync(new URL('../site/drop-hero-state.js', import.meta.url), 'utf8');
-  function hero(status: string, date: string) {
-    const window = new Window({ url: 'https://site.test/' });
-    const document = window.document;
-    document.body.innerHTML = `<div class="hf-drop-body"><p class="hf-drop-details">100 pieces. Drops December 5 at 12:00 ET.</p>
+describe('Drop hero (home page)', () => {
+  async function hero(status: string, date: string) {
+    const html = `<div class="hf-drop-body"><p class="hf-drop-details">100 pieces. Drops December 5 at 12:00 ET.</p>
       <p class="hf-drop-count" data-hf-show="live">Out now</p><p class="hf-drop-count" data-hf-show="sold_out">Sold out. {qty} pledges made.</p>
       <p id="hf-drop-count" class="hf-drop-count" data-hf-show="upcoming" data-hf-fill="countdown">Coming soon</p>
       <a class="hf-drop-button" data-hf-show="upcoming live" href="/shop">See the drop</a><a class="hf-drop-button" data-hf-show="sold_out" href="/actions">Find an action</a>
       <div id="hf-drop-status">${status}</div><div id="hf-drop-qty">100</div><div id="hf-drop-date">${date}</div><div id="hf-drop-lead">tee</div><div id="hf-drop-slug">drop-01</div></div>`;
-    new Function('document', HERO)(document);
-    const shown = [...document.querySelectorAll('[data-hf-on]')].map((e) => e.textContent!.trim());
-    window.happyDOM.abort();
-    return { document, shown };
+    const p = await page('/', html, () => undefined);
+    return { document: p.document, shown: [...p.document.querySelectorAll('[data-hf-on]')].map((e) => e.textContent!.trim()) };
   }
-  it('counts down before the drop and points the button at the drop page', () => {
-    const { document, shown } = hero('Upcoming', 'December 5, 2099');
+  it('counts down before the drop and points the button at the drop page', async () => {
+    const { document, shown } = await hero('Upcoming', 'December 5, 2099');
     expect(shown).toHaveLength(2);
     expect(shown[0]).toMatch(/^\d+d \d+h \d+m \d+s$/);
     expect(shown[1]).toBe('See the drop');
     expect(document.querySelector('a[data-hf-show="upcoming live"]')!.getAttribute('href')).toBe('/drops/drop-01');
   });
-  it('shows "Out now" once the date has passed, and the sold-out wording with the pledge count', () => {
-    expect(hero('Upcoming', 'December 5, 2020').shown).toEqual(['Out now', 'See the drop']);
-    expect(hero('Sold out', 'December 5, 2020').shown).toEqual(['Sold out. 100 pledges made.', 'Find an action']);
+  it('shows "Out now" once the date has passed, and the sold-out wording with the pledge count', async () => {
+    expect((await hero('Upcoming', 'December 5, 2020')).shown).toEqual(['Out now', 'See the drop']);
+    expect((await hero('Sold out', 'December 5, 2020')).shown).toEqual(['Sold out. 100 pledges made.', 'Find an action']);
   });
 });
 
-describe('Wording guard', () => {
-  it('every text key the scripts use is in the Webflow wording block', () => {
-    const files = ['../public/hf-pages.js', '../public/hf-backend.js', '../site/cart-pledge.js'].map((f) => readFileSync(new URL(f, import.meta.url), 'utf8'));
-    const used = new Set<string>();
-    for (const src of files) for (const m of src.matchAll(/\b(?:copyText|copy|copyNodes|C)\('([a-z0-9_-]+)'/g)) used.add(m[1]);
-    // Keys picked at run time.
-    for (const k of ['invite_summary', 'story_approved', 'suggestion_live', 'pledge_reminder']) used.add('acct-email-' + k);
-    for (const src of files) for (const m of src.matchAll(/'([a-z]+(?:-[a-z0-9_]+)+)'/g)) if (m[1] in WORDING) used.add(m[1]);
-    const missing = [...used].filter((k) => !k.endsWith('-') && !(k in WORDING) && !(k in PAGE_WORDING)); // a trailing '-' is a prefix, completed at run time
-    expect(missing).toEqual([]);
-    expect(used.size).toBeGreaterThan(100);
-  });
-});

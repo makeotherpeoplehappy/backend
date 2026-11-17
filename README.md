@@ -10,6 +10,21 @@ A Webflow Cloud app attached to the Happiness Foundation site and served from
 - All logic in `src/core/`; `src/pages/[...path].ts` hands every request to it
 - `public/hf-backend.js` is the helper the Webflow site loads from `/join/hf-backend.js`
 
+## Where text lives (decided Nov 17, 2026)
+
+Each kind of text has one home. Don't move text between them.
+
+| Kind of text | Home | How it reaches the site |
+| --- | --- | --- |
+| Page content: headlines, intros, drop and product pages, the shop's section text, the drop hero's state labels | **Webflow** (Designer and CMS) | Native Webflow elements. Scripts only show the right one (`data-hf-show`) and fill in data (`data-hf-fill`). |
+| Product facts: names, descriptions, edition sizes | **Shopify** | Synced to the Webflow CMS by the backend. |
+| Member emails | **Resend** templates (`hf-invite-joined-*`, `hf-story-live*`, `hf-suggestion-live*`, `hf-pledge-reminder`) | The backend sends the template alias and its variables. |
+| Interface text: buttons, labels, messages, errors | **`src/wording/en.json`** | The backend imports it; the page scripts get it as `/join/hf-wording.js`. |
+
+Rules for `en.json`: one key per text, `{name}`-style parts are filled in by the code. Edit it on GitHub (pencil icon) and open a pull request: tests check that every key the code uses exists, that each call fills in exactly the text's `{parts}`, and that no key is unused (`tests/wording.test.ts`). `tests/no-text-in-code.test.ts` fails if a sentence is written into the code instead. Staff-only text (/lab, admin emails) stays in code.
+
+Site styles and site-wide behaviour (drop hero, header cart, cart pledge, drop product gate) are in this repo too (`public/site.css`, `public/hf-pages.js`). Webflow keeps only the stable lines in `site/site-head.html` and `site/site-loader.js`.
+
 ## Run the tests
 
 ```bash

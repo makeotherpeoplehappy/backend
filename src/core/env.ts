@@ -79,8 +79,6 @@ export function allowedOrigins(env: Env): Set<string> {
 export interface Deps {
   fetch: typeof fetch;
   now: () => Date;
-  /** The site's address (e.g. https://example.com), set per request; used to read the site's wording. */
-  site?: string;
 }
 
 export interface Ctx {

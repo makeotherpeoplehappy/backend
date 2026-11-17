@@ -27,6 +27,8 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 
 /* Header: with "Sign in" showing, it takes the free space on tablets and the button sits next to it */
 @media (max-width:991px){.hf-nav-signin[data-hf-on]+.hf-nav-cta{margin-left:8px}}
+/* The narrowest phones (under 350 px): the logo and "Join free" keep their room; "Sign in" is in the Join window instead */
+@media (max-width:349px){.hf-nav-signin{display:none!important}}
 
 /* Current page in the menu (Webflow's "Current" state) */
 .hf-nav-link.w--current{color:var(--colour--deep-blue);box-shadow:inset 0 -3px 0 var(--colour--brand-blue)}
@@ -39,6 +41,9 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 /* Tag links inside a chip row (CMS links have no class of their own) */
 .hf-chips a{display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:999px;background:var(--colour--sky);color:var(--colour--deep-blue);font-size:16px;font-weight:600;text-decoration:none}
 .hf-chips a:hover{background:var(--colour--deep-blue);color:#fff}
+
+/* A story shows one thing: its video if it has one, otherwise its photo */
+.hf-story:has(.hf-story-video:not(.w-dyn-bind-empty)) .hf-story-media{display:none}
 
 /* Swipe row on phones: no scrollbar */
 .hf-card-row{scrollbar-width:none}.hf-card-row::-webkit-scrollbar{display:none}

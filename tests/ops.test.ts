@@ -98,7 +98,7 @@ describe('/lab access managed on the page', () => {
     await h.settle();
     await drain(h.env, h.app.deps);
     const mail = h.fake.emails.find((e) => e.to[0] === 'guest@example.com');
-    expect(mail?.subject).toBe('You can now see the Happiness Foundation Lab');
+    expect(mail?.subject).toBe('You can now see the Happiness Lab');
     expect(mail?.text).toContain('/lab');
   });
 

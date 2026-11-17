@@ -171,11 +171,11 @@ export async function addLabAccess(env: Env, deps: Deps, by: string, input: { em
       op: 'email.send',
       message: {
         to: email,
-        subject: 'You can now see the Happiness Foundation Lab',
+        subject: 'You can now see the Happiness Lab',
         text: [
           'Hi,',
           '',
-          'You have been given access to the Happiness Foundation Lab, the live dashboard of engagement and impact.',
+          'You have been given access to the Happiness Lab, the live dashboard of engagement and impact.',
           '',
           `Open it here and sign in with this email address: ${site}/lab`,
           '',

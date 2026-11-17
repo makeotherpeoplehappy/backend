@@ -388,6 +388,22 @@ describe('Phase 3: pledges', () => {
     expect(st.pledges).toEqual({ made: 1, kept: 0 });
   });
 
+  it('a shop order from someone without an account emails them a "Keep your pledge" link, once', async () => {
+    await shopifyHook('orders/create', orderPayload(7, { qty: 2, email: 'new@example.com', customerId: null }));
+    expect(await h.db(`SELECT claim_id IS NOT NULL AS claim, partner_id, buyer_email FROM pledges`)).toEqual([
+      { claim: 1, partner_id: 1, buyer_email: 'new@example.com' },
+      { claim: 1, partner_id: 1, buyer_email: 'new@example.com' },
+    ]);
+    await tick();
+    await flush();
+    await tick();
+    await flush();
+    const mails = h.fake.emails.filter((e) => e.template?.id === 'hf-pledge-claim');
+    expect(mails).toHaveLength(1);
+    expect(mails[0].to).toEqual(['new@example.com']);
+    expect(mails[0].template!.variables).toMatchObject({ COUNT: 2, CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });
+  });
+
   it('a cancelled order removes its pledges', async () => {
     await shopifyHook('orders/create', orderPayload(1, { qty: 2 }));
     await shopifyHook('orders/cancelled', orderPayload(1, { qty: 2, cancelled: true }));
@@ -398,13 +414,13 @@ describe('Phase 3: pledges', () => {
     await done('shcat_ana'); // 09:00, before the order
     await shopifyHook('orders/create', orderPayload(1, { at: '2026-11-16T09:30:00Z' }));
     await shopifyHook('orders/create', orderPayload(2, { at: '2026-11-16T09:45:00Z' }));
-    expect(await h.db(`SELECT shopify_order_id AS o, status FROM pledges ORDER BY id`)).toEqual([
+    expect(await h.db(`SELECT order_ref AS o, status FROM pledges ORDER BY id`)).toEqual([
       { o: 'gid://shopify/Order/1', status: 'open' },
       { o: 'gid://shopify/Order/2', status: 'open' },
     ]);
     h.clock.advance(DAY);
     await done('shcat_ana', actionB);
-    expect(await h.db(`SELECT shopify_order_id AS o, status FROM pledges ORDER BY id`)).toEqual([
+    expect(await h.db(`SELECT order_ref AS o, status FROM pledges ORDER BY id`)).toEqual([
       { o: 'gid://shopify/Order/1', status: 'kept' },
       { o: 'gid://shopify/Order/2', status: 'open' },
     ]);

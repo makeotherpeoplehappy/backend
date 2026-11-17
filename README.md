@@ -80,6 +80,33 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `POST /api/admin/shopify-webhooks` | `ADMIN_SECRET` | Register the Shopify webhooks (products, customer deletion) for this address |
 | `POST /api/webhooks/shopify` | Shopify (HMAC) | `customers/delete`, `customers/redact`, `products/create`, `products/update`, `products/delete` |
 
+## Partner pledges
+
+Any shop can give its buyers pledges, ours included (partner 1). The shop never
+needs the buyer's account: it registers the order and gives the buyer a link.
+
+1. In `/lab`, an owner adds the partner under **Partners**. The key (`hfp_…`) is
+   shown once; only its hash is stored. The partner can be switched off there.
+2. When an order is paid, the shop's server calls:
+
+   ```
+   POST /join/api/partners/pledges
+   Authorization: Bearer hfp_…
+   {"order": "A-1001", "items": [{"ref": "mug", "quantity": 2}], "email": "optional"}
+   ```
+
+   Answer: `{"order", "pledges", "claimUrl"}`. Safe to repeat; send it again with
+   a lower quantity after a partial refund. A full cancel or refund:
+   `POST /join/api/partners/pledges/cancel` with `{"order": "A-1001"}`.
+3. The shop shows `claimUrl` on its thank-you page or in its order email. It
+   opens `/keep-your-pledge`; after signing in or creating a free account the
+   pledges are the member's. A claimed link cannot be taken by someone else.
+   If `email` matches a member's verified email, the pledges attach at once.
+
+Our own shop's orders arrive through the Shopify webhook and get the same claim
+link; buyers without an account get it by email (Resend template
+`hf-pledge-claim`, variables `CLAIM_URL` and `COUNT`).
+
 ## Product sync
 
 Shopify is the source of truth for each product's name, slug (the Shopify

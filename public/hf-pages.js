@@ -1335,11 +1335,158 @@
     });
   }
 
+
+  // ---------------------------------------------------------------------------
+  // /keep-your-pledge?c=...: the buyer adds a shop's pledges to their account
+  // ---------------------------------------------------------------------------
+  async function claimPage() {
+    var box = $('hf-claim');
+    if (!box || box.getAttribute('data-hfp')) return;
+    box.setAttribute('data-hfp', '1');
+    // The code survives signing up or in (the page reloads, possibly without it).
+    var code = new URLSearchParams(location.search).get('c');
+    try { if (code) localStorage.setItem('hf_claim', code); else code = localStorage.getItem('hf_claim'); } catch (e) {}
+    var msg = status();
+    box.appendChild(msg);
+    if (!code) { msg.textContent = copyText('claim-invalid'); return; }
+    if (!signedIn()) {
+      var join = el('button', { type: 'button', class: 'hf-button', text: copyText('claim-signup') });
+      var login = el('button', { type: 'button', class: 'hf-button-light', text: copyText('claim-signin') });
+      join.addEventListener('click', function () { HF.signup ? HF.signup() : HF.signin(); });
+      login.addEventListener('click', function () { HF.signin(); });
+      box.appendChild(el('div', { class: 'hfp-row' }, [join, login]));
+      return;
+    }
+    msg.textContent = copyText('claim-working');
+    var r = await HFB.call('/api/pledges/claim', { method: 'POST', body: { code: code } });
+    if (!r.ok) { msg.textContent = msgOf(r); msg.setAttribute('data-kind', 'error'); return; }
+    try { localStorage.removeItem('hf_claim'); } catch (e) {}
+    msg.textContent = r.data.claimed === 1 ? copyText('claim-done-one') : copyText('claim-done-many', { n: r.data.claimed });
+    box.appendChild(el('div', { class: 'hfp-row' }, [
+      el('a', { class: 'hf-button', href: '/actions', text: copyText('claim-find') }),
+      el('a', { class: 'hf-button-light', href: '/account', text: copyText('claim-account') }),
+    ]));
+  }
+
+  // Sign-in window: our own look and wording, with Memberstack doing the work
+  // behind it (no Memberstack window or logo). Modes: signin, signup, reset.
+  var AUTH_CSS = '#hfp-auth{border:2px solid #6699CC;border-radius:16px;padding:28px 24px 22px;width:min(420px,calc(100vw - 32px));box-sizing:border-box;color:#222;font-family:inherit}' +
+    '#hfp-auth::backdrop{background:rgba(0,0,0,.45)}#hfp-auth h2{font-size:28px;margin:12px 0 16px;text-align:center}' +
+    '#hfp-auth .hfp-auth-logo{display:block;height:34px;width:auto;margin:0 auto}#hfp-auth label{display:block;font-size:15px;font-weight:500;margin:12px 0 4px}' +
+    '#hfp-auth input{display:block;width:100%;box-sizing:border-box;min-height:44px;padding:9px 14px;border:1px solid #bbb;border-radius:999px;font:inherit;font-size:16px;color:#222}' +
+    '#hfp-auth input:focus{border-color:#222;outline:none}#hfp-auth .hfp-auth-go,#hfp-auth .hfp-auth-google{display:flex;gap:10px;justify-content:center;align-items:center;width:100%;min-height:46px;margin:18px 0 0;border-radius:999px;font:inherit;font-size:17px;font-weight:500;cursor:pointer}' +
+    '#hfp-auth .hfp-auth-go{background:#6699CC;border:2px solid #6699CC;color:#fff}#hfp-auth .hfp-auth-go:hover{background:#4D7FB3;border-color:#4D7FB3}' +
+    '#hfp-auth .hfp-auth-google{background:#fff;border:2px solid #6699CC;color:#222;margin-top:0}#hfp-auth .hfp-auth-google:hover{background:#f2f6fb}#hfp-auth button[disabled]{opacity:.55;cursor:default}' +
+    '#hfp-auth .hfp-auth-or{display:flex;align-items:center;gap:10px;margin:16px 0;color:#555;font-size:15px}#hfp-auth .hfp-auth-or::before,#hfp-auth .hfp-auth-or::after{content:"";flex:1;border-top:1px solid #ddd}' +
+    '#hfp-auth .hfp-auth-links{display:flex;flex-direction:column;gap:8px;align-items:center;margin:16px 0 0;font-size:15px}' +
+    '#hfp-auth .hfp-auth-x{position:absolute;top:10px;right:12px;background:none;border:0;font-size:26px;line-height:1;cursor:pointer;color:#555}' +
+    '#hfp-auth .hfp-status{text-align:center;font-size:15px;margin:12px 0 0}#hfp-auth .hfp-status:empty{display:none}';
+
+  function authError(e, mode) {
+    var t = String((e && (e.code || '')) + ' ' + (e && e.message || '')).toLowerCase();
+    if (/already|exists|in use|taken/.test(t)) return copyText('auth-err-taken');
+    if (mode === 'reset' && /token|code|expired/.test(t)) return copyText('auth-err-code');
+    if (/weak|at least|length|characters/.test(t)) return copyText('auth-err-password');
+    if (/credential|password|not found|no member|invalid/.test(t)) return mode === 'signin' ? copyText('auth-err-wrong') : copyText('auth-err-other');
+    return copyText('auth-err-other');
+  }
+
+  function openAuth(mode) {
+    var m = window.$memberstackDom;
+    if (!m) return;
+    if (!document.getElementById('hfp-auth-css')) document.head.appendChild(el('style', { id: 'hfp-auth-css', text: AUTH_CSS }));
+    var old = document.getElementById('hfp-auth');
+    if (old) { try { old.close(); } catch (e) {} drop(old); }
+    var dlg = el('dialog', { id: 'hfp-auth', 'aria-labelledby': 'hfp-auth-title' });
+    var logo = document.querySelector('.w-nav-brand img');
+    var msg = status();
+    var resetEmail = '';
+
+    function field(key, name, type, auto, extra) {
+      var id = 'hfp-auth-' + name;
+      var input = el('input', Object.assign({ id: id, name: name, type: type, autocomplete: auto, required: true }, extra || {}));
+      return [el('label', { for: id, text: copyText(key) }), input];
+    }
+    function link(key, to) { return el('button', { type: 'button', class: 'hfp-link', text: copyText(key), onclick: function () { draw(to); } }); }
+    function say(text, error) { msg.textContent = text || ''; if (error) msg.setAttribute('data-kind', 'error'); else msg.removeAttribute('data-kind'); }
+
+    function draw(to) {
+      mode = to;
+      dlg.innerHTML = '';
+      say('');
+      dlg.appendChild(el('button', { type: 'button', class: 'hfp-auth-x', 'aria-label': copyText('auth-close'), text: '×', onclick: function () { dlg.close(); } }));
+      if (logo) dlg.appendChild(el('img', { class: 'hfp-auth-logo', src: logo.currentSrc || logo.src, alt: logo.alt || '' }));
+      var titles = { signin: 'auth-signin-title', signup: 'auth-signup-title', reset: 'auth-reset-title', code: 'auth-reset-title' };
+      dlg.appendChild(el('h2', { id: 'hfp-auth-title', text: copyText(titles[mode]) }));
+      var form = el('form', { novalidate: true });
+      var kids = [];
+      var go;
+      if (mode === 'signin' || mode === 'signup') {
+        var google = el('button', { type: 'button', class: 'hfp-auth-google' }, [el('img', { src: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png', alt: '', width: '20', height: '20' }), copyText('auth-google')]);
+        google.onclick = async function () {
+          google.disabled = true;
+          try {
+            if (mode === 'signup') await m.signupWithProvider({ provider: 'google' });
+            else await m.loginWithProvider({ provider: 'google' });
+            location.reload();
+          } catch (e) { google.disabled = false; say(authError(e, mode), true); }
+        };
+        dlg.appendChild(google);
+        dlg.appendChild(el('div', { class: 'hfp-auth-or', text: copyText('auth-or') }));
+      }
+      if (mode === 'signup') kids = kids.concat(field('auth-first-name', 'first-name', 'text', 'given-name', { maxlength: '40' }));
+      if (mode !== 'code') kids = kids.concat(field('auth-email', 'email', 'email', 'email', { value: resetEmail || undefined }));
+      if (mode === 'code') kids = kids.concat(field('auth-code', 'code', 'text', 'one-time-code', { inputmode: 'numeric' }));
+      if (mode === 'signin') kids = kids.concat(field('auth-password', 'password', 'password', 'current-password'));
+      if (mode === 'signup' || mode === 'code') kids = kids.concat(field('auth-password-new', 'password', 'password', 'new-password', { minlength: '8' }));
+      var labels = { signin: 'auth-signin-button', signup: 'auth-signup-button', reset: 'auth-reset-send', code: 'auth-reset-button' };
+      go = el('button', { type: 'submit', class: 'hfp-auth-go', text: copyText(labels[mode]) });
+      kids.forEach(function (k) { form.appendChild(k); });
+      form.appendChild(go);
+      form.appendChild(msg);
+      form.addEventListener('submit', async function (ev) {
+        ev.preventDefault();
+        var v = {};
+        Array.prototype.forEach.call(form.elements, function (i) { if (i.name) v[i.name] = i.value.trim(); });
+        if (Object.keys(v).some(function (k) { return !v[k]; })) { say(copyText('auth-err-fields'), true); return; }
+        if ((mode === 'signup' || mode === 'code') && v.password.length < 8) { say(copyText('auth-err-password'), true); return; }
+        go.disabled = true;
+        say(copyText('auth-working'));
+        try {
+          if (mode === 'signin') { await m.loginMemberEmailPassword({ email: v.email, password: v.password }); location.reload(); return; }
+          if (mode === 'signup') { await m.signupMemberEmailPassword({ email: v.email, password: v.password, customFields: { 'first-name': v['first-name'] } }); location.reload(); return; }
+          if (mode === 'reset') { await m.sendMemberResetPasswordEmail({ email: v.email }); resetEmail = v.email; draw('code'); say(copyText('auth-reset-sent', { email: v.email })); return; }
+          if (mode === 'code') { await m.resetMemberPassword({ token: v.code, newPassword: v.password }); draw('signin'); say(copyText('auth-reset-done')); return; }
+        } catch (e) {
+          go.disabled = false;
+          say(authError(e, mode), true);
+        }
+      });
+      dlg.appendChild(form);
+      var links = el('div', { class: 'hfp-auth-links' });
+      if (mode === 'signin') { links.appendChild(link('auth-forgot', 'reset')); links.appendChild(link('auth-to-signup', 'signup')); }
+      else if (mode === 'signup') links.appendChild(link('auth-to-signin', 'signin'));
+      else links.appendChild(link('auth-back', 'signin'));
+      dlg.appendChild(links);
+      var first = form.querySelector('input');
+      if (first && dlg.open) first.focus();
+    }
+
+    draw(mode === 'signup' ? 'signup' : 'signin');
+    dlg.addEventListener('close', function () { drop(dlg); });
+    dlg.addEventListener('click', function (e) { if (e.target === dlg) dlg.close(); });
+    document.body.appendChild(dlg);
+    if (dlg.showModal) dlg.showModal(); else dlg.setAttribute('open', '');
+    var f = dlg.querySelector('form input');
+    if (f) f.focus();
+  }
+  window.HFP.auth = openAuth;
+
   function start() {
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, heroState, headerCart, invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage, productGate];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, heroState, headerCart, claimPage, invitePage, storiesPage, dropHero, mostDone, shopPage, productLabel, dropPage, productGate];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

@@ -9,6 +9,7 @@ import { memberEmail } from '../email';
 import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
 import { listDrops } from './drops';
+import { OWN_SHOP, ensureClaim } from './partners';
 
 export interface OrderLine {
   lineId: string;
@@ -102,9 +103,9 @@ export async function ingestOrder(env: Env, deps: Deps, order: Order) {
     for (let piece = 1; piece <= line.quantity; piece++) {
       stmts.push(
         env.DB.prepare(
-          `INSERT INTO pledges (shopify_order_id, shopify_line_id, piece, drop_id, buyer_email, member_id, ordered_at, status, product_id)
+          `INSERT INTO pledges (order_ref, line_ref, piece, drop_id, buyer_email, member_id, ordered_at, status, product_id)
            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'open', ?8)
-           ON CONFLICT (shopify_order_id, shopify_line_id, piece) DO UPDATE SET
+           ON CONFLICT (order_ref, line_ref, piece) DO UPDATE SET
              member_id = COALESCE(pledges.member_id, excluded.member_id),
              drop_id = COALESCE(excluded.drop_id, pledges.drop_id)`,
         ).bind(order.orderId, line.lineId, piece, drop, memberId ? null : order.email, memberId, order.orderedAt, line.productId),
@@ -114,17 +115,20 @@ export async function ingestOrder(env: Env, deps: Deps, order: Order) {
     stmts.push(
       env.DB.prepare(
         `UPDATE pledges SET status = 'cancelled', kept_by_done_mark_id = NULL
-         WHERE shopify_order_id = ?1 AND shopify_line_id = ?2 AND piece > ?3 AND status != 'cancelled'`,
+         WHERE order_ref = ?1 AND line_ref = ?2 AND piece > ?3 AND status != 'cancelled'`,
       ).bind(order.orderId, line.lineId, live),
     );
   }
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-  const owners = await env.DB.prepare(`SELECT DISTINCT member_id FROM pledges WHERE shopify_order_id = ?1 AND member_id IS NOT NULL`)
+  // Our shop is partner 1: the order's pledges get a claim link for the buyer.
+  const claim = await ensureClaim(env, deps, OWN_SHOP, order.orderId);
+  await env.DB.prepare(`UPDATE pledges SET claim_id = ?1, partner_id = ?2 WHERE order_ref = ?3 AND claim_id IS NULL`).bind(claim.id, OWN_SHOP, order.orderId).run();
+  const owners = await env.DB.prepare(`SELECT DISTINCT member_id FROM pledges WHERE order_ref = ?1 AND member_id IS NOT NULL`)
     .bind(order.orderId)
     .all<{ member_id: number }>();
   for (const o of owners.results) await recomputeKeeps(env, o.member_id);
   for (const d of affectedDrops) await env.CACHE.delete(`drop-pledges:${d}`);
-  const counts = await env.DB.prepare(`SELECT status, COUNT(*) AS n FROM pledges WHERE shopify_order_id = ?1 GROUP BY status`).bind(order.orderId).all<{ status: string; n: number }>();
+  const counts = await env.DB.prepare(`SELECT status, COUNT(*) AS n FROM pledges WHERE order_ref = ?1 GROUP BY status`).bind(order.orderId).all<{ status: string; n: number }>();
   return { order: order.orderId, member: memberId, pledges: Object.fromEntries(counts.results.map((c) => [c.status, c.n])) };
 }
 
@@ -275,9 +279,9 @@ const WEEK = 7 * 86_400_000;
 export async function pledgeReminders(env: Env, deps: Deps, baseUrl: string) {
   const cutoff = iso(new Date(deps.now().getTime() - WEEK));
   const due = await env.DB.prepare(
-    `SELECT p.member_id AS memberId, p.shopify_order_id AS orderId FROM pledges p
+    `SELECT p.member_id AS memberId, p.order_ref AS orderId FROM pledges p
      WHERE p.status = 'open' AND p.reminder_sent_at IS NULL AND p.member_id IS NOT NULL AND p.ordered_at <= ?1
-     GROUP BY p.member_id, p.shopify_order_id LIMIT 100`,
+     GROUP BY p.member_id, p.order_ref LIMIT 100`,
   )
     .bind(cutoff)
     .all<{ memberId: number; orderId: string }>();
@@ -286,7 +290,7 @@ export async function pledgeReminders(env: Env, deps: Deps, baseUrl: string) {
   for (const d of due.results) {
     const member = await env.DB.prepare(`SELECT * FROM members WHERE id = ?1`).bind(d.memberId).first<Member>();
     const stmts: D1PreparedStatement[] = [
-      env.DB.prepare(`UPDATE pledges SET reminder_sent_at = ?3 WHERE member_id = ?1 AND shopify_order_id = ?2`).bind(d.memberId, d.orderId, iso(deps.now())),
+      env.DB.prepare(`UPDATE pledges SET reminder_sent_at = ?3 WHERE member_id = ?1 AND order_ref = ?2`).bind(d.memberId, d.orderId, iso(deps.now())),
     ];
     const msg = member && !member.deleted_at ? await memberEmail(env, member, 'pledge_reminder', { actionUrl: `${site}/actions` }, baseUrl) : null;
     if (msg) {

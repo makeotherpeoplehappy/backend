@@ -107,6 +107,7 @@
         ['Products synced', h.productsSynced]
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))])
     ]));
+    root.appendChild(partnersPanel(k.me));
     root.appendChild(accessPanel(k.me));
     if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
   }
@@ -157,6 +158,64 @@
         body.appendChild(card('suggestion', s, kids));
       });
     });
+    return wrap;
+  }
+
+  // Partner shops: their pledges, and (owners) adding a partner or switching one off.
+  function partnersPanel(me) {
+    var owner = !!(me && me.owner);
+    var wrap = el('div', {}, [el('h2', { text: 'Partners' })]);
+    var panel = el('div', { class: 'panel' });
+    var list = el('div');
+    var msg = el('p', { role: 'status', 'aria-live': 'polite' });
+    msg.style.cssText = 'margin:8px 0 0;font-size:14px;white-space:pre-line;word-break:break-all';
+    panel.appendChild(el('p', { text: 'Shops that register pledges. A buyer keeps their pledges through the link the shop gives them. Partner 1 is our own shop.' }));
+    panel.appendChild(list);
+    if (owner) {
+      var form = el('form', { novalidate: '' });
+      var input = el('input', { type: 'text', placeholder: 'Partner name', autocomplete: 'off' });
+      input.style.cssText = 'min-width:0;flex:1 1 220px';
+      var add = el('button', { type: 'submit', text: 'Add partner' });
+      var row = el('div');
+      row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0';
+      row.appendChild(input); row.appendChild(add);
+      form.appendChild(row);
+      form.addEventListener('submit', async function (e) {
+        e.preventDefault();
+        if (!input.value.trim()) { msg.textContent = 'Please give the partner a name.'; return; }
+        add.disabled = true;
+        var r = await window.HFB.call('/api/lab/partners', { method: 'POST', body: { name: input.value } });
+        add.disabled = false;
+        if (!r.ok) { msg.textContent = (r.data && r.data.message) || 'That did not work.'; return; }
+        draw(r.data);
+        input.value = '';
+        msg.textContent = 'Partner added. Give them this key now; it is not shown again:\n' + r.data.key + '\nThey send it as "Authorization: Bearer <key>" to ' + window.HFB.base + '/api/partners/pledges (see the README).';
+      });
+      panel.appendChild(form);
+    }
+    panel.appendChild(msg);
+    wrap.appendChild(panel);
+    function draw(data) {
+      list.innerHTML = '';
+      var t = el('table');
+      t.appendChild(el('tr', {}, [el('th', { text: 'Partner' }), el('th', { text: 'Pledges', class: 'n' }), el('th', { text: 'Claimed', class: 'n' }), el('th', { text: 'Kept', class: 'n' }), el('th', { text: '', class: 'n' })]));
+      (data.partners || []).forEach(function (p) {
+        var cell = el('td', { class: 'n' });
+        if (owner && p.id !== 1) {
+          var b = el('button', { type: 'button', text: p.active ? 'Switch off' : 'Switch on' });
+          b.className = 'light'; b.style.cssText = 'padding:4px 14px;font-size:15px';
+          b.onclick = async function () {
+            b.disabled = true;
+            var r = await window.HFB.call('/api/lab/partners', { method: 'PATCH', body: { id: p.id, active: !p.active } });
+            if (r.ok) draw(r.data); else { b.disabled = false; msg.textContent = (r.data && r.data.message) || 'That did not work.'; }
+          };
+          cell.appendChild(b);
+        } else if (!p.active) cell.textContent = 'Off';
+        t.appendChild(el('tr', {}, [el('td', { text: p.name + ' (' + p.slug + ')' }), el('td', { class: 'n', text: String(p.pledges) }), el('td', { class: 'n', text: String(p.claimed) }), el('td', { class: 'n', text: String(p.kept) }), cell]));
+      });
+      list.appendChild(t);
+    }
+    window.HFB.call('/api/lab/partners').then(function (r) { if (r.ok) draw(r.data); });
     return wrap;
   }
 

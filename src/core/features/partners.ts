@@ -156,8 +156,8 @@ export async function claimEmails(env: Env, deps: Deps, baseUrl: string) {
 
 // --- Partner reports: numbers only ----------------------------------------------
 
-/** Resend template for the monthly partner report (variables below), by alias. */
-export const REPORT_TEMPLATE = 'hf-partner-report';
+/** Resend template "Partner monthly report" (variables below), by its ID, which never changes. */
+export const REPORT_TEMPLATE = '3a5888f8-c8b8-4046-9863-b7ebb9023c71';
 
 /** "2026-10" for the month before the given date. */
 export function lastMonth(now: Date): string {

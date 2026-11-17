@@ -25,6 +25,9 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 :is(.hf-section,.hf-band-sky,.hf-band-ink,.hf-band-blue)>h1:first-child{margin-top:0}
 :is(.hf-section,.hf-band-sky,.hf-band-ink,.hf-band-blue,.hf-impact)+.hf-footer{margin-top:0}
 
+/* Header: with "Sign in" showing, it takes the free space on tablets and the button sits next to it */
+@media (max-width:991px){.hf-nav-signin[data-hf-on]+.hf-nav-cta{margin-left:8px}}
+
 /* Current page in the menu (Webflow's "Current" state) */
 .hf-nav-link.w--current{color:var(--colour--deep-blue);box-shadow:inset 0 -3px 0 var(--colour--brand-blue)}
 @media (max-width:767px){.hf-nav-link.w--current{box-shadow:none}}

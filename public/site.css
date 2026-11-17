@@ -42,6 +42,9 @@ h2:not([class]){font-size:clamp(28px,3.4vw,40px);font-weight:800}
 .hf-chips a{display:inline-flex;align-items:center;min-height:44px;padding:0 18px;border-radius:999px;background:var(--colour--sky);color:var(--colour--deep-blue);font-size:16px;font-weight:600;text-decoration:none}
 .hf-chips a:hover{background:var(--colour--deep-blue);color:#fff}
 
+/* A story shows one thing: its video if it has one, otherwise its photo */
+.hf-story:has(.hf-story-video:not(.w-dyn-bind-empty)) .hf-story-media{display:none}
+
 /* Swipe row on phones: no scrollbar */
 .hf-card-row{scrollbar-width:none}.hf-card-row::-webkit-scrollbar{display:none}
 

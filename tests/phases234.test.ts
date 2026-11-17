@@ -382,7 +382,7 @@ describe('Phase 3: pledges', () => {
     const mails = h.fake.emails.filter((e) => e.template?.id === CLAIM_TEMPLATE);
     expect(mails).toHaveLength(1);
     expect(mails[0].to).toEqual(['new@example.com']);
-    expect(mails[0].template!.variables).toMatchObject({ COUNT: 1, CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });
+    expect(mails[0].template!.variables).toMatchObject({ COUNT: '1', CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });
   });
 
   it('a cancelled order removes its pledge', async () => {
@@ -614,7 +614,7 @@ describe('Phase 4: ripple', () => {
     await flush();
     const mails = h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-invite-joined'));
     expect(mails).toHaveLength(1);
-    expect(mails[0].template).toMatchObject({ id: 'hf-invite-joined-many', variables: { COUNT: 20 } });
+    expect(mails[0].template).toMatchObject({ id: 'hf-invite-joined-many', variables: { COUNT: '20' } });
     await tick();
     await flush();
     expect(h.fake.emails.filter((e) => e.template?.id?.startsWith('hf-invite-joined'))).toHaveLength(1);

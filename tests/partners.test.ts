@@ -119,6 +119,8 @@ describe('Partner pledges', () => {
     expect((await report('November')).status).toBe(400);
     // On December 1 the partner gets November's numbers by email, once.
     h.clock.now = new Date('2026-12-01T08:00:00Z');
+    // A partner set up on December 1 has no November to report on.
+    await h.request('POST', '/api/lab/partners', { token: 'ms_boss', body: { name: 'New Shop', reportEmail: 'new@example.com' } });
     const tick = () => h.request('POST', '/api/jobs/tick', { origin: null, key: null, headers: { Authorization: 'Bearer jobs_secret' } });
     await tick();
     await h.settle();
@@ -128,6 +130,7 @@ describe('Partner pledges', () => {
     const sent = h.fake.emails.filter((e) => e.template?.id === REPORT_TEMPLATE);
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toEqual(['shop@example.com']);
-    expect(sent[0].template!.variables).toMatchObject({ PARTNER: 'Good Shop', MONTH: 'November 2026', GIVEN: 2, CLAIMED: 1, KEPT: 0, TOTAL_GIVEN: 2 });
+    // Resend refuses numbers in template variables, so they go as text.
+    expect(sent[0].template!.variables).toMatchObject({ PARTNER: 'Good Shop', MONTH: 'November 2026', GIVEN: '2', CLAIMED: '1', KEPT: '0', TOTAL_GIVEN: '2' });
   });
 });

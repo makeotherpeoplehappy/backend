@@ -1041,15 +1041,8 @@
     '#hfp-auth .hfp-auth-x{position:absolute;top:12px;right:14px;width:44px;height:44px;background:none;border:0;border-radius:999px;font-size:28px;line-height:1;cursor:pointer;color:#3D434C}#hfp-auth .hfp-auth-x:hover{background:#EEF4FA}' +
     '#hfp-auth .hfp-status{text-align:center;font-size:16px;margin:12px 0 0}#hfp-auth .hfp-status:empty{display:none}';
 
-  // Ways to sign in besides email: Google is on in Memberstack. Facebook joins this list once its
-  // Facebook app is set up in Memberstack (Authentication > Auth providers).
+  // Ways to sign in besides email: Google (on in Memberstack).
   function googleIcon() { return el('img', { src: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png', alt: '', width: '20', height: '20' }); }
-  function facebookIcon() {
-    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '22'); s.setAttribute('height', '22'); s.setAttribute('aria-hidden', 'true');
-    s.innerHTML = '<circle cx="12" cy="12" r="12" fill="#1877F2"/><path fill="#fff" d="M15.1 12.9l.4-2.8h-2.7V8.3c0-.8.4-1.5 1.6-1.5h1.2V4.4s-1.1-.2-2.2-.2c-2.2 0-3.7 1.4-3.7 3.8v2.1H7.3v2.8h2.4V20h3.1v-7.1z"/>';
-    return s;
-  }
   function mailIcon() {
     var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '22'); s.setAttribute('height', '22'); s.setAttribute('aria-hidden', 'true');
@@ -1057,7 +1050,6 @@
     return s;
   }
   var SOCIAL = [{ id: 'google', key: 'auth-google', icon: googleIcon }];
-  if (window.HF_FACEBOOK_LOGIN) SOCIAL.push({ id: 'facebook', key: 'auth-facebook', icon: facebookIcon });
 
   function authError(e, mode) {
     var t = String((e && (e.code || '')) + ' ' + (e && e.message || '')).toLowerCase();
@@ -1102,7 +1094,7 @@
       var kids = [];
       var go;
       if (mode === 'signin' || mode === 'signup') {
-        // Sign in with: Google (and Facebook once its app is set up in Memberstack), or a code by email.
+        // Sign in with: Google, or a code by email.
         SOCIAL.forEach(function (p) {
           var b = el('button', { type: 'button', class: 'hfp-auth-google' }, [p.icon(), copyText(p.key)]);
           b.onclick = async function () {

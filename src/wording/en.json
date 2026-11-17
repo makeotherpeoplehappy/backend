@@ -191,7 +191,6 @@
   "auth-reset-send": "Email me a code",
   "auth-reset-button": "Save new password",
   "auth-google": "Continue with Google",
-  "auth-facebook": "Continue with Facebook",
   "auth-otp": "Email me a sign-in code",
   "auth-or": "or",
   "auth-forgot": "Forgot password?",

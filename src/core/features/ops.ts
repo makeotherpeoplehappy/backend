@@ -238,3 +238,21 @@ export async function labKpis(env: Env, deps: Deps) {
   };
   return { generatedAt: iso(now), environment: env.ENVIRONMENT || null, impact, engagement, daily, topActions, mostLiked, health };
 }
+
+/**
+ * The public impact numbers on the home page, all true counts: people made
+ * happy (every "I did this"), actions to choose from, and stories on the
+ * site. Cached five minutes.
+ */
+export async function publicImpact(env: Env): Promise<{ peopleMadeHappy: number; actions: number; stories: number }> {
+  const cached = (await env.CACHE.get('impact:public', 'json')) as { peopleMadeHappy: number; actions: number; stories: number } | null;
+  if (cached) return cached;
+  const n = async (sql: string) => (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? 0;
+  const out = {
+    peopleMadeHappy: await n(`SELECT COUNT(*) AS n FROM done_marks`),
+    actions: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
+    stories: await n(`SELECT COUNT(*) AS n FROM stories WHERE status = 'approved'`),
+  };
+  await env.CACHE.put('impact:public', JSON.stringify(out), { expirationTtl: 300 });
+  return out;
+}

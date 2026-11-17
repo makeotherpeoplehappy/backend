@@ -1035,16 +1035,35 @@
     '#hfp-auth input{display:block;width:100%;box-sizing:border-box;min-height:52px;padding:10px 16px;border:2px solid #C9D6E5;border-radius:14px;font:inherit;font-size:17px;color:#111418;background:#fff}' +
     '#hfp-auth input:focus{border-color:#2E5E8E;outline:3px solid rgba(102,153,204,.35);outline-offset:1px}#hfp-auth .hfp-auth-go,#hfp-auth .hfp-auth-google{display:flex;gap:10px;justify-content:center;align-items:center;width:100%;min-height:54px;margin:20px 0 0;border-radius:999px;font:inherit;font-size:18px;font-weight:700;cursor:pointer}' +
     '#hfp-auth .hfp-auth-go{background:#2E5E8E;border:0;color:#fff}#hfp-auth .hfp-auth-go:hover{background:#1F4468}' +
-    '#hfp-auth .hfp-auth-google{background:#fff;border:2px solid #111418;color:#111418;margin-top:0;font-weight:600}#hfp-auth .hfp-auth-google:hover{background:#EEF4FA}#hfp-auth button[disabled]{opacity:.55;cursor:default}' +
+    '#hfp-auth .hfp-auth-google{background:#fff;border:2px solid #111418;color:#111418;margin-top:0;margin-bottom:10px;font-weight:600}#hfp-auth .hfp-auth-google:hover{background:#EEF4FA}#hfp-auth button[disabled]{opacity:.55;cursor:default}' +
     '#hfp-auth .hfp-auth-or{display:flex;align-items:center;gap:10px;margin:16px 0;color:#3D434C;font-size:15px}#hfp-auth .hfp-auth-or::before,#hfp-auth .hfp-auth-or::after{content:"";flex:1;border-top:1px solid #E3E8EF}' +
     '#hfp-auth .hfp-auth-links{display:flex;flex-direction:column;gap:6px;align-items:center;margin:18px 0 0;font-size:16px}#hfp-auth .hfp-auth-links .hfp-link{min-height:40px;color:#2E5E8E;font-weight:600}' +
     '#hfp-auth .hfp-auth-x{position:absolute;top:12px;right:14px;width:44px;height:44px;background:none;border:0;border-radius:999px;font-size:28px;line-height:1;cursor:pointer;color:#3D434C}#hfp-auth .hfp-auth-x:hover{background:#EEF4FA}' +
     '#hfp-auth .hfp-status{text-align:center;font-size:16px;margin:12px 0 0}#hfp-auth .hfp-status:empty{display:none}';
 
+  // Ways to sign in besides email: Google is on in Memberstack. Facebook joins this list once its
+  // Facebook app is set up in Memberstack (Authentication > Auth providers).
+  function googleIcon() { return el('img', { src: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png', alt: '', width: '20', height: '20' }); }
+  function facebookIcon() {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '22'); s.setAttribute('height', '22'); s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = '<circle cx="12" cy="12" r="12" fill="#1877F2"/><path fill="#fff" d="M15.1 12.9l.4-2.8h-2.7V8.3c0-.8.4-1.5 1.6-1.5h1.2V4.4s-1.1-.2-2.2-.2c-2.2 0-3.7 1.4-3.7 3.8v2.1H7.3v2.8h2.4V20h3.1v-7.1z"/>';
+    return s;
+  }
+  function mailIcon() {
+    var s = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    s.setAttribute('viewBox', '0 0 24 24'); s.setAttribute('width', '22'); s.setAttribute('height', '22'); s.setAttribute('aria-hidden', 'true');
+    s.innerHTML = '<rect x="3" y="5" width="18" height="14" rx="3" fill="none" stroke="#2E5E8E" stroke-width="2"/><path d="M4 7l8 6 8-6" fill="none" stroke="#2E5E8E" stroke-width="2"/>';
+    return s;
+  }
+  var SOCIAL = [{ id: 'google', key: 'auth-google', icon: googleIcon }];
+  if (window.HF_FACEBOOK_LOGIN) SOCIAL.push({ id: 'facebook', key: 'auth-facebook', icon: facebookIcon });
+
   function authError(e, mode) {
     var t = String((e && (e.code || '')) + ' ' + (e && e.message || '')).toLowerCase();
     if (/already|exists|in use|taken/.test(t)) return copyText('auth-err-taken');
-    if (mode === 'reset' && /token|code|expired/.test(t)) return copyText('auth-err-code');
+    if ((mode === 'reset' || mode === 'otp-code') && /token|code|expired|invalid/.test(t)) return copyText('auth-err-code');
+    if (mode === 'otp' && /not found|no member|does not exist/.test(t)) return copyText('auth-otp-no-account');
     if (/weak|at least|length|characters/.test(t)) return copyText('auth-err-password');
     if (/credential|password|not found|no member|invalid/.test(t)) return mode === 'signin' ? copyText('auth-err-wrong') : copyText('auth-err-other');
     return copyText('auth-err-other');
@@ -1060,6 +1079,8 @@
     var logo = document.querySelector('.w-nav-brand img');
     var msg = status();
     var resetEmail = '';
+    var otpFor = 'signin';
+    var otpName = '';
 
     function field(key, name, type, auto, extra) {
       var id = 'hfp-auth-' + name;
@@ -1075,30 +1096,35 @@
       say('');
       dlg.appendChild(el('button', { type: 'button', class: 'hfp-auth-x', 'aria-label': copyText('auth-close'), text: '×', onclick: function () { dlg.close(); } }));
       if (logo) dlg.appendChild(el('img', { class: 'hfp-auth-logo', src: logo.currentSrc || logo.src, alt: logo.alt || '' }));
-      var titles = { signin: 'auth-signin-title', signup: 'auth-signup-title', reset: 'auth-reset-title', code: 'auth-reset-title' };
+      var titles = { signin: 'auth-signin-title', signup: 'auth-signup-title', reset: 'auth-reset-title', code: 'auth-reset-title', otp: otpFor === 'signup' ? 'auth-signup-title' : 'auth-signin-title', 'otp-code': otpFor === 'signup' ? 'auth-signup-title' : 'auth-signin-title' };
       dlg.appendChild(el('h2', { id: 'hfp-auth-title', text: copyText(titles[mode]) }));
       var form = el('form', { novalidate: true });
       var kids = [];
       var go;
       if (mode === 'signin' || mode === 'signup') {
-        var google = el('button', { type: 'button', class: 'hfp-auth-google' }, [el('img', { src: 'https://www.gstatic.com/images/branding/product/1x/googleg_48dp.png', alt: '', width: '20', height: '20' }), copyText('auth-google')]);
-        google.onclick = async function () {
-          google.disabled = true;
-          try {
-            if (mode === 'signup') await m.signupWithProvider({ provider: 'google' });
-            else await m.loginWithProvider({ provider: 'google' });
-            location.reload();
-          } catch (e) { google.disabled = false; say(authError(e, mode), true); }
-        };
-        dlg.appendChild(google);
+        // Sign in with: Google (and Facebook once its app is set up in Memberstack), or a code by email.
+        SOCIAL.forEach(function (p) {
+          var b = el('button', { type: 'button', class: 'hfp-auth-google' }, [p.icon(), copyText(p.key)]);
+          b.onclick = async function () {
+            b.disabled = true;
+            try {
+              if (mode === 'signup') await m.signupWithProvider({ provider: p.id });
+              else await m.loginWithProvider({ provider: p.id });
+              location.reload();
+            } catch (e) { b.disabled = false; say(authError(e, mode), true); }
+          };
+          dlg.appendChild(b);
+        });
+        var codeFor = mode;
+        dlg.appendChild(el('button', { type: 'button', class: 'hfp-auth-google hfp-auth-mail', onclick: function () { otpFor = codeFor; draw('otp'); } }, [mailIcon(), copyText('auth-otp')]));
         dlg.appendChild(el('div', { class: 'hfp-auth-or', text: copyText('auth-or') }));
       }
-      if (mode === 'signup') kids = kids.concat(field('auth-first-name', 'first-name', 'text', 'given-name', { maxlength: '40' }));
-      if (mode !== 'code') kids = kids.concat(field('auth-email', 'email', 'email', 'email', { value: resetEmail || undefined }));
-      if (mode === 'code') kids = kids.concat(field('auth-code', 'code', 'text', 'one-time-code', { inputmode: 'numeric' }));
+      if (mode === 'signup' || (mode === 'otp' && otpFor === 'signup')) kids = kids.concat(field('auth-first-name', 'first-name', 'text', 'given-name', { maxlength: '40', value: otpName || undefined }));
+      if (mode !== 'code' && mode !== 'otp-code') kids = kids.concat(field('auth-email', 'email', 'email', 'email', { value: resetEmail || undefined }));
+      if (mode === 'code' || mode === 'otp-code') kids = kids.concat(field('auth-code', 'code', 'text', 'one-time-code', { inputmode: 'numeric' }));
       if (mode === 'signin') kids = kids.concat(field('auth-password', 'password', 'password', 'current-password'));
       if (mode === 'signup' || mode === 'code') kids = kids.concat(field('auth-password-new', 'password', 'password', 'new-password', { minlength: '8' }));
-      var labels = { signin: 'auth-signin-button', signup: 'auth-signup-button', reset: 'auth-reset-send', code: 'auth-reset-button' };
+      var labels = { signin: 'auth-signin-button', signup: 'auth-signup-button', reset: 'auth-reset-send', code: 'auth-reset-button', otp: 'auth-reset-send', 'otp-code': otpFor === 'signup' ? 'auth-signup-button' : 'auth-signin-button' };
       go = el('button', { type: 'submit', class: 'hfp-auth-go', text: copyText(labels[mode]) });
       kids.forEach(function (k) { form.appendChild(k); });
       form.appendChild(go);
@@ -1116,6 +1142,21 @@
           if (mode === 'signup') { await m.signupMemberEmailPassword({ email: v.email, password: v.password, customFields: { 'first-name': v['first-name'] } }); location.reload(); return; }
           if (mode === 'reset') { await m.sendMemberResetPasswordEmail({ email: v.email }); resetEmail = v.email; draw('code'); say(copyText('auth-reset-sent', { email: v.email })); return; }
           if (mode === 'code') { await m.resetMemberPassword({ token: v.code, newPassword: v.password }); draw('signin'); say(copyText('auth-reset-done')); return; }
+          if (mode === 'otp') {
+            if (otpFor === 'signup') await m.sendMemberSignupPasswordlessEmail({ email: v.email });
+            else await m.sendMemberLoginPasswordlessEmail({ email: v.email });
+            resetEmail = v.email;
+            otpName = v['first-name'] || '';
+            draw('otp-code');
+            say(copyText('auth-otp-sent', { email: v.email }));
+            return;
+          }
+          if (mode === 'otp-code') {
+            if (otpFor === 'signup') await m.signupMemberPasswordless({ passwordlessToken: v.code, email: resetEmail, customFields: { 'first-name': otpName } });
+            else await m.loginMemberPasswordless({ passwordlessToken: v.code, email: resetEmail });
+            location.reload();
+            return;
+          }
         } catch (e) {
           go.disabled = false;
           say(authError(e, mode), true);
@@ -1125,6 +1166,7 @@
       var links = el('div', { class: 'hfp-auth-links' });
       if (mode === 'signin') { links.appendChild(link('auth-forgot', 'reset')); links.appendChild(link('auth-to-signup', 'signup')); }
       else if (mode === 'signup') links.appendChild(link('auth-to-signin', 'signin'));
+      else if (mode === 'otp' || mode === 'otp-code') links.appendChild(link('auth-otp-password', otpFor === 'signup' ? 'signup' : 'signin'));
       else links.appendChild(link('auth-back', 'signin'));
       dlg.appendChild(links);
       var first = form.querySelector('input');

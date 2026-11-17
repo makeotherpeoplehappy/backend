@@ -158,46 +158,95 @@
     return wrap;
   }
 
-  // Partner shops: their pledges, and (owners) adding a partner or switching one off.
+  // Partner shops: their pledges, and (owners) adding a partner (brand name in, key and code out) or switching one off.
   function partnersPanel(me) {
     var owner = !!(me && me.owner);
     var wrap = el('div', {}, [el('h2', { text: 'Partners' })]);
     var panel = el('div', { class: 'panel' });
     var list = el('div');
     var msg = el('p', { role: 'status', 'aria-live': 'polite' });
-    msg.style.cssText = 'margin:8px 0 0;font-size:14px;white-space:pre-line;word-break:break-all';
-    panel.appendChild(el('p', { text: 'Shops connected through the Pledge API: every purchase comes with a Make Someone Happy pledge, which the buyer keeps through the link the shop gives them. Partner 1 is our own shop.' }));
+    msg.style.cssText = 'margin:8px 0 0;font-size:14px';
+    var kit = el('div');
+    panel.appendChild(el('p', { text: 'Shops connected through the Pledge API. Every purchase comes with a Make Someone Happy pledge; the buyer keeps it through the link the shop shows. Partners send no customer data and see their results as numbers (a monthly report). Partner 1 is our own shop.' }));
     panel.appendChild(list);
     if (owner) {
       var form = el('form', { novalidate: '' });
-      var input = el('input', { type: 'text', placeholder: 'Partner name', autocomplete: 'off' });
-      input.style.cssText = 'min-width:0;flex:1 1 220px';
-      var add = el('button', { type: 'submit', text: 'Add partner' });
+      var input = el('input', { type: 'text', placeholder: 'Brand name', autocomplete: 'off' });
+      input.style.cssText = 'min-width:0;flex:1 1 200px';
+      var email = el('input', { type: 'email', placeholder: 'Report email (optional)', autocomplete: 'off' });
+      email.style.cssText = 'min-width:0;flex:1 1 220px';
+      var add = el('button', { type: 'submit', text: 'Set up partner' });
       var row = el('div');
       row.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0';
-      row.appendChild(input); row.appendChild(add);
+      row.appendChild(input); row.appendChild(email); row.appendChild(add);
       form.appendChild(row);
       form.addEventListener('submit', async function (e) {
         e.preventDefault();
-        if (!input.value.trim()) { msg.textContent = 'Please give the partner a name.'; return; }
+        if (!input.value.trim()) { msg.textContent = 'Please give the brand name.'; return; }
         add.disabled = true;
-        var r = await window.HFB.call('/api/lab/partners', { method: 'POST', body: { name: input.value } });
+        var r = await window.HFB.call('/api/lab/partners', { method: 'POST', body: { name: input.value, reportEmail: email.value } });
         add.disabled = false;
         if (!r.ok) { msg.textContent = (r.data && r.data.message) || 'That did not work.'; return; }
         draw(r.data);
-        input.value = '';
-        msg.textContent = 'Partner added. Give them this Pledge API key now; it is not shown again:\n' + r.data.key + '\nThey send it as "Authorization: Bearer <key>" to ' + window.HFB.base + '/api/partners/pledges (see "Pledge API" in the README).';
+        showKit(input.value.trim(), r.data.slug, r.data.key);
+        input.value = ''; email.value = '';
+        msg.textContent = '';
       });
       panel.appendChild(form);
     }
     panel.appendChild(msg);
+    panel.appendChild(kit);
     wrap.appendChild(panel);
+
+    // What to send the partner: their ID, their key (shown once) and code to paste.
+    function showKit(name, slug, key) {
+      var api = window.HFB.base + '/api/partners';
+      var code =
+        '// ' + name + ': Make Someone Happy pledge (Happiness Foundation Pledge API)\n' +
+        '// Partner ID: ' + slug + '\n' +
+        '// Keep this key secret, on your server only.\n' +
+        'const HF_KEY = "' + key + '";\n\n' +
+        '// 1. When an order is paid: ask for its pledge. Send no customer data.\n' +
+        '//    Idempotency-Key: any value unique to this purchase (e.g. a random UUID you save with it), so a retry gets the same pledge.\n' +
+        'const res = await fetch("' + api + '/pledges", {\n' +
+        '  method: "POST",\n' +
+        '  headers: { Authorization: "Bearer " + HF_KEY, "Content-Type": "application/json", "Idempotency-Key": purchaseUuid },\n' +
+        '  body: "{}",\n' +
+        '});\n' +
+        'const { pledge, claimUrl } = await res.json();\n' +
+        '// Show claimUrl to the buyer on the thank-you page and in the order email ("Keep your pledge").\n' +
+        '// Save pledge with the order, only if you want to cancel it later.\n\n' +
+        '// 2. If the order is cancelled or refunded in full:\n' +
+        'await fetch("' + api + '/pledges/cancel", {\n' +
+        '  method: "POST",\n' +
+        '  headers: { Authorization: "Bearer " + HF_KEY, "Content-Type": "application/json" },\n' +
+        '  body: JSON.stringify({ pledge }),\n' +
+        '});\n\n' +
+        '// 3. Your numbers, any time (month as YYYY-MM): pledges given, kept, turned into an action.\n' +
+        'await fetch("' + api + '/report?month=2026-11", { headers: { Authorization: "Bearer " + HF_KEY } });\n';
+      kit.innerHTML = '';
+      var box = el('div', { class: 'warn' });
+      box.style.cssText = 'margin:14px 0 0;padding:16px;border:2px solid;border-radius:16px';
+      box.appendChild(el('p', { text: name + ' is set up. Partner ID: ' + slug + '. Send them the code below now: the key in it is shown only once.' }));
+      var pre = el('pre');
+      pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:13px;line-height:1.5;background:#fff;padding:12px;border-radius:12px;max-height:420px;overflow:auto';
+      pre.textContent = code;
+      var copy = el('button', { type: 'button', text: 'Copy code' });
+      copy.onclick = function () {
+        (navigator.clipboard ? navigator.clipboard.writeText(code) : Promise.reject()).then(function () { copy.textContent = 'Copied'; }, function () { copy.textContent = 'Select the code and copy it'; });
+      };
+      box.appendChild(pre);
+      box.appendChild(copy);
+      kit.appendChild(box);
+    }
+
     function draw(data) {
       list.innerHTML = '';
       var t = el('table');
-      t.appendChild(el('tr', {}, [el('th', { text: 'Partner' }), el('th', { text: 'Pledges', class: 'n' }), el('th', { text: 'Claimed', class: 'n' }), el('th', { text: 'Kept', class: 'n' }), el('th', { text: '', class: 'n' })]));
+      t.appendChild(el('tr', {}, [el('th', { text: 'Partner' }), el('th', { text: 'Pledges', class: 'n' }), el('th', { text: 'Claimed', class: 'n' }), el('th', { text: 'Kept', class: 'n' }), el('th', { text: 'Report to' }), el('th', { text: '', class: 'n' })]));
       (data.partners || []).forEach(function (p) {
         var cell = el('td', { class: 'n' });
+        var rep = el('td', { text: p.id === 1 ? '' : (p.reportEmail || 'nobody yet') });
         if (owner && p.id !== 1) {
           var b = el('button', { type: 'button', text: p.active ? 'Switch off' : 'Switch on' });
           b.className = 'light'; b.style.cssText = 'padding:4px 14px;font-size:15px';
@@ -207,8 +256,17 @@
             if (r.ok) draw(r.data); else { b.disabled = false; msg.textContent = (r.data && r.data.message) || 'That did not work.'; }
           };
           cell.appendChild(b);
+          var e = el('button', { type: 'button', text: 'Change' });
+          e.className = 'light'; e.style.cssText = 'margin-left:6px;padding:2px 10px;font-size:14px';
+          e.onclick = async function () {
+            var v = window.prompt('Monthly report email for ' + p.name + ' (empty for none):', p.reportEmail || '');
+            if (v === null) return;
+            var r = await window.HFB.call('/api/lab/partners', { method: 'PATCH', body: { id: p.id, reportEmail: v } });
+            if (r.ok) draw(r.data); else msg.textContent = (r.data && r.data.message) || 'That did not work.';
+          };
+          rep.appendChild(e);
         } else if (!p.active) cell.textContent = 'Off';
-        t.appendChild(el('tr', {}, [el('td', { text: p.name + ' (' + p.slug + ')' }), el('td', { class: 'n', text: String(p.pledges) }), el('td', { class: 'n', text: String(p.claimed) }), el('td', { class: 'n', text: String(p.kept) }), cell]));
+        t.appendChild(el('tr', {}, [el('td', { text: p.name + ' (' + p.slug + ')' }), el('td', { class: 'n', text: String(p.pledges) }), el('td', { class: 'n', text: String(p.claimed) }), el('td', { class: 'n', text: String(p.kept) }), rep, cell]));
       });
       list.appendChild(t);
     }

@@ -471,24 +471,27 @@
       }
     }
 
-    // Settings and your data
-    if (!$('hfp-settings') && so) {
-      var box = el('div', { id: 'hfp-settings' });
-      var nameIn = el('input', { id: 'hfp-share-name', class: 'hf-form-input w-input', value: me.name || '', maxlength: '40', autocomplete: 'given-name' });
-      var nameMsg = status();
-      var nameSave = el('button', { type: 'button', class: 'hf-button-light', text: copyText('acct-save-name') });
-      nameSave.addEventListener('click', async function () {
-        var rr = await HFB.call('/api/me/settings', { method: 'PATCH', body: { firstName: nameIn.value } });
-        nameMsg.textContent = rr.ok ? copyText('saved') : msgOf(rr);
-      });
-      box.appendChild(el('h2', { text: copyText('acct-settings-h') }));
-      box.appendChild(el('div', { class: 'hfp-field' }, [el('label', { for: 'hfp-share-name', class: 'hf-form-label', text: copyText('acct-name-label') }), nameIn, nameSave, nameMsg]));
-      var labels = {};
-      ['invite_summary', 'story_approved', 'suggestion_live', 'pledge_reminder'].forEach(function (k) { labels[k] = copyText('acct-email-' + k); });
-      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:0 0 16px' }, [el('legend', { class: 'hf-form-label', text: copyText('acct-email-me') })]);
-      var setMsg = status();
-      Object.keys(labels).forEach(function (kind) {
-        var cb = el('input', { type: 'checkbox', id: 'hfp-n-' + kind, checked: me.settings[kind] ? true : false });
+    // Settings and your data: the section, form and boxes are built in Webflow (#hfp-settings);
+    // this fills them in and saves each change.
+    var setBox = $('hfp-settings');
+    if (setBox && !setBox.getAttribute('data-hfp')) {
+      setBox.setAttribute('data-hfp', '1');
+      var setForm = $('hf-settings-form');
+      var setMsg = $('hfp-settings-msg') || status();
+      var nameIn = $('hfp-share-name');
+      if (nameIn) nameIn.value = me.name || '';
+      if (setForm) {
+        setForm.addEventListener('submit', async function (e) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          var rr = await HFB.call('/api/me/settings', { method: 'PATCH', body: { firstName: nameIn ? nameIn.value : '' } });
+          setMsg.textContent = rr.ok ? copyText('saved') : msgOf(rr);
+        }, true);
+      }
+      ['invite_summary', 'story_approved', 'suggestion_live', 'pledge_reminder'].forEach(function (kind) {
+        var cb = $('hfp-n-' + kind);
+        if (!cb) return;
+        cb.checked = me.settings && me.settings[kind] ? true : false;
         cb.addEventListener('change', async function () {
           var body = { notifications: {} };
           body.notifications[kind] = cb.checked;
@@ -496,56 +499,42 @@
           setMsg.textContent = rr.ok ? copyText('saved') : msgOf(rr);
           if (!rr.ok) cb.checked = !cb.checked;
         });
-        fs.appendChild(el('div', { class: 'hfp-check' }, [cb, el('label', { for: 'hfp-n-' + kind, text: labels[kind] })]));
       });
-      fs.appendChild(setMsg);
-      box.appendChild(fs);
-      var dl = el('button', { type: 'button', class: 'hf-button-light', text: copyText('acct-download') });
-      dl.addEventListener('click', function () {
+      var delMsg = $('hfp-data-msg') || setMsg;
+      var dl = $('hfp-download');
+      if (dl) dl.addEventListener('click', function (e) {
+        e.preventDefault();
         var blob = new Blob([JSON.stringify(me, null, 2)], { type: 'application/json' });
         var a = el('a', { href: URL.createObjectURL(blob), download: 'happiness-foundation-my-data.json' });
         document.body.appendChild(a);
         a.click();
         a.remove();
       });
-      var del = el('button', { type: 'button', class: 'hf-button-light', text: copyText('acct-delete') });
-      var delMsg = status();
-      del.addEventListener('click', async function () {
+      var del = $('hfp-delete');
+      if (del) del.addEventListener('click', async function (e) {
+        e.preventDefault();
         if (!window.confirm(copyText('acct-delete-confirm'))) return;
         var rr = await HFB.call('/api/me', { method: 'DELETE' });
         delMsg.textContent = rr.ok ? copyText('acct-deleted') : msgOf(rr);
         if (rr.ok) setTimeout(function () { HF.signout(); }, 2500);
       });
-      box.appendChild(el('h2', { text: copyText('acct-data-h') }));
-      box.appendChild(el('div', { class: 'hfp-row' }, [dl, del]));
-      box.appendChild(delMsg);
-      so.parentNode.insertAdjacentElement('beforebegin', box);
     }
   }
 
   // ---------------------------------------------------------------------------
-  // Suggest an action
+  // Suggest an action: the form is a Webflow form (#wf-form-Suggest-an-action);
+  // this sends the idea to the backend instead of Webflow and shows Webflow's
+  // own thank-you or error block.
   // ---------------------------------------------------------------------------
   async function suggestPage() {
     var f = $('wf-form-Suggest-an-action');
-    if (location.pathname !== '/suggest-an-action' && !f) return;
-    if (!f) {
-      // The old Webflow form has been removed: build the form here.
-      if ($('hfp-suggest')) return;
-      f = el('form', { id: 'hfp-suggest', class: 'hf-form', novalidate: true }, [
-        el('label', { for: 'Idea', class: 'hf-form-label', text: copyText('sug-label') }),
-        el('textarea', { id: 'Idea', name: 'Idea', class: 'hf-form-input is-textarea w-input', maxlength: '2000', required: true, placeholder: copyText('sug-placeholder') }),
-        el('div', { class: 'hfp-row' }, [el('button', { type: 'submit', class: 'hf-button', text: copyText('sug-send') })]),
-      ]);
-      var anchor = document.querySelector('.hf-lead') || document.querySelector('h1');
-      if (!anchor) return;
-      anchor.insertAdjacentElement('afterend', el('div', { class: 'w-form' }, [f]));
-    }
-    if (f.getAttribute('data-hfp')) return;
+    if (!f || f.getAttribute('data-hfp')) return;
     f.setAttribute('data-hfp', '1');
-    var wrap = f.closest('.w-form') || f;
+    var wrap = f.closest('.w-form') || f.parentNode;
+    var done = wrap.querySelector('.w-form-done');
+    var fail = wrap.querySelector('.w-form-fail');
     var ta = f.querySelector('textarea');
-    // Name and email come from the account; the fields are not needed.
+    // Name and email come from the account; older versions of the form had fields for them.
     ['name', 'email'].forEach(function (n) {
       var i = f.querySelector('#' + n);
       if (i) { i.required = false; i.style.display = 'none'; var l = f.querySelector('label[for="' + n + '"]'); if (l) l.style.display = 'none'; }
@@ -553,14 +542,19 @@
     var msg = status();
     f.appendChild(msg);
     var draft = HFB.keepDraft(f);
-    await wait(function () { return window.HF && window.HFB; }, 10000);
-    if (!signedIn()) {
-      var note = el('p', { class: 'hfp-muted', text: copyText('sug-signin') });
-      f.insertBefore(note, f.firstChild);
+    function finished() {
+      draft.clear();
+      f.style.display = 'none';
+      if (fail) fail.style.display = 'none';
+      if (done) { done.style.display = 'block'; done.setAttribute('role', 'status'); }
+      else wrap.appendChild(el('p', { class: 'hfp-card', role: 'status', text: copyText('sug-thanks') }));
     }
+    await wait(function () { return window.HF && window.HFB; }, 10000);
+    if (!signedIn()) f.insertBefore(el('p', { class: 'hfp-muted', text: copyText('sug-signin') }), f.firstChild);
     f.addEventListener('submit', async function (e) {
       e.preventDefault();
       e.stopImmediatePropagation();
+      if (fail) fail.style.display = 'none';
       var text = (ta && ta.value || '').trim();
       if (text.length < 3) { msg.textContent = copyText('sug-empty'); msg.setAttribute('data-kind', 'error'); ta && ta.focus(); return; }
       if (!signedIn()) return HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
@@ -568,23 +562,12 @@
       if (submit) submit.disabled = true;
       var r = await HFB.call('/api/suggestions', { method: 'POST', body: { text: text } });
       if (submit) submit.disabled = false;
-      if (r.ok) {
-        draft.clear();
-        wrap.innerHTML = '';
-        wrap.appendChild(el('div', { class: 'hfp-card', role: 'status' }, [
-          el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: copyText('sug-thanks') }),
-          el('p', { text: copyText('sug-thanks-more') }),
-          el('p', null, [el('a', { class: 'hf-button-light', href: '/suggest-an-action', text: copyText('sug-another') })]),
-        ]));
-      } else if (r.status === 401) HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
-      else { msg.textContent = msgOf(r); msg.setAttribute('data-kind', 'error'); }
+      if (r.ok) finished();
+      else if (r.status === 401) HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
+      else { msg.textContent = msgOf(r); msg.setAttribute('data-kind', 'error'); if (fail) fail.style.display = 'block'; }
     }, true);
     document.addEventListener('hfb:resumed', function (ev) {
-      if (ev.detail && ev.detail.kind === 'suggestion' && ev.detail.completed) {
-        draft.clear();
-        wrap.innerHTML = '';
-        wrap.appendChild(el('p', { class: 'hfp-card', role: 'status', text: copyText('sug-thanks-resumed') }));
-      }
+      if (ev.detail && ev.detail.kind === 'suggestion' && ev.detail.completed) finished();
     });
   }
 
@@ -611,15 +594,17 @@
   }
 
   async function storyPage() {
-    var fa = $('story-action');
-    var native = fa && fa.closest('form');
+    // The form and its fields are built in Webflow (#hf-story-form, hidden until the
+    // member may share); this checks the member, fills it in and sends it to the backend.
+    var form = $('hf-story-form');
     var note = $('hf-story-note');
-    // Works with or without the old Webflow form on the page (it is no longer used).
-    if ((!native && !note) || (note && note.getAttribute('data-hfp'))) return;
-    if (!note) { note = status(); (native.closest('.w-form') || native).insertAdjacentElement('beforebegin', note); }
-    note.setAttribute('data-hfp', '1');
-    var wrap = native ? native.closest('.w-form') || native : null;
-    if (wrap) wrap.style.display = 'none';
+    if (!form || form.getAttribute('data-hfp')) return;
+    form.setAttribute('data-hfp', '1');
+    var wrap = form.closest('.w-form') || form.parentNode;
+    var shown = form.closest('[data-hf-show]') || wrap;
+    var done = wrap.querySelector('.w-form-done');
+    var fail = wrap.querySelector('.w-form-fail');
+    if (!note) { note = status(); shown.insertAdjacentElement('beforebegin', note); }
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (HF.finish) { try { await HF.finish(); } catch (e) {} }
     var slug = new URLSearchParams(location.search).get('action') || '';
@@ -644,25 +629,34 @@
       if (t && t.textContent.trim()) title = t.textContent.trim();
     } catch (e) {}
     var s = mine.story || {};
-    var form = el('form', { class: 'hf-form', novalidate: true });
     var msg = status();
-    function field(id, label, input, help) {
-      return el('div', { class: 'hfp-field' }, [el('label', { for: id, class: 'hf-form-label', text: label }), help ? el('p', { class: 'hfp-muted hfp-small', id: id + '-help', text: help }) : null, input]);
+    if ($('hf-story-title')) $('hf-story-title').textContent = title;
+    if ($('hf-story-status') && mine.story) $('hf-story-status').textContent = copyText(mine.story.status === 'approved' ? 'st-on-site' : 'st-in-review');
+    var text = $('hfp-story-text');
+    var photo = $('hfp-photo');
+    var desc = $('hfp-photo-desc');
+    var video = $('hfp-video');
+    var showName = $('hfp-show-name');
+    var consent = $('hfp-consent');
+    var submit = form.querySelector('[type=submit]');
+    if (text) text.value = s.text || '';
+    if (desc) desc.value = s.photoDescription || '';
+    if (video) video.value = s.videoUrl || '';
+    if (showName) {
+      showName.checked = s.showName === false ? false : true;
+      var snl = showName.parentNode && showName.parentNode.querySelector('label, .w-form-label');
+      if (snl && mine.name) snl.textContent = copyText('st-show-name-named', { name: mine.name });
     }
-    var text = el('textarea', { id: 'hfp-story-text', class: 'hf-form-input is-textarea w-input', maxlength: '5000', placeholder: copyText('st-placeholder') });
-    text.value = s.text || '';
-    var photo = el('input', { id: 'hfp-photo', type: 'file', accept: 'image/*', 'aria-describedby': 'hfp-photo-help' });
+    if (submit && mine.story) { if ('value' in submit && submit.tagName === 'INPUT') submit.value = copyText('st-save'); else submit.textContent = copyText('st-save'); }
+
+    // Photo: upload straight to the backend, show a preview.
     var photoKey = s.photoKey || null;
+    var area = $('hfp-photo-area') || (photo && photo.parentNode);
     var photoMsg = status('hfp-status hfp-small');
     var preview = el('img', { class: 'hfp-photo', alt: '', style: photoKey ? '' : 'display:none', src: photoKey ? HFB.base + '/media/' + photoKey : undefined });
     var removePhoto = el('button', { type: 'button', class: 'hfp-link hfp-small', style: photoKey ? '' : 'display:none', text: copyText('st-remove-photo') });
-    var desc = el('input', { id: 'hfp-photo-desc', class: 'hf-form-input w-input', maxlength: '300', value: s.photoDescription || '', placeholder: copyText('st-desc-placeholder') });
-    var video = el('input', { id: 'hfp-video', type: 'url', class: 'hf-form-input w-input', value: s.videoUrl || '', placeholder: 'https://', 'aria-describedby': 'hfp-video-help' });
-    var showName = el('input', { type: 'checkbox', id: 'hfp-show-name', checked: s.showName === false ? false : true });
-    var consent = el('input', { type: 'checkbox', id: 'hfp-consent', required: true });
-    var submit = el('button', { type: 'submit', class: 'hf-button', text: copyText(mine.story ? 'st-save' : 'st-share') });
-
-    photo.addEventListener('change', async function () {
+    if (area) { area.appendChild(photoMsg); area.appendChild(preview); area.appendChild(removePhoto); }
+    if (photo) photo.addEventListener('change', async function () {
       var file = photo.files && photo.files[0];
       if (!file) return;
       if (file.size > 10 * 1024 * 1024) { photoMsg.textContent = copyText('st-too-big'); return; }
@@ -683,76 +677,73 @@
       removePhoto.style.display = '';
       photoMsg.textContent = copyText('st-photo-added');
     });
-    removePhoto.addEventListener('click', function () { photoKey = null; preview.style.display = 'none'; removePhoto.style.display = 'none'; photo.value = ''; photoMsg.textContent = copyText('st-photo-removed'); });
+    removePhoto.addEventListener('click', function () { photoKey = null; preview.style.display = 'none'; removePhoto.style.display = 'none'; if (photo) photo.value = ''; photoMsg.textContent = copyText('st-photo-removed'); });
 
-    form.appendChild(el('p', { class: 'hf-drop-label', text: copyText('st-about') }));
-    form.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: title }));
-    if (mine.story) form.appendChild(el('p', { class: 'hfp-muted', text: copyText(mine.story.status === 'approved' ? 'st-on-site' : 'st-in-review') }));
-    form.appendChild(field('hfp-story-text', copyText('st-label'), text));
-    form.appendChild(field('hfp-photo', copyText('st-photo-label'), el('div', null, [photo, photoMsg, preview, removePhoto]), copyText('st-photo-help')));
-    form.appendChild(field('hfp-photo-desc', copyText('st-desc-label'), desc));
-    form.appendChild(field('hfp-video', copyText('st-video-label'), video, copyText('st-video-help')));
+    // People the member did the action with (from their account).
     var withBoxes = [];
-    if (mine.withCandidates && mine.withCandidates.length) {
+    var withHolder = $('hfp-with');
+    if (withHolder && mine.withCandidates && mine.withCandidates.length) {
       var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0' }, [el('legend', { class: 'hf-form-label', text: copyText('st-with') })]);
       mine.withCandidates.forEach(function (c) {
         var cb = el('input', { type: 'checkbox', id: 'hfp-with-' + c.id, value: String(c.id), checked: (s.withMemberIds || []).indexOf(c.id) >= 0 });
         withBoxes.push(cb);
         fs.appendChild(el('div', { class: 'hfp-check' }, [cb, el('label', { for: 'hfp-with-' + c.id, text: c.name })]));
       });
-      form.appendChild(fs);
+      withHolder.appendChild(fs);
     }
-    form.appendChild(el('div', { class: 'hfp-check' }, [showName, el('label', { for: 'hfp-show-name', text: mine.name ? copyText('st-show-name-named', { name: mine.name }) : copyText('st-show-name') })]));
-    form.appendChild(el('div', { class: 'hfp-check' }, [consent, el('label', { for: 'hfp-consent', text: copyText('st-consent') })]));
-    form.appendChild(el('div', { class: 'hfp-row' }, [submit]));
-    form.appendChild(msg);
+    if (submit) submit.insertAdjacentElement('afterend', msg); else form.appendChild(msg);
     if (mine.story) {
       var del = el('button', { type: 'button', class: 'hfp-link hfp-small', text: copyText('st-delete') });
       del.addEventListener('click', async function () {
         if (!window.confirm(copyText('st-delete-confirm'))) return;
         var rr = await HFB.call('/api/stories/' + mine.story.id, { method: 'DELETE' });
-        if (rr.ok) { form.innerHTML = ''; form.appendChild(el('p', { role: 'status', text: copyText('st-deleted') })); }
+        if (rr.ok) { form.style.display = 'none'; shown.insertAdjacentElement('beforebegin', el('p', { role: 'status', text: copyText('st-deleted') })); }
         else msg.textContent = msgOf(rr);
       });
       form.appendChild(el('p', null, [del]));
     }
     var draftKey = 'hfb_story:' + slug;
-    try { var d = JSON.parse(localStorage.getItem(draftKey) || 'null'); if (d && !text.value) text.value = d.text || ''; } catch (e) {}
-    text.addEventListener('input', function () { try { localStorage.setItem(draftKey, JSON.stringify({ text: text.value })); } catch (e) {} });
+    if (text) {
+      try { var d = JSON.parse(localStorage.getItem(draftKey) || 'null'); if (d && !text.value) text.value = d.text || ''; } catch (e) {}
+      text.addEventListener('input', function () { try { localStorage.setItem(draftKey, JSON.stringify({ text: text.value })); } catch (e) {} });
+    }
 
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
+      e.stopImmediatePropagation();
       msg.removeAttribute('data-kind');
-      if (!consent.checked) { msg.textContent = copyText('st-need-consent'); msg.setAttribute('data-kind', 'error'); consent.focus(); return; }
-      if (!text.value.trim() && !photoKey && !video.value.trim()) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text.focus(); return; }
-      submit.disabled = true;
+      if (fail) fail.style.display = 'none';
+      if (!consent || !consent.checked) { msg.textContent = copyText('st-need-consent'); msg.setAttribute('data-kind', 'error'); consent && consent.focus(); return; }
+      var words = text ? text.value : '';
+      var link = video ? video.value : '';
+      if (!words.trim() && !photoKey && !link.trim()) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text && text.focus(); return; }
+      if (submit) submit.disabled = true;
       var body = {
         actionId: slug,
-        text: text.value,
+        text: words,
         photoKey: photoKey,
-        photoDescription: desc.value,
-        videoUrl: video.value,
-        showName: showName.checked,
+        photoDescription: desc ? desc.value : '',
+        videoUrl: link,
+        showName: showName ? showName.checked : true,
         consent: true,
         withMemberIds: withBoxes.filter(function (b) { return b.checked; }).map(function (b) { return Number(b.value); }),
       };
       var rr = await HFB.call('/api/stories', { method: 'POST', body: body });
-      submit.disabled = false;
+      if (submit) submit.disabled = false;
       if (rr.ok) {
         try { localStorage.removeItem(draftKey); } catch (e2) {}
-        form.innerHTML = '';
-        form.appendChild(el('div', { class: 'hfp-card', role: 'status' }, [
-          el('p', { class: 'hf-drop-statement', style: 'font-size:26px', text: copyText('st-thanks') }),
-          el('p', { text: copyText('st-thanks-more') }),
-          el('p', null, [el('a', { class: 'hf-button-light', href: '/action/' + slug, text: copyText('st-back') })]),
-        ]));
+        form.style.display = 'none';
+        if (done) {
+          done.style.display = 'block';
+          done.setAttribute('role', 'status');
+          done.appendChild(el('p', null, [el('a', { class: 'hf-button-light', href: '/action/' + slug, text: copyText('st-back') })]));
+        } else shown.insertAdjacentElement('beforebegin', el('p', { class: 'hfp-card', role: 'status', text: copyText('st-thanks') }));
       } else if (rr.status === 401) {
         HFB.requireSignIn({ kind: 'return', returnTo: back });
-      } else { msg.textContent = msgOf(rr); msg.setAttribute('data-kind', 'error'); }
-    });
+      } else { msg.textContent = msgOf(rr); msg.setAttribute('data-kind', 'error'); if (fail) fail.style.display = 'block'; }
+    }, true);
     note.innerHTML = '';
-    note.insertAdjacentElement('afterend', form);
-    if (wrap && wrap.parentNode) wrap.parentNode.removeChild(wrap);
+    shown.setAttribute('data-hf-on', '1');
   }
 
   // ---------------------------------------------------------------------------

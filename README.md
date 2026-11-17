@@ -19,11 +19,12 @@ Each kind of text has one home. Don't move text between them.
 | Page content: headlines and intros on the foundation site | **Webflow** (Designer and CMS) | Native Webflow elements. Scripts only show the right one (`data-hf-show`) and fill in data (`data-hf-fill`). |
 | The shop: products, drops, edition sizes and all shop text | **Shopify** (admin and theme) | The shop is Shopify's own; the backend only reads it. |
 | Member emails | **Resend** templates (`hf-invite-joined-*`, `hf-story-live*`, `hf-suggestion-live*`, `hf-pledge-reminder`, and `hf-pledge-claim` by its ID) | The backend sends the template alias (or ID) and its variables. |
+| Form labels, help lines and thank-you messages | **Webflow** (the native forms) | The scripts read the fields by id. |
 | Interface text: buttons, labels, messages, errors | **`src/wording/en.json`** | The backend imports it; the page scripts get it as `/join/hf-wording.js`. |
 
 Rules for `en.json`: one key per text, `{name}`-style parts are filled in by the code. Edit it on GitHub (pencil icon) and open a pull request: tests check that every key the code uses exists, that each call fills in exactly the text's `{parts}`, and that no key is unused (`tests/wording.test.ts`). `tests/no-text-in-code.test.ts` fails if a sentence is written into the code instead. Staff-only text (/lab, admin emails) stays in code.
 
-Site styles and site-wide behaviour (sign-in window, Keep your pledge) are in this repo too (`public/site.css`, `public/hf-pages.js`). Webflow keeps only the stable lines in `site/site-head.html` and `site/site-loader.js`.
+The design is native in Webflow: colours, fonts and sizes are Webflow Variables (`Colour/…`, `Font/…`, `Size/…`), every class has its real styles there (with tablet and phone breakpoints), and the Style Guide page shows the system. Restyle in the Designer, not in code. Forms are Webflow forms (Suggest an action, Share your story, account settings); the page scripts only fill them in and send them to the backend. `public/site.css` holds just what Webflow cannot express (tag-only rules, the menu's current state, `:has` and sibling spacing, focus rings, reduced motion, script-filled parts), using the same Variables. Site-wide behaviour (sign-in window, Keep your pledge, live account data) is in `public/hf-pages.js`. Webflow keeps only the stable lines in `site/site-head.html` and `site/site-loader.js`.
 
 ## Run the tests
 

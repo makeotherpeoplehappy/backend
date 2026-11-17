@@ -18,11 +18,13 @@ afterEach(async () => {
   for (const w of OPEN.splice(0)) await w.happyDOM.close();
 });
 
-async function page(path: string, html: string, handler: Handler, opts: { signedIn?: boolean } = {}) {
+async function page(path: string, html: string, handler: Handler, opts: { signedIn?: boolean; markedSignedIn?: boolean } = {}) {
   const window = new Window({ url: `https://site.test${path}` });
   OPEN.push(window);
   const document = window.document;
   document.body.innerHTML = html + '<div data-hf-pages hidden></div>';
+  // The site head's mark for a browser that holds a sign-in.
+  if (opts.markedSignedIn) document.documentElement.classList.add('hf-in');
   const calls: { method: string; path: string; body: unknown }[] = [];
   const signIns: unknown[] = [];
   const w = window as unknown as Record<string, unknown>;
@@ -346,32 +348,105 @@ describe('Sign-in window', () => {
   });
 });
 
-describe('Header button', () => {
-  const HTML = '<header><a class="hf-nav-signin" data-hf-show="signed-out" href="/account">Sign in</a><a class="hf-nav-cta" href="/account">Account</a></header>';
-  it('invites visitors to join free, opening the create-account window', async () => {
-    const p = await page('/', HTML, () => undefined, { signedIn: false });
-    const b = p.document.querySelector('.hf-nav-cta') as unknown as { textContent: string; click: () => void };
-    expect(b.textContent).toBe(WORDING['nav-join']);
+describe('Header', () => {
+  const HTML = `<header>
+    <form><select id="hf-loc"><option value="">All locations</option><option value="copenhagen">Copenhagen</option></select></form>
+    <a class="hf-nav-signin" data-hf-auth="out" href="/account">Sign in</a><a class="hf-nav-cta" data-hf-auth="out" href="/account">Join free</a>
+    <div data-hf-auth="in" data-hf-pin="1"><select class="hf-loc-mini"></select></div>
+    <a class="hf-nav-avatar" data-hf-auth="in" href="/account"><span data-hf-fill="avatar-initial"></span></a></header>`;
+  type Clickable = { click: () => void };
+  const authSpy = (p: { window: unknown }) => {
     const opened: string[] = [];
-    (p.window as unknown as { HFP: { auth: (m: string) => void } }).HFP.auth = (m) => void opened.push(m);
-    b.click();
-    expect(opened).toEqual(['signup']);
+    (p.window as { HFP: { auth: (m: string) => void } }).HFP.auth = (m) => void opened.push(m);
+    return opened;
+  };
+
+  it('Join free opens the create-account window and Sign in the sign-in window', async () => {
+    const p = await page('/', HTML, () => undefined, { signedIn: false });
+    const opened = authSpy(p);
+    (p.document.querySelector('.hf-nav-cta') as unknown as Clickable).click();
+    (p.document.querySelector('.hf-nav-signin') as unknown as Clickable).click();
+    expect(opened).toEqual(['signup', 'signin']);
   });
 
-  it('shows visitors a Sign in link that opens the sign-in window', async () => {
-    const p = await page('/', HTML, () => undefined, { signedIn: false });
-    const s = p.document.querySelector('.hf-nav-signin') as unknown as { getAttribute: (n: string) => string | null; click: () => void };
-    expect(s.getAttribute('data-hf-on')).toBe('1');
-    const opened: string[] = [];
-    (p.window as unknown as { HFP: { auth: (m: string) => void } }).HFP.auth = (m) => void opened.push(m);
-    s.click();
-    expect(opened).toEqual(['signin']);
+  it('marks the page signed in or out once sign-in has loaded (the CSS shows the matching parts)', async () => {
+    // A sign-in that has run out: marked by the head, but no longer signed in.
+    const out = await page('/', HTML, () => undefined, { signedIn: false, markedSignedIn: true });
+    expect(out.document.documentElement.classList.contains('hf-in')).toBe(false);
+    const inn = await page('/', HTML, () => undefined);
+    expect(inn.document.documentElement.classList.contains('hf-in')).toBe(true);
   });
 
-  it('shows members "My account" and keeps the Sign in link hidden', async () => {
+  it('fills the avatar with the first initial, or the profile photo', async () => {
     const p = await page('/', HTML, () => undefined);
-    expect(p.document.querySelector('.hf-nav-cta')!.textContent).toBe(WORDING['nav-account']);
-    expect(p.document.querySelector('.hf-nav-signin')!.getAttribute('data-hf-on')).toBeNull();
+    const avatar = p.document.querySelector('.hf-nav-avatar') as unknown as { style: { backgroundImage: string }; getAttribute: (n: string) => string | null };
+    const initial = () => p.document.querySelector('[data-hf-fill="avatar-initial"]')!.textContent;
+    p.window.dispatchEvent(new p.window.CustomEvent('hf-member', { detail: { customFields: { 'first-name': 'tess' }, auth: { email: 'x@example.com' } } }));
+    expect(initial()).toBe('T');
+    expect(avatar.getAttribute('data-hf-photo')).toBeNull();
+    p.window.dispatchEvent(new p.window.CustomEvent('hf-member', { detail: { customFields: {}, auth: { email: 'mia@example.com' }, profileImage: 'https://img.test/me.jpg' } }));
+    expect(initial()).toBe('M');
+    expect(avatar.getAttribute('data-hf-photo')).toBe('1');
+    expect(avatar.style.backgroundImage).toContain('https://img.test/me.jpg');
+  });
+
+  it('the phone pin picks a location through the same picker', async () => {
+    const p = await page('/', HTML, () => undefined);
+    const mini = p.document.querySelector('.hf-loc-mini') as unknown as { value: string; options: unknown[]; dispatchEvent: (e: unknown) => void };
+    expect(mini.options.length).toBe(2);
+    mini.value = 'copenhagen';
+    mini.dispatchEvent(new p.window.Event('change'));
+    expect((p.document.getElementById('hf-loc') as unknown as { value: string }).value).toBe('copenhagen');
+    expect(p.window.localStorage.getItem('hf_loc')).toBe('copenhagen');
+  });
+});
+
+describe('Account profile photo', () => {
+  const HTML = `<div id="hf-acct-out"><a id="hf-join" href="/account">Join free</a><a id="hf-signin" href="/account">Sign in</a></div>
+    <div id="hf-acct-in" data-hf-show="signed-in"><p id="hf-tally"></p><div id="hf-pledges"></div><div id="hf-actions"></div>
+    <div id="hfp-settings"><div id="hfp-photo-row"><div class="hf-nav-avatar" data-hf-avatar="1"><span data-hf-fill="avatar-initial"></span></div>
+    <a id="hfp-photo" href="#">Add a profile photo</a><a id="hfp-photo-remove" data-hf-show="photo" href="#">Remove photo</a></div><p id="hfp-settings-msg"></p></div></div>`;
+  const ME = { data: { name: 'Tess', tally: 0, ripple: 0, pledges: [], done: [], stories: [], saved: [], joinedMyInvites: [], invitesIJoined: [], settings: {} } };
+
+  it('uploads a photo to the member, shows it, and can remove it', async () => {
+    const p = await page('/account', HTML, (_m, path) => (path === '/api/me' ? ME : undefined));
+    let member: Record<string, unknown> = { customFields: { 'first-name': 'Tess' }, auth: { email: 't@example.com' }, profileImage: null };
+    const uploads: unknown[] = [];
+    (p.window as unknown as Record<string, unknown>).$memberstackDom = {
+      getCurrentMember: async () => ({ data: member }),
+      updateMemberProfileImage: async (a: { profileImage: unknown }) => { uploads.push(a.profileImage); member = { ...member, profileImage: 'https://img.test/t.jpg' }; },
+      deleteMemberProfileImage: async () => { member = { ...member, profileImage: null }; },
+    };
+    await p.settle();
+    const input = p.document.querySelector('#hfp-photo-row input[type=file]') as unknown as { dispatchEvent: (e: unknown) => void };
+    const file = { type: 'image/jpeg', size: 1000, name: 'me.jpg' };
+    Object.defineProperty(input, 'files', { value: [file], configurable: true });
+    input.dispatchEvent(new p.window.Event('change'));
+    await p.settle();
+    expect(uploads).toEqual([file]);
+    const avatar = p.document.querySelector('[data-hf-avatar]')!;
+    expect(avatar.getAttribute('data-hf-photo')).toBe('1');
+    expect(p.document.getElementById('hfp-photo-remove')!.getAttribute('data-hf-on')).toBe('1');
+    expect(p.document.getElementById('hfp-settings-msg')!.textContent).toBe(WORDING['photo-saved']);
+    (p.document.getElementById('hfp-photo-remove') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(avatar.getAttribute('data-hf-photo')).toBeNull();
+    expect(p.document.getElementById('hfp-photo-remove')!.getAttribute('data-hf-on')).toBeNull();
+  });
+
+  it('refuses a file that is not a photo or is too large', async () => {
+    const p = await page('/account', HTML, (_m, path) => (path === '/api/me' ? ME : undefined));
+    (p.window as unknown as Record<string, unknown>).$memberstackDom = { getCurrentMember: async () => ({ data: {} }) };
+    await p.settle();
+    const input = p.document.querySelector('#hfp-photo-row input[type=file]') as unknown as { dispatchEvent: (e: unknown) => void };
+    Object.defineProperty(input, 'files', { value: [{ type: 'image/png', size: 9e6 }], configurable: true });
+    input.dispatchEvent(new p.window.Event('change'));
+    await p.settle();
+    expect(p.document.getElementById('hfp-settings-msg')!.textContent).toBe(WORDING['photo-too-big']);
+    Object.defineProperty(input, 'files', { value: [{ type: 'application/pdf', size: 10 }], configurable: true });
+    input.dispatchEvent(new p.window.Event('change'));
+    await p.settle();
+    expect(p.document.getElementById('hfp-settings-msg')!.textContent).toBe(WORDING['photo-not-image']);
   });
 });
 

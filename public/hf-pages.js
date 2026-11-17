@@ -36,6 +36,16 @@
     return e;
   }
   function status(cls) { return el('p', { class: cls || 'hfp-status', role: 'status', 'aria-live': 'polite' }); }
+  // Webflow's bot check keeps a form's submit button disabled until it passes. Our forms are sent by
+  // these scripts to the backend (which checks the member), not to Webflow, so the button is released
+  // and kept released.
+  function freeSubmit(form) {
+    var b = form && form.querySelector('[type=submit]');
+    if (!b) return;
+    function free() { if (b.disabled && !b.getAttribute('data-hfp-busy')) b.disabled = false; b.classList.remove('w-form-loading'); }
+    free();
+    if (window.MutationObserver) new MutationObserver(free).observe(b, { attributes: true, attributeFilter: ['disabled', 'class'] });
+  }
   // Page content is in Webflow: [data-hf-show="x"] is shown once the script turns
   // it on (site.css hides it until then) and [data-hf-fill="x"] receives data.
   // Interface text comes from src/wording/en.json (window.HFW, via /join/hf-wording.js).
@@ -482,6 +492,7 @@
       var nameIn = $('hfp-share-name');
       if (nameIn) nameIn.value = me.name || '';
       if (setForm) {
+        freeSubmit(setForm);
         setForm.addEventListener('submit', async function (e) {
           e.preventDefault();
           e.stopImmediatePropagation();
@@ -542,6 +553,7 @@
     });
     var msg = status();
     f.appendChild(msg);
+    freeSubmit(f);
     var draft = HFB.keepDraft(f);
     function finished() {
       draft.clear();
@@ -560,9 +572,9 @@
       if (text.length < 3) { msg.textContent = copyText('sug-empty'); msg.setAttribute('data-kind', 'error'); ta && ta.focus(); return; }
       if (!signedIn()) return HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
       var submit = f.querySelector('[type=submit]');
-      if (submit) submit.disabled = true;
+      if (submit) { submit.setAttribute('data-hfp-busy', '1'); submit.disabled = true; }
       var r = await HFB.call('/api/suggestions', { method: 'POST', body: { text: text } });
-      if (submit) submit.disabled = false;
+      if (submit) { submit.removeAttribute('data-hfp-busy'); submit.disabled = false; }
       if (r.ok) finished();
       else if (r.status === 401) HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
       else { msg.textContent = msgOf(r); msg.setAttribute('data-kind', 'error'); if (fail) fail.style.display = 'block'; }
@@ -601,6 +613,7 @@
     var note = $('hf-story-note');
     if (!form || form.getAttribute('data-hfp')) return;
     form.setAttribute('data-hfp', '1');
+    freeSubmit(form);
     var wrap = form.closest('.w-form') || form.parentNode;
     var shown = form.closest('[data-hf-show]') || wrap;
     var done = wrap.querySelector('.w-form-done');
@@ -718,7 +731,7 @@
       var words = text ? text.value : '';
       var link = video ? video.value : '';
       if (!words.trim() && !photoKey && !link.trim()) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text && text.focus(); return; }
-      if (submit) submit.disabled = true;
+      if (submit) { submit.setAttribute('data-hfp-busy', '1'); submit.disabled = true; }
       var body = {
         actionId: slug,
         text: words,
@@ -730,7 +743,7 @@
         withMemberIds: withBoxes.filter(function (b) { return b.checked; }).map(function (b) { return Number(b.value); }),
       };
       var rr = await HFB.call('/api/stories', { method: 'POST', body: body });
-      if (submit) submit.disabled = false;
+      if (submit) { submit.removeAttribute('data-hfp-busy'); submit.disabled = false; }
       if (rr.ok) {
         try { localStorage.removeItem(draftKey); } catch (e2) {}
         form.style.display = 'none';

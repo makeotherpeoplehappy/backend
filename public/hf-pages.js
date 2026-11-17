@@ -42,7 +42,12 @@
   function freeSubmit(form) {
     var b = form && form.querySelector('[type=submit]');
     if (!b) return;
-    function free() { if (b.disabled && !b.getAttribute('data-hfp-busy')) b.disabled = false; b.classList.remove('w-form-loading'); }
+    // Only change what needs changing: a no-op change (e.g. removing a class that is not there) still
+    // counts as a change in browsers, and would wake this watcher again, forever.
+    function free() {
+      if (b.disabled && !b.getAttribute('data-hfp-busy')) b.disabled = false;
+      if (b.classList.contains('w-form-loading')) b.classList.remove('w-form-loading');
+    }
     free();
     if (window.MutationObserver) new MutationObserver(free).observe(b, { attributes: true, attributeFilter: ['disabled', 'class'] });
   }

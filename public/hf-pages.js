@@ -897,7 +897,7 @@
     if (signedIn()) { b.textContent = copyText('nav-account'); return; }
     b.textContent = copyText('nav-join');
     // Visitors who already have an account: the "Sign in" link built in Webflow (data-hf-show="signed-out").
-    document.querySelectorAll('.hf-nav-signin, .hf-nav-signin-menu').forEach(function (si) {
+    document.querySelectorAll('.hf-nav-signin').forEach(function (si) {
       si.setAttribute('data-hf-on', '1');
       si.addEventListener('click', function (e) {
         if (!window.HFP || !window.HFP.auth || signedIn()) return;

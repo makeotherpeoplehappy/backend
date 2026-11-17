@@ -58,10 +58,5 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 #hf-signup-prompt p{margin-bottom:12px}
 #hf-did-msg:empty,#hfp-settings-msg:empty,#hfp-data-msg:empty,#hf-story-status:empty{display:none}
 
-/* Staff dashboard (/lab) */
-#hf-lab button:not(.light){display:inline-flex;align-items:center;min-height:44px;padding:0 20px;border:0;border-radius:999px;background:var(--colour--deep-blue);color:#fff;font-weight:700;cursor:pointer}
-#hf-lab .tile,#hf-lab .panel{border:0;border-radius:var(--size--radius-card);background:var(--colour--sky)}
-#hf-lab .warn{border-color:var(--colour--brand-blue)}
-
 /* Calm motion: off when the device asks */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}.hf-action-card:hover{transform:none}}

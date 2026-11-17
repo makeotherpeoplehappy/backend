@@ -134,6 +134,16 @@ export async function assertLabAccess(env: Env, member: Member): Promise<{ email
   throw new HttpError(403, 'lab_forbidden', `This account (${maskEmail(email)}) cannot open the dashboard. Ask someone with access to add it.`);
 }
 
+/** Whether this member can open /lab (shown on the account page as a link). */
+export async function hasLabAccess(env: Env, member: Member): Promise<boolean> {
+  try {
+    await assertLabAccess(env, member);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function maskEmail(email: string): string {
   const [user, domain] = email.split('@');
   return `${user.slice(0, 2)}…@${domain}`;

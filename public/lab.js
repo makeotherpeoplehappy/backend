@@ -5,30 +5,32 @@
  */
 (function () {
   'use strict';
-  // Same look as the rest of the site: its font, black-and-white boxes with
-  // a 2px border and round corners, pill buttons, no colours of its own.
+  // Same look as the rest of the site: its Webflow Variables (colours, fonts, card corners),
+  // soft blue cards, a deep-blue headline card, pill buttons. Sized for phones first.
   var CSS = [
-    '#hf-lab{font-variant-numeric:tabular-nums;color:#222}',
-    '#hf-lab h1{margin:20px 0 6px}#hf-lab h2{font-size:28px;line-height:1.2;margin:48px 0 14px}',
-    '#hf-lab .sub{color:#555;margin:0 0 20px;font-size:16px}',
+    '#hf-lab{font-variant-numeric:tabular-nums;color:var(--colour--ink,#111418)}',
+    '#hf-lab h1{margin:0 0 8px}',
+    '#hf-lab h2{font-family:var(--font--display),Arial,sans-serif;font-size:clamp(24px,3vw,32px);font-weight:800;line-height:1.15;letter-spacing:-.01em;margin:48px 0 14px;text-wrap:balance}',
+    '#hf-lab .sub{color:var(--colour--grey,#3D434C);margin:0 0 20px;font-size:16px;line-height:1.5}',
     '#hf-lab .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px}',
-    '#hf-lab .tile,#hf-lab .panel{background:#fff;border:2px solid #222;border-radius:12px;padding:20px}',
-    '#hf-lab .tile.hero{background:#222;color:#fff}#hf-lab .tile.hero .l,#hf-lab .tile.hero .s{color:#ddd}',
-    '#hf-lab .tile .v{font-size:40px;font-weight:700;line-height:1.05;letter-spacing:-.02em}',
-    '#hf-lab .tile .l{font-size:16px;font-weight:500;margin-top:8px}#hf-lab .tile .s{font-size:14px;color:#555;margin-top:6px}',
+    '@media (max-width:479px){#hf-lab .grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}#hf-lab .tile{padding:16px}#hf-lab .tile .v{font-size:32px}}',
+    '#hf-lab .tile,#hf-lab .panel{background:var(--colour--sky,#EEF4FA);border:0;border-radius:var(--size--radius-card,24px);padding:20px}',
+    '#hf-lab .tile.hero{background:var(--colour--deep-blue,#2E5E8E);color:#fff}#hf-lab .tile.hero .l,#hf-lab .tile.hero .s{color:var(--colour--text-on-dark,#D7DEE7)}',
+    '#hf-lab .tile .v{font-family:var(--font--display),Arial,sans-serif;font-size:40px;font-weight:800;line-height:1.05;letter-spacing:-.02em}',
+    '#hf-lab .tile .l{font-size:16px;font-weight:600;margin-top:8px}#hf-lab .tile .s{font-size:14px;color:var(--colour--grey,#3D434C);margin-top:6px}',
     '#hf-lab .panel{overflow-x:auto}',
-    '#hf-lab table{border-collapse:collapse;width:100%;font-size:16px}#hf-lab td,#hf-lab th{text-align:left;padding:10px 8px;border-bottom:1px solid #e5e5e5}',
-    '#hf-lab tr:last-child td{border-bottom:0}#hf-lab th{font-weight:500;color:#555;font-size:14px}#hf-lab td.n{text-align:right}',
+    '#hf-lab table{border-collapse:collapse;width:100%;font-size:16px}#hf-lab td,#hf-lab th{text-align:left;padding:12px 8px;border-bottom:1px solid var(--colour--pale-blue,#CFE0F2)}',
+    '#hf-lab tr:last-child td{border-bottom:0}#hf-lab th{font-weight:600;color:var(--colour--grey,#3D434C);font-size:14px}#hf-lab td.n{text-align:right}',
     '#hf-lab .two{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:16px}@media (max-width:767px){#hf-lab .two{grid-template-columns:minmax(0,1fr)}}',
     '#hf-lab .two h2{margin-top:40px}',
-    '#hf-lab .warn{font-weight:600;border:2px solid #222;border-radius:12px;padding:12px 16px}',
-    '#hf-lab button{font:inherit;font-weight:500;font-size:17px;line-height:1.2;padding:10px 18px;border-radius:999px;border:2px solid #222;background:#222;color:#fff;cursor:pointer}',
-    '#hf-lab button:hover{background:#000}#hf-lab button.light{background:#fff;color:#222}#hf-lab button.light:hover{background:#222;color:#fff}',
+    '#hf-lab .warn{font-weight:600;background:var(--colour--pale-blue,#CFE0F2);border:0;border-radius:var(--size--radius-field,14px);padding:14px 18px}',
+    '#hf-lab button{display:inline-flex;align-items:center;justify-content:center;min-height:48px;font:inherit;font-weight:700;font-size:17px;line-height:1.2;padding:0 22px;border-radius:999px;border:2px solid var(--colour--deep-blue,#2E5E8E);background:var(--colour--deep-blue,#2E5E8E);color:#fff;cursor:pointer}',
+    '#hf-lab button:hover{background:var(--colour--deep-blue-hover,#1F4468);border-color:var(--colour--deep-blue-hover,#1F4468)}#hf-lab button.light{background:#fff;color:var(--colour--deep-blue,#2E5E8E);border-color:var(--colour--pale-blue,#CFE0F2)}#hf-lab button.light:hover{background:var(--colour--deep-blue,#2E5E8E);border-color:var(--colour--deep-blue,#2E5E8E);color:#fff}',
     '#hf-lab button[disabled]{opacity:.45;cursor:default}',
-    '#hf-lab input{font:inherit;font-size:16px;min-height:44px;padding:9px 14px;border:1px solid #bbb;border-radius:999px;color:#222}#hf-lab input:focus{border-color:#222;outline:none}',
-    '#hf-lab svg{width:100%;height:auto;display:block}#hf-lab svg text{fill:#555;font-size:11px}#hf-lab svg rect{fill:#222}',
+    '#hf-lab input{font:inherit;font-size:17px;min-height:48px;padding:0 16px;border:2px solid var(--colour--field-border,#C9D6E5);border-radius:var(--size--radius-field,14px);background:#fff;color:var(--colour--ink,#111418)}#hf-lab input:focus{border-color:var(--colour--deep-blue,#2E5E8E);outline:none}',
+    '#hf-lab svg{width:100%;height:auto;display:block}#hf-lab svg text{fill:var(--colour--grey,#3D434C);font-size:11px}#hf-lab svg rect{fill:var(--colour--brand-blue,#6699CC)}',
     '#hf-lab .review{margin:0 0 16px}#hf-lab .review .row{display:flex;flex-wrap:wrap;gap:12px;margin-top:14px}',
-    '#hf-lab .review-text{white-space:pre-wrap;font-size:18px;line-height:1.5;margin:8px 0}#hf-lab .review-photo{display:block;max-width:min(100%,420px);border-radius:8px;margin:8px 0}'
+    '#hf-lab .review-text{white-space:pre-wrap;font-size:18px;line-height:1.5;margin:8px 0}#hf-lab .review-photo{display:block;max-width:min(100%,420px);border-radius:16px;margin:8px 0}'
   ].join('\n');
 
   function el(tag, attrs, kids) {
@@ -59,9 +61,9 @@
     var svg = '<svg viewBox="0 0 ' + W + ' ' + (H + 22) + '" width="100%" role="img" aria-label="Actions done per day, last 30 days">';
     days.forEach(function (x, i) {
       var h = Math.round((x.v / max) * H);
-      svg += '<rect x="' + (pad + i * bw + 1) + '" y="' + (H - h) + '" width="' + Math.max(1, bw - 2) + '" height="' + h + '" rx="2" fill="#222"><title>' + x.day + ': ' + x.v + '</title></rect>';
+      svg += '<rect x="' + (pad + i * bw + 1) + '" y="' + (H - h) + '" width="' + Math.max(1, bw - 2) + '" height="' + h + '" rx="2"><title>' + x.day + ': ' + x.v + '</title></rect>';
     });
-    svg += '<line x1="' + pad + '" x2="' + (W - pad) + '" y1="' + H + '" y2="' + H + '" stroke="#bbb"/>';
+    svg += '<line x1="' + pad + '" x2="' + (W - pad) + '" y1="' + H + '" y2="' + H + '" stroke="#CFE0F2"/>';
     svg += '<text x="' + pad + '" y="' + (H + 16) + '">' + days[0].day.slice(5) + '</text><text x="' + (W - pad) + '" y="' + (H + 16) + '" text-anchor="end">today</text>';
     svg += '<text x="' + pad + '" y="12">' + max + ' max</text></svg>';
     var p = el('div', { class: 'panel' });
@@ -226,10 +228,10 @@
         'await fetch("' + api + '/report?month=2026-11", { headers: { Authorization: "Bearer " + HF_KEY } });\n';
       kit.innerHTML = '';
       var box = el('div', { class: 'warn' });
-      box.style.cssText = 'margin:14px 0 0;padding:16px;border:2px solid;border-radius:16px';
+      box.style.cssText = 'margin:14px 0 0;padding:18px';
       box.appendChild(el('p', { text: name + ' is set up. Partner ID: ' + slug + '. Send them the code below now: the key in it is shown only once.' }));
       var pre = el('pre');
-      pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:13px;line-height:1.5;background:#fff;padding:12px;border-radius:12px;max-height:420px;overflow:auto';
+      pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:13px;line-height:1.5;background:#fff;padding:14px;border-radius:14px;max-height:420px;overflow:auto';
       pre.textContent = code;
       var copy = el('button', { type: 'button', text: 'Copy code' });
       copy.onclick = function () {

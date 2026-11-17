@@ -7,6 +7,7 @@ import { memberTally } from './actions';
 import { storyRemovalStatements, suggestionSlug } from './submissions';
 import { memberPledges } from './pledges';
 import { displayName, memberRipple } from './ripple';
+import { hasLabAccess } from './ops';
 
 export async function getAccount(env: Env, member: Member) {
   const done = await env.DB.prepare(
@@ -45,6 +46,7 @@ export async function getAccount(env: Env, member: Member) {
     stories: stories.results,
     suggestions: suggestions.results,
     settings: settingsOf(member),
+    lab: await hasLabAccess(env, member),
   };
 }
 

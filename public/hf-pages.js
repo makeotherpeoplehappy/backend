@@ -99,6 +99,12 @@
     '.hfp-field{margin:0 0 16px}.hfp-check{display:flex;gap:12px;align-items:flex-start;margin:0 0 12px}.hfp-check input{margin-top:4px;width:22px;height:22px;flex:none;accent-color:#2E5E8E}' +
     '.hfp-check label{font-size:17px;font-weight:400;line-height:1.5;margin:0;cursor:pointer}' +
     '.hfp-pill{display:inline-block;font-size:14px;font-weight:600;padding:2px 12px;border-radius:999px;background:#EEF4FA;color:#2E5E8E;margin-left:8px}' +
+    // Account lists: one tidy, tappable item per row, built for phones.
+    '.hfp-list li.hfp-item{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px 0}.hfp-list li.hfp-item:last-child{border-bottom:0;padding-bottom:4px}' +
+    '.hfp-item-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.hfp-item .hfp-pill{margin-left:0}.hfp-item .hfp-pill.is-open{background:#2E5E8E;color:#fff}' +
+    '.hfp-item-title{font-size:18px;font-weight:600;line-height:1.35;color:#111418}a.hfp-item-title{color:#2E5E8E;text-decoration:none}a.hfp-item-title:hover{text-decoration:underline}' +
+    '.hfp-item-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}' +
+    '.hfp-chip-link{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border:2px solid #CFE0F2;border-radius:999px;background:#fff;color:#2E5E8E;font-size:16px;font-weight:600;text-decoration:none;cursor:pointer;font-family:inherit}.hfp-chip-link:hover{background:#2E5E8E;border-color:#2E5E8E;color:#fff}' +
     '[aria-disabled=true].hf-button,[aria-disabled=true].hf-button-light,button[disabled]{opacity:.55;cursor:default}';
   document.head.appendChild(el('style', { text: css }));
 
@@ -374,7 +380,8 @@
   // ---------------------------------------------------------------------------
   // Account
   // ---------------------------------------------------------------------------
-  function section(title, kids) { return el('div', null, [el('h2', { text: title })].concat(kids)); }
+  // An extra account section, drawn as the same card as the Webflow ones.
+  function section(title, kids) { return el('div', { class: 'hf-acct-card' }, [el('h2', { class: 'hf-acct-card-title', text: title })].concat(kids)); }
 
   async function accountPage() {
     var inn = $('hf-acct-in');
@@ -397,9 +404,11 @@
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
     var tally = $('hf-tally');
-    if (tally && !$('hfp-ripple')) {
-      tally.insertAdjacentElement('afterend', el('p', { id: 'hfp-ripple', class: 'hfp-muted', text: me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : copyText('acct-ripple-none') }));
-    }
+    var rippleText = me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : copyText('acct-ripple-none');
+    if ($('hfp-ripple')) $('hfp-ripple').textContent = rippleText;
+    else if (tally) tally.insertAdjacentElement('afterend', el('p', { id: 'hfp-ripple', class: 'hfp-muted', text: rippleText }));
+    // People who can open the Lab dashboard get a link to it (the card is in Webflow).
+    if ($('hf-acct-lab') && me.lab) $('hf-acct-lab').setAttribute('data-hf-on', '1');
 
     // Pledges
     var pl = $('hf-pledges');
@@ -409,13 +418,18 @@
       else {
         var ul = el('ul', { class: 'hfp-list' });
         me.pledges.forEach(function (p) {
-          var li = el('li', null, [copyText('acct-pledged', { date: day(p.orderedAt) }) + ' · ']);
-          if (p.status === 'kept') {
+          var kept = p.status === 'kept';
+          var li = el('li', { class: 'hfp-item' }, [el('div', { class: 'hfp-item-top' }, [
+            el('span', { class: 'hfp-pill' + (kept ? '' : ' is-open'), text: copyText(kept ? 'acct-pledge-done' : 'acct-pledge-open') }),
+            el('span', { class: 'hfp-muted hfp-small', text: copyText('acct-pledged', { date: day(p.orderedAt) }) }),
+          ])]);
+          if (kept) {
             var by = p.keptBySlug ? el('a', { href: '/action/' + p.keptBySlug, text: p.keptByTitle }) : p.keptByTitle || copyText('acct-pledge-an-action');
-            copyNodes('acct-pledge-kept', { action: by, date: day(p.keptOn) }).forEach(function (n) { li.appendChild(n); });
+            var line = el('div');
+            copyNodes('acct-pledge-kept', { action: by, date: day(p.keptOn) }).forEach(function (n) { line.appendChild(n); });
+            li.appendChild(line);
           } else {
-            li.appendChild(document.createTextNode(copyText('acct-pledge-open') + ' '));
-            li.appendChild(el('a', { href: '/actions', text: copyText('acct-pledge-keep') }));
+            li.appendChild(el('a', { class: 'hfp-chip-link', href: '/actions', text: copyText('acct-pledge-keep') }));
           }
           ul.appendChild(li);
         });
@@ -437,39 +451,45 @@
           if (seen[d.actionId]) return;
           seen[d.actionId] = 1;
           var times = me.done.filter(function (x) { return x.actionId === d.actionId; }).length;
-          var li = el('li');
-          li.appendChild(d.slug && d.actionStatus === 'published' ? el('a', { href: '/action/' + d.slug, text: d.title }) : document.createTextNode(d.title));
-          li.appendChild(el('span', { class: 'hfp-muted', text: ' · ' + day(d.doneAt) + (times > 1 ? ' · ' + copyText('acct-times', { n: times }) : '') }));
+          var live = d.slug && d.actionStatus === 'published';
+          var li = el('li', { class: 'hfp-item' });
+          li.appendChild(live ? el('a', { class: 'hfp-item-title', href: '/action/' + d.slug, text: d.title }) : el('span', { class: 'hfp-item-title', text: d.title }));
+          li.appendChild(el('span', { class: 'hfp-muted hfp-small', text: day(d.doneAt) + (times > 1 ? ' · ' + copyText('acct-times', { n: times }) : '') }));
           var s = storyFor[d.actionId];
-          if (d.slug && d.actionStatus === 'published') {
-            li.appendChild(document.createTextNode(' · '));
-            li.appendChild(el('a', { class: 'hf-story-link', href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') }));
-          }
-          if (s) li.appendChild(el('span', { class: 'hfp-pill', text: copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') }));
+          var acts = el('div', { class: 'hfp-item-acts' });
+          if (live) acts.appendChild(el('a', { class: 'hfp-chip-link hf-story-link', href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') }));
+          if (s) acts.appendChild(el('span', { class: 'hfp-pill', text: copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') }));
+          if (acts.firstChild) li.appendChild(acts);
           list.appendChild(li);
         });
         ah.appendChild(list);
       }
-      var holder = ah.parentNode;
+      // The actions list sits in its own card; extra sections go next to that card.
+      var card = ah.closest('.hf-acct-card') || ah;
+      var holder = card.parentNode;
       // Saved for later
       if (me.saved && me.saved.length && !$('hfp-saved')) {
         var sv = el('ul', { class: 'hfp-list', id: 'hfp-saved' });
-        me.saved.forEach(function (d) { sv.appendChild(el('li', null, [el('a', { href: '/action/' + d.slug, text: d.title })])); });
-        holder.insertBefore(section(copyText('acct-saved-h'), [sv]), ah.previousElementSibling);
+        me.saved.forEach(function (d) { sv.appendChild(el('li', { class: 'hfp-item' }, [el('a', { class: 'hfp-item-title', href: '/action/' + d.slug, text: d.title })])); });
+        holder.insertBefore(section(copyText('acct-saved-h'), [sv]), card === ah ? ah.previousElementSibling : card);
       }
       // Invites
       if (!$('hfp-invites')) {
         var inv = el('div', { id: 'hfp-invites' });
         if (me.joinedMyInvites.length) {
           var j = el('ul', { class: 'hfp-list' });
-          me.joinedMyInvites.forEach(function (x) { j.appendChild(el('li', { text: copyText('acct-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '', date: day(x.joinedAt) }) })); });
+          me.joinedMyInvites.forEach(function (x) { j.appendChild(el('li', { class: 'hfp-item', text: copyText('acct-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '', date: day(x.joinedAt) }) })); });
           inv.appendChild(section(copyText('acct-joined-h'), [j]));
         }
         if (me.invitesIJoined.length) {
           var k = el('ul', { class: 'hfp-list' });
           me.invitesIJoined.forEach(function (x) {
-            var leave = el('button', { type: 'button', class: 'hfp-link hfp-small', text: copyText('acct-leave') });
-            var li = el('li', null, [copyText('acct-invited', { name: x.inviterName || copyText('acct-someone') }) + ' · ', x.actionSlug ? el('a', { href: '/action/' + x.actionSlug, text: x.actionTitle }) : (x.actionTitle || ''), ' · ', leave]);
+            var leave = el('button', { type: 'button', class: 'hfp-chip-link', text: copyText('acct-leave') });
+            var li = el('li', { class: 'hfp-item' }, [
+              x.actionSlug ? el('a', { class: 'hfp-item-title', href: '/action/' + x.actionSlug, text: x.actionTitle }) : el('span', { class: 'hfp-item-title', text: x.actionTitle || '' }),
+              el('span', { class: 'hfp-muted hfp-small', text: copyText('acct-invited', { name: x.inviterName || copyText('acct-someone') }) }),
+              leave,
+            ]);
             leave.addEventListener('click', async function () {
               var rr = await HFB.call('/api/invites/' + encodeURIComponent(x.code) + '/join', { method: 'DELETE' });
               if (rr.ok) li.remove();
@@ -478,7 +498,8 @@
           });
           inv.appendChild(section(copyText('acct-invited-h'), [k]));
         }
-        ah.nextElementSibling ? holder.insertBefore(inv, ah.nextElementSibling.nextElementSibling) : holder.appendChild(inv);
+        if (card !== ah) holder.insertBefore(inv, card.nextElementSibling);
+        else ah.nextElementSibling ? holder.insertBefore(inv, ah.nextElementSibling.nextElementSibling) : holder.appendChild(inv);
       }
     }
 

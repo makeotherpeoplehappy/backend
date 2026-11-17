@@ -63,6 +63,7 @@ html #hf-lab .warn{border-color:var(--hf-blue)}
 input.w-input:not(.hf-form-input),textarea.w-input,.hf-form-input,.w-select:not(.hf-select):not(.hf-loc-select){min-height:52px;height:auto;padding:10px 16px;border:2px solid var(--hf-field);border-radius:14px;background:#fff;font-size:17px;color:var(--hf-ink)}
 .w-input:focus,.hf-form-input:focus,.w-select:focus{border-color:var(--hf-blue-deep);outline:3px solid rgba(102,153,204,.35);outline-offset:1px}
 html .hf-select{font-weight:700;color:var(--hf-ink);background-color:#fff;border:2px solid var(--hf-blue);border-radius:999px;padding:2px 34px 2px 14px;min-height:44px;background-position:right 12px center}
+html .hf-builder .hf-select,html .hf-builder .hf-end{flex-shrink:0;max-width:100%}
 html .hf-builder{font-size:clamp(19px,2.2vw,22px);line-height:2.1;font-weight:500;color:var(--hf-ink)}
 html .hf-loc-select{min-height:44px;border:2px solid var(--hf-ink);border-radius:999px;padding:6px 34px 6px 16px;font-size:16px;font-weight:600}
 .w-form-done,.w-form-fail{border-radius:16px}
@@ -91,6 +92,9 @@ html .hf-footer-link{color:#fff;font-size:17px;min-height:44px;display:inline-fl
 html .hf-footer-link:hover{color:var(--hf-blue-light)}
 html .hf-footer-links{gap:4px 28px}
 html .hf-footer-note{color:#AEB7C2;font-size:15px;margin-top:8px}
+
+/* A band right before the footer: no extra gap */
+:is(.hf-section,.hf-band-sky,.hf-band-ink,.hf-band-blue,.hf-impact)+.hf-footer{margin-top:0}
 
 /* Bands that run edge to edge (home page) */
 .hf-section,.hf-band-sky,.hf-band-ink,.hf-band-blue{padding-top:clamp(56px,8vw,96px);padding-bottom:clamp(56px,8vw,96px)}

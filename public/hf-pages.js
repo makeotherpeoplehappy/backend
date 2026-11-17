@@ -901,6 +901,7 @@
   // Home page impact numbers: Webflow elements with data-hf-fill="impact-people",
   // "impact-actions" or "impact-stories" get the live count (they keep their
   // Webflow text until it arrives, and keep it if the backend can't answer).
+  // A count of zero hides its item.
   async function impactNumbers() {
     var slots = document.querySelectorAll('[data-hf-fill^="impact-"]');
     if (!slots.length) return;
@@ -910,7 +911,10 @@
     var map = { 'impact-people': r.data.peopleMadeHappy, 'impact-actions': r.data.actions, 'impact-stories': r.data.stories };
     slots.forEach(function (e) {
       var v = map[e.getAttribute('data-hf-fill')];
-      if (typeof v === 'number') e.textContent = v.toLocaleString();
+      if (typeof v !== 'number') return;
+      // A zero says nothing yet: its whole item stays out until there is something to count.
+      if (v === 0 && e.parentNode) { e.parentNode.hidden = true; return; }
+      e.textContent = v.toLocaleString();
     });
   }
 

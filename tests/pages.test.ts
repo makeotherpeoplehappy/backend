@@ -346,3 +346,12 @@ describe('Header button', () => {
     expect(p.document.querySelector('.hf-nav-cta')!.textContent).toBe(WORDING['nav-account']);
   });
 });
+
+describe('Impact numbers', () => {
+  it('fills in the live counts and hides one that is still zero', async () => {
+    const html = '<section><div><p data-hf-fill="impact-people">–</p><p>people made happy</p></div><div id="st"><p data-hf-fill="impact-stories">–</p><p>stories shared</p></div></section>';
+    const p = await page('/', html, (m, path) => (path === '/api/impact' ? { data: { peopleMadeHappy: 1234, actions: 114, stories: 0 } } : undefined));
+    expect(p.document.querySelector('[data-hf-fill="impact-people"]')!.textContent).toBe((1234).toLocaleString());
+    expect((p.document.getElementById('st') as unknown as { hidden: boolean }).hidden).toBe(true);
+  });
+});

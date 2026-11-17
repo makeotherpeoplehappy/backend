@@ -74,7 +74,7 @@
   function render(root, k) {
     root.innerHTML = '';
     var i = k.impact, e = k.engagement, h = k.health;
-    root.appendChild(el('h1', { text: 'Happiness Foundation Lab' }));
+    root.appendChild(el('h1', { text: 'Happiness Lab' }));
     root.appendChild(el('p', { class: 'sub', text: 'Live numbers from the backend · updated ' + new Date(k.generatedAt).toLocaleString() + ' · refreshes every minute' }));
     root.appendChild(reviewPanel());
     root.appendChild(el('h2', { text: 'Impact' }));
@@ -99,15 +99,20 @@
       el('div', {}, [el('h2', { text: 'Most liked' }), table(['Action', 'Likes'], (k.mostLiked || []).map(function (a) { return [a.title, a.likes]; }))])
     ]);
     root.appendChild(two);
-    root.appendChild(el('div', {}, [
-      el('div', {}, [el('h2', { text: 'System health' }), table(['Check', 'Value'], [
+    root.appendChild(partnersPanel(k.me));
+    root.appendChild(accessPanel(k.me));
+    // Technical checks: one quiet line when all is well; the details open on a tap, and show
+    // straight away when something needs attention.
+    var trouble = h.queueFailed > 0 || h.queuePending > 0;
+    var details = el('details', trouble ? { open: '' } : {}, [
+      el('summary', { class: 'sub', style: 'cursor:pointer;margin:48px 0 12px', text: trouble ? 'System: needs attention' : 'System: all running normally' }),
+      table(['Check', 'Value'], [
         ['Writes waiting to retry', h.queuePending],
         ['Writes that failed', h.queueFailed],
         ['Actions mirrored', h.actionsMirrored]
-      ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))])
-    ]));
-    root.appendChild(partnersPanel(k.me));
-    root.appendChild(accessPanel(k.me));
+      ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))
+    ]);
+    root.appendChild(details);
     if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
   }
 
@@ -201,7 +206,7 @@
     wrap.appendChild(panel);
 
     // What to send the partner: their ID, their key (shown once) and code to paste.
-    function showKit(name, slug, key) {
+    function showKit(name, slug, key, renewed) {
       var api = window.HFB.base + '/api/partners';
       var code =
         '// ' + name + ': Make Someone Happy pledge (Happiness Foundation Pledge API)\n' +
@@ -229,7 +234,9 @@
       kit.innerHTML = '';
       var box = el('div', { class: 'warn' });
       box.style.cssText = 'margin:14px 0 0;padding:18px';
-      box.appendChild(el('p', { text: name + ' is set up. Partner ID: ' + slug + '. Send them the code below now: the key in it is shown only once.' }));
+      box.appendChild(el('p', { text: renewed
+        ? 'New code for ' + name + ' (Partner ID: ' + slug + '). Their old key has stopped working, so send them this code now: the key in it is shown only once.'
+        : name + ' is set up. Partner ID: ' + slug + '. Send them the code below now: the key in it is shown only once.' }));
       var pre = el('pre');
       pre.style.cssText = 'white-space:pre-wrap;word-break:break-all;font-size:13px;line-height:1.5;background:#fff;padding:14px;border-radius:14px;max-height:420px;overflow:auto';
       pre.textContent = code;
@@ -267,6 +274,20 @@
             if (r.ok) draw(r.data); else msg.textContent = (r.data && r.data.message) || 'That did not work.';
           };
           rep.appendChild(e);
+          // Keys are stored scrambled, so a lost code cannot be shown again: this makes a new one.
+          var k = el('button', { type: 'button', text: 'New code' });
+          k.className = 'light'; k.style.cssText = 'margin-left:6px;padding:4px 14px;font-size:15px';
+          k.onclick = async function () {
+            if (!window.confirm('Make new code for ' + p.name + '? Their current key stops working straight away, so their shop must switch to the new code.')) return;
+            k.disabled = true;
+            var r = await window.HFB.call('/api/lab/partners', { method: 'PATCH', body: { id: p.id, newKey: true } });
+            k.disabled = false;
+            if (!r.ok) { msg.textContent = (r.data && r.data.message) || 'That did not work.'; return; }
+            draw(r.data);
+            showKit(p.name, r.data.slug, r.data.key, true);
+            kit.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          };
+          cell.insertBefore(k, cell.firstChild);
         } else if (!p.active) cell.textContent = 'Off';
         t.appendChild(el('tr', {}, [el('td', { text: p.name + ' (' + p.slug + ')' }), el('td', { class: 'n', text: String(p.pledges) }), el('td', { class: 'n', text: String(p.claimed) }), el('td', { class: 'n', text: String(p.kept) }), rep, cell]));
       });
@@ -331,7 +352,7 @@
 
   function message(root, text, withButton) {
     root.innerHTML = '';
-    root.appendChild(el('h1', { text: 'Happiness Foundation Lab' }));
+    root.appendChild(el('h1', { text: 'Happiness Lab' }));
     root.appendChild(el('p', { class: 'sub', text: text }));
     if (withButton) {
       var b = el('button', { type: 'button', text: 'Sign in' });

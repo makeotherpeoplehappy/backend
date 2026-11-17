@@ -238,18 +238,34 @@ export async function addPartner(env: Env, deps: Deps, by: string, body: { name?
   if (!name) throw new HttpError(400, 'invalid_partner', 'Please give the partner a name.');
   let slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'partner';
   if (await env.DB.prepare(`SELECT 1 FROM partners WHERE slug = ?1`).bind(slug).first()) slug = `${slug}-${Date.now().toString(36)}`;
-  const raw = new Uint8Array(32);
-  crypto.getRandomValues(raw);
-  const key = `hfp_${base64url(raw)}`;
+  const key = newPartnerKey();
   await env.DB.prepare(`INSERT INTO partners (name, slug, key_hash, active, created_by, created_at, report_email) VALUES (?1, ?2, ?3, 1, ?4, ?5, ?6)`)
     .bind(name, slug, await sha256Hex(key), by, iso(deps.now()), reportEmail)
     .run();
   return { ...(await listPartners(env)), key, slug };
 }
 
-export async function setPartnerActive(env: Env, body: { id?: unknown; active?: unknown; reportEmail?: unknown }) {
+function newPartnerKey(): string {
+  const raw = new Uint8Array(32);
+  crypto.getRandomValues(raw);
+  return `hfp_${base64url(raw)}`;
+}
+
+/**
+ * Changes a partner from /lab: switch on or off, set the report email, or (newKey) replace its key.
+ * Keys are kept only as a hash, so a lost key cannot be shown again: a new one is made, returned
+ * once, and the old one stops working at once.
+ */
+export async function setPartnerActive(env: Env, body: { id?: unknown; active?: unknown; reportEmail?: unknown; newKey?: unknown }) {
   const id = Number(body.id);
   if (!Number.isInteger(id) || id === OWN_SHOP) throw new HttpError(400, 'invalid_partner', 'That partner cannot be changed here.');
+  if (body.newKey === true) {
+    const p = await env.DB.prepare(`SELECT slug FROM partners WHERE id = ?1`).bind(id).first<{ slug: string }>();
+    if (!p) throw new HttpError(404, 'not_found', 'Not found.');
+    const key = newPartnerKey();
+    await env.DB.prepare(`UPDATE partners SET key_hash = ?2 WHERE id = ?1`).bind(id, await sha256Hex(key)).run();
+    return { ...(await listPartners(env)), key, slug: p.slug };
+  }
   if ('reportEmail' in body) await env.DB.prepare(`UPDATE partners SET report_email = ?2 WHERE id = ?1`).bind(id, reportEmailOf(body.reportEmail)).run();
   if ('active' in body) {
     if (typeof body.active !== 'boolean') throw new HttpError(400, 'invalid_partner', 'That partner cannot be changed here.');

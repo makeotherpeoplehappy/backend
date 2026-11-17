@@ -65,6 +65,18 @@ describe('Partner pledges', () => {
     expect((await partner('/pledges', {})).status).toBe(401);
   });
 
+  it('an owner can give a partner a new key; the old key stops working', async () => {
+    const [p] = await h.db<{ id: number }>(`SELECT id FROM partners WHERE slug = 'good-shop'`);
+    await h.db(`INSERT INTO lab_access (email, added_by, added_at) VALUES ('ann@example.com', 'boss@example.com', '2026-11-17')`);
+    h.fake.signIn('ms_ann', { id: 'mem_ann', email: 'ann@example.com' });
+    expect((await h.request('PATCH', '/api/lab/partners', { token: 'ms_ann', body: { id: p.id, newKey: true } })).status).toBe(403);
+    const r = await (await h.request('PATCH', '/api/lab/partners', { token: 'ms_boss', body: { id: p.id, newKey: true } })).json();
+    expect(r.slug).toBe('good-shop');
+    expect(r.key).toMatch(/^hfp_/);
+    expect((await partner('/pledges', {})).status).toBe(401);
+    expect((await partner('/pledges', {}, r.key)).status).toBe(200);
+  });
+
   it('the buyer keeps the pledges by signing in with the link; nobody else can take them', async () => {
     const { claimUrl } = await (await partner('/pledges', {})).json();
     const code = new URL(claimUrl).searchParams.get('c');

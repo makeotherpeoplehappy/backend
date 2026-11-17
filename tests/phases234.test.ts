@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CMS } from '../src/core/config';
 import { drain } from '../src/core/queue';
+import { CLAIM_TEMPLATE } from '../src/core/features/partners';
 import { stripJpegMetadata, parseVideo } from '../src/core/features/stories';
 import { createHarness, SITE, type Harness } from './harness';
 
@@ -398,7 +399,7 @@ describe('Phase 3: pledges', () => {
     await flush();
     await tick();
     await flush();
-    const mails = h.fake.emails.filter((e) => e.template?.id === 'hf-pledge-claim');
+    const mails = h.fake.emails.filter((e) => e.template?.id === CLAIM_TEMPLATE);
     expect(mails).toHaveLength(1);
     expect(mails[0].to).toEqual(['new@example.com']);
     expect(mails[0].template!.variables).toMatchObject({ COUNT: 2, CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });

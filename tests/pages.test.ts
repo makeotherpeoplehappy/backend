@@ -246,6 +246,10 @@ describe('Sign-in window', () => {
       signupMemberEmailPassword: fake('signup'),
       sendMemberResetPasswordEmail: fake('reset'),
       resetMemberPassword: fake('newPassword'),
+      sendMemberLoginPasswordlessEmail: fake('otpLoginSend'),
+      loginMemberPasswordless: fake('otpLogin'),
+      sendMemberSignupPasswordlessEmail: fake('otpSignupSend'),
+      signupMemberPasswordless: fake('otpSignup'),
     };
     const w = p.window as unknown as Record<string, unknown> & { HFP: { auth: (m: string) => void } };
     w.$memberstackDom = ms;
@@ -308,6 +312,37 @@ describe('Sign-in window', () => {
       { fn: 'newPassword', arg: { token: '123456', newPassword: 'a new password' } },
     ]);
     expect(a.text()).toContain(WORDING['auth-reset-done']);
+  });
+  it('signs in with a code by email, no password needed', async () => {
+    const a = await authPage();
+    a.w.HFP.auth('signin');
+    expect(a.text()).toContain(WORDING['auth-otp']);
+    (a.document.querySelector('#hfp-auth .hfp-auth-mail') as unknown as { click: () => void }).click();
+    a.fill('email', 'tess@example.com');
+    await a.submit();
+    expect(a.text()).toContain('We sent a code to tess@example.com');
+    a.fill('code', '654321');
+    await a.submit();
+    expect(a.done).toEqual([
+      { fn: 'otpLoginSend', arg: { email: 'tess@example.com' } },
+      { fn: 'otpLogin', arg: { passwordlessToken: '654321', email: 'tess@example.com' } },
+    ]);
+    expect(a.reloads()).toBe(1);
+  });
+
+  it('creates an account with a code by email, keeping the first name', async () => {
+    const a = await authPage();
+    a.w.HFP.auth('signup');
+    (a.document.querySelector('#hfp-auth .hfp-auth-mail') as unknown as { click: () => void }).click();
+    a.fill('first-name', 'Tess');
+    a.fill('email', 'tess@example.com');
+    await a.submit();
+    a.fill('code', '111222');
+    await a.submit();
+    expect(a.done).toEqual([
+      { fn: 'otpSignupSend', arg: { email: 'tess@example.com' } },
+      { fn: 'otpSignup', arg: { passwordlessToken: '111222', email: 'tess@example.com', customFields: { 'first-name': 'Tess' } } },
+    ]);
   });
 });
 

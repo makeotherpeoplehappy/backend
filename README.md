@@ -16,14 +16,14 @@ Each kind of text has one home. Don't move text between them.
 
 | Kind of text | Home | How it reaches the site |
 | --- | --- | --- |
-| Page content: headlines, intros, drop and product pages, the shop's section text, the drop hero's state labels | **Webflow** (Designer and CMS) | Native Webflow elements. Scripts only show the right one (`data-hf-show`) and fill in data (`data-hf-fill`). |
-| Product facts: names, descriptions, edition sizes | **Shopify** | Synced to the Webflow CMS by the backend. |
+| Page content: headlines and intros on the foundation site | **Webflow** (Designer and CMS) | Native Webflow elements. Scripts only show the right one (`data-hf-show`) and fill in data (`data-hf-fill`). |
+| The shop: products, drops, edition sizes and all shop text | **Shopify** (admin and theme) | The shop is Shopify's own; the backend only reads it. |
 | Member emails | **Resend** templates (`hf-invite-joined-*`, `hf-story-live*`, `hf-suggestion-live*`, `hf-pledge-reminder`, and `hf-pledge-claim` by its ID) | The backend sends the template alias (or ID) and its variables. |
 | Interface text: buttons, labels, messages, errors | **`src/wording/en.json`** | The backend imports it; the page scripts get it as `/join/hf-wording.js`. |
 
 Rules for `en.json`: one key per text, `{name}`-style parts are filled in by the code. Edit it on GitHub (pencil icon) and open a pull request: tests check that every key the code uses exists, that each call fills in exactly the text's `{parts}`, and that no key is unused (`tests/wording.test.ts`). `tests/no-text-in-code.test.ts` fails if a sentence is written into the code instead. Staff-only text (/lab, admin emails) stays in code.
 
-Site styles and site-wide behaviour (drop hero, header cart, cart pledge, drop product gate) are in this repo too (`public/site.css`, `public/hf-pages.js`). Webflow keeps only the stable lines in `site/site-head.html` and `site/site-loader.js`.
+Site styles and site-wide behaviour (sign-in window, Keep your pledge) are in this repo too (`public/site.css`, `public/hf-pages.js`). Webflow keeps only the stable lines in `site/site-head.html` and `site/site-loader.js`.
 
 ## Run the tests
 
@@ -76,9 +76,8 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `GET/POST /api/notifications/off?t=` | Email link | One-click unsubscribe |
 | `POST /api/jobs/tick` | `JOBS_SECRET` | Retry queued writes, sync actions hourly |
 | `POST /api/admin/sync-actions`, `POST /api/admin/import` | `ADMIN_SECRET` | Mirror actions; import metafields (`{"customerId": "7001"}` or page with `{"cursor": ...}`) |
-| `POST /api/admin/sync-products` | `ADMIN_SECRET` | Copy every active Shopify product into the Webflow Products collection now |
-| `POST /api/admin/shopify-webhooks` | `ADMIN_SECRET` | Register the Shopify webhooks (products, customer deletion) for this address |
-| `POST /api/webhooks/shopify` | Shopify (HMAC) | `customers/delete`, `customers/redact`, `products/create`, `products/update`, `products/delete` |
+| `POST /api/admin/shopify-webhooks` | `ADMIN_SECRET` | Register the Shopify webhooks (orders, refunds, products, customer deletion) for this address |
+| `POST /api/webhooks/shopify` | Shopify (HMAC) | `customers/delete`, `customers/redact`, orders and refunds (pledges), `products/*` (refreshes drops) |
 
 ## Drops (in Shopify)
 
@@ -126,16 +125,9 @@ Our own shop's orders arrive through the Shopify webhook and get the same claim
 link; buyers without an account get it by email (Resend template
 `hf-pledge-claim`, sent by its ID, variables `CLAIM_URL` and `COUNT`).
 
-## Product sync
+## Calls from the site
 
-Shopify is the source of truth for each product's name, slug (the Shopify
-handle), description, short description and image. Active products are
-published in the Webflow Products collection; archived, draft or deleted ones
-are taken off the site and kept as drafts. Fields set by hand in Webflow, such
-as "Goes with these actions", are never changed. The sync runs on Shopify's
-product webhooks, every hour from the jobs timer, and on demand.
-
-Member calls send `Authorization: Bearer <Shopify customer token>`. Every
+Member calls send `Authorization: Bearer <Memberstack token>`. Every
 write sends an `Idempotency-Key`; `hf-backend.js` does both.
 
 ## Scheduled jobs

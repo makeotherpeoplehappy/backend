@@ -12,6 +12,8 @@ import { enqueue } from '../queue';
 import { recomputeKeeps } from './pledges';
 
 export const OWN_SHOP = 1;
+/** Resend template "hf-pledge-claim", by its ID: its alias became hf-pledge-claim-1 in Resend, and an ID never changes. */
+export const CLAIM_TEMPLATE = 'bbdab255-e4eb-40f2-95cf-7081e3f24486';
 const MAX_PIECES = 100;
 
 export interface Partner {
@@ -148,7 +150,7 @@ export async function claimPledges(env: Env, deps: Deps, member: Member, body: {
 
 /**
  * Job: emails buyers from our own shop their "Keep your pledge" link (Resend
- * template hf-pledge-claim), when the order did not join a member by email.
+ * template hf-pledge-claim, CLAIM_TEMPLATE), when the order did not join a member by email.
  */
 export async function claimEmails(env: Env, deps: Deps, baseUrl: string) {
   const due = await env.DB.prepare(
@@ -163,7 +165,7 @@ export async function claimEmails(env: Env, deps: Deps, baseUrl: string) {
   for (const c of due.results) {
     const message: EmailMessage = {
       to: c.email,
-      template: { id: 'hf-pledge-claim', variables: { CLAIM_URL: claimUrl(baseUrl, await claimCode(env, OWN_SHOP, c.orderRef)), COUNT: c.n } },
+      template: { id: CLAIM_TEMPLATE, variables: { CLAIM_URL: claimUrl(baseUrl, await claimCode(env, OWN_SHOP, c.orderRef)), COUNT: c.n } },
       tags: [{ name: 'kind', value: 'pledge_claim' }],
     };
     await env.DB.batch([

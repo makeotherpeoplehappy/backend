@@ -18,7 +18,7 @@ Each kind of text has one home. Don't move text between them.
 | --- | --- | --- |
 | Page content: headlines, intros, drop and product pages, the shop's section text, the drop hero's state labels | **Webflow** (Designer and CMS) | Native Webflow elements. Scripts only show the right one (`data-hf-show`) and fill in data (`data-hf-fill`). |
 | Product facts: names, descriptions, edition sizes | **Shopify** | Synced to the Webflow CMS by the backend. |
-| Member emails | **Resend** templates (`hf-invite-joined-*`, `hf-story-live*`, `hf-suggestion-live*`, `hf-pledge-reminder`) | The backend sends the template alias and its variables. |
+| Member emails | **Resend** templates (`hf-invite-joined-*`, `hf-story-live*`, `hf-suggestion-live*`, `hf-pledge-reminder`, and `hf-pledge-claim` by its ID) | The backend sends the template alias (or ID) and its variables. |
 | Interface text: buttons, labels, messages, errors | **`src/wording/en.json`** | The backend imports it; the page scripts get it as `/join/hf-wording.js`. |
 
 Rules for `en.json`: one key per text, `{name}`-style parts are filled in by the code. Edit it on GitHub (pencil icon) and open a pull request: tests check that every key the code uses exists, that each call fills in exactly the text's `{parts}`, and that no key is unused (`tests/wording.test.ts`). `tests/no-text-in-code.test.ts` fails if a sentence is written into the code instead. Staff-only text (/lab, admin emails) stays in code.
@@ -105,7 +105,7 @@ needs the buyer's account: it registers the order and gives the buyer a link.
 
 Our own shop's orders arrive through the Shopify webhook and get the same claim
 link; buyers without an account get it by email (Resend template
-`hf-pledge-claim`, variables `CLAIM_URL` and `COUNT`).
+`hf-pledge-claim`, sent by its ID, variables `CLAIM_URL` and `COUNT`).
 
 ## Product sync
 

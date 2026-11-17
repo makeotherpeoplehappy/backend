@@ -1144,7 +1144,26 @@
     s.addEventListener('change', function () {
       try { localStorage.setItem('hf_loc', s.value); } catch (e) {}
       window.dispatchEvent(new Event('hf-loc'));
+      fitSelect(s);
     });
+    fitSelect(s);
+  }
+
+  // The picker hugs the chosen location so its arrow sits right after the text. Browsers with CSS
+  // field-sizing (set in Webflow) do it themselves; for the others this measures the chosen text.
+  function fitSelect(s) {
+    try {
+      if (window.CSS && CSS.supports && CSS.supports('field-sizing', 'content')) return;
+      var o = s.options[s.selectedIndex];
+      if (!o) return;
+      var cs = getComputedStyle(s);
+      var c = fitSelect.c || (fitSelect.c = document.createElement('canvas'));
+      var ctx = c.getContext('2d');
+      if (!ctx) return;
+      ctx.font = cs.fontWeight + ' ' + cs.fontSize + ' ' + cs.fontFamily;
+      var w = ctx.measureText(o.text).width + parseFloat(cs.paddingLeft || 0) + parseFloat(cs.paddingRight || 0) + 4;
+      s.style.width = Math.ceil(w) + 'px';
+    } catch (e) {}
   }
 
 

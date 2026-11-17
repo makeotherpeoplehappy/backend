@@ -20,7 +20,7 @@ import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, 
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, publicImpact, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
 import { memberstackWebhook } from './features/memberstack';
-import { addPartner, cancelPledges, claimEmails, claimPledges, listPartners, partnerFromRequest, registerPledges, setPartnerActive } from './features/partners';
+import { addPartner, cancelPledges, claimEmails, claimPledges, lastMonth, listPartners, partnerFromRequest, partnerReport, partnerReports, registerPledges, setPartnerActive } from './features/partners';
 import { customerGid } from './shopify';
 
 type Params = Record<string, string>;
@@ -252,11 +252,17 @@ route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) 
   return json(out);
 });
 
-// Partner pledges: a partner shop registers an order's pledges with its key
-// and gets the buyer's "Keep your pledge" link (README, "Partner pledges").
-route('POST', '/api/partners/pledges', false, async ({ req, env, deps, baseUrl }) =>
-  json(await registerPledges(env, deps, await partnerFromRequest(env, req), await readJson(req), baseUrl)),
-);
+// The Pledge API: a partner shop asks for one pledge per purchase with its key, sending no
+// customer data, and gets the buyer's "Keep your pledge" link (README, "Pledge API").
+route('POST', '/api/partners/pledges', false, async ({ req, env, deps, baseUrl }) => {
+  const partner = await partnerFromRequest(env, req);
+  return json(await registerPledges(env, deps, partner, await readJson(req), baseUrl, req.headers.get('Idempotency-Key')));
+});
+// Their numbers only: pledges given, kept by the buyer, and turned into an action, for a month.
+route('GET', '/api/partners/report', false, async ({ req, env, deps }) => {
+  const partner = await partnerFromRequest(env, req);
+  return json(await partnerReport(env, partner.id, new URL(req.url).searchParams.get('month') || lastMonth(deps.now())));
+});
 route('POST', '/api/partners/pledges/cancel', false, async ({ req, env }) => json(await cancelPledges(env, await partnerFromRequest(env, req), await readJson(req))));
 // The buyer, signed in on the foundation, keeps the pledges of their link.
 route('POST', '/api/pledges/claim', true, async ({ req, env, deps }) => json(await claimPledges(env, deps, await requireMember(req, env, deps), await readJson(req))));
@@ -316,6 +322,8 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['pledge-reminders', 'pledgeReminders', HOUR, () => pledgeReminders(env, deps, baseUrl)],
     // Buyers from our shop get their "Keep your pledge" link.
     ['claim-emails', 'claimEmails', 0, () => claimEmails(env, deps, baseUrl)],
+    // Partners: last month's numbers, once a month (the job checks hourly).
+    ['partner-reports', 'partnerReports', HOUR, () => partnerReports(env, deps)],
     // Phase 4: one summary email a day per inviter.
     ['invite-summaries', 'inviteSummaries', 24 * HOUR, () => inviteSummaries(env, deps, baseUrl)],
   ];

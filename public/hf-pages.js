@@ -383,6 +383,7 @@
     var me = r.data;
     if (out) out.style.display = 'none';
     inn.style.display = 'block';
+    inn.setAttribute('data-hf-on', '1');
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
     var tally = $('hf-tally');

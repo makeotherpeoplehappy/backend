@@ -12,7 +12,7 @@ import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings 
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks, syncAllProducts, syncOneProduct } from './features/products';
-import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, updateDropsInCms, warmShop } from './features/drops';
+import { dropState, forgetShop, productLabels, scheduleDropReleases, shopCatalog, shopDrops, signUpForDrop, warmShop } from './features/drops';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
@@ -325,7 +325,6 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     // Phase 2: review in the CMS (the Webflow webhook is the fast path).
     ['review', 'review', 15 * 60 * 1000, () => reviewAll(env, deps, baseUrl)],
     // Phase 3: drops, counts and pledges.
-    ['drops', 'drops', 0, () => updateDropsInCms(env, deps)],
     ['warm-shop', 'warmShop', 0, () => warmShop(env, deps)],
     ['drop-releases', 'dropReleases', HOUR, () => scheduleDropReleases(env, deps)],
     ['write-counts', 'writeCounts', HOUR, () => writeCountsToCms(env, deps)],

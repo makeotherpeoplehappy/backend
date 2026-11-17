@@ -62,18 +62,10 @@ export function orderFromWebhook(body: Record<string, unknown>): Order | null {
   };
 }
 
-/** Which drop each Shopify product belongs to (by drop slug). */
+/** Which drop each Shopify product belongs to (by drop slug). Products in no drop still get pledges. */
 async function dropOfProduct(env: Env, deps: Deps): Promise<Map<string, string>> {
   const map = new Map<string, string>();
-  const drops = await listDrops(env, deps);
-  const rows = await env.DB.prepare(`SELECT shopify_id, cms_item_id FROM product_sync WHERE cms_item_id IS NOT NULL`).all<{ shopify_id: string; cms_item_id: string }>();
-  const byItem = new Map(rows.results.map((r) => [r.cms_item_id, r.shopify_id]));
-  for (const d of drops) {
-    for (const item of d.productItemIds) {
-      const p = byItem.get(item);
-      if (p && !map.has(p)) map.set(p, d.slug);
-    }
-  }
+  for (const d of await listDrops(env, deps)) for (const id of d.productIds) if (!map.has(id)) map.set(id, d.slug);
   return map;
 }
 

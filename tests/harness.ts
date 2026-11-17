@@ -60,6 +60,8 @@ export class FakeServices {
   publicationsAllowed = true;
   /** Shopify collections by handle: product ids. */
   shopCollections = new Map<string, string[]>();
+  /** Drops: Shopify collections with a drop date (custom.drop_date), by handle; their products are in shopCollections. */
+  dropCollections = new Map<string, { title: string; description?: string; dropDate: string }>();
   /** Shopify customers created or updated by drop sign-ups, by email. */
   marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
@@ -198,6 +200,17 @@ export class FakeServices {
         return j({ data: { webhookSubscriptionCreate: { webhookSubscription: { id: sub.id }, userErrors: [] } } });
       }
       if (q.query.includes('webhookSubscriptions')) return j({ data: { webhookSubscriptions: { nodes: this.webhookSubs } } });
+      if (q.query.includes('drop_date')) {
+        const nodes = [...this.dropCollections.entries()].map(([handle, c], i) => ({
+          id: `gid://shopify/Collection/${500 + i}`,
+          handle,
+          title: c.title,
+          description: c.description || '',
+          dropDate: { value: c.dropDate },
+          products: { nodes: (this.shopCollections.get(handle) || []).map((id) => ({ id })) },
+        }));
+        return j({ data: { collections: { nodes } } });
+      }
       if (q.query.includes('collections(first: 1')) {
         const handle = String(q.variables.q).replace(/^handle:/, '');
         const ids = this.shopCollections.get(handle);

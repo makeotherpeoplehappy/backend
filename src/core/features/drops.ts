@@ -4,63 +4,81 @@
 // Mickey emails that tag from Shopify Email when the drop goes live. The
 // backend keeps only a one-way hash per drop, for counting.
 
-import { CMS } from '../config';
 import type { Deps, Env } from '../env';
 import { HttpError, iso, sha256Hex } from '../http';
 import type { Member } from '../identity';
 import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
-import * as webflow from '../webflow';
 import { word } from '../wording';
 import { dropPledges } from './pledges';
 
+/**
+ * A drop is a Shopify collection with a drop date (collection field
+ * custom.drop_date). Its pieces are the collection's products; each piece's
+ * size is its edition size (product field custom.edition_size). Status comes
+ * from the date and the stock, so nothing is set by hand.
+ */
 export interface Drop {
   id: string;
   slug: string;
   name: string;
   status: 'upcoming' | 'live' | 'sold_out' | 'unknown';
-  onFrontPage: boolean;
   dropDate: string | null;
+  /** Fallback size when the pieces have no edition size: not used for Shopify drops. */
   quantity: number | null;
   detailsLine: string;
   statement: string;
-  leadProductItemId: string | null;
-  productItemIds: string[];
+  productIds: string[];
 }
 
 const CACHE_KEY = 'drops:list';
+const LAST_KEY = 'drops:last';
 const EMAIL = /^[^\s@]{1,64}@[^\s@]{1,190}\.[^\s@]{2,24}$/;
 
-function statusOf(id: unknown): Drop['status'] {
-  if (id === CMS.drops.status.upcoming) return 'upcoming';
-  if (id === CMS.drops.status.live) return 'live';
-  if (id === CMS.drops.status.soldOut) return 'sold_out';
-  return 'unknown';
+interface DropCollection {
+  id: string;
+  handle: string;
+  title: string;
+  description: string;
+  dropDate: { value: string } | null;
+  products: { nodes: { id: string }[] };
 }
 
+/** Every drop: the shop's collections that have a drop date, oldest first. Cached 60 seconds. */
 export async function listDrops(env: Env, deps: Deps): Promise<Drop[]> {
   const cached = (await env.CACHE.get(CACHE_KEY, 'json')) as Drop[] | null;
   if (cached) return cached;
-  const items = await webflow.listLiveItems(env, deps, CMS.drops.id);
-  const drops: Drop[] = items.map((i) => ({
-    id: i.id,
-    slug: String(i.fieldData.slug || ''),
-    name: String(i.fieldData.name || ''),
-    status: statusOf(i.fieldData.status),
-    onFrontPage: i.fieldData['show-on-front-page'] === true,
-    dropDate: typeof i.fieldData['drop-date'] === 'string' ? (i.fieldData['drop-date'] as string) : null,
-    quantity: typeof i.fieldData.quantity === 'number' ? (i.fieldData.quantity as number) : null,
-    detailsLine: String(i.fieldData['details-line'] || ''),
-    statement: String(i.fieldData.statement || ''),
-    leadProductItemId: typeof i.fieldData['lead-product'] === 'string' ? (i.fieldData['lead-product'] as string) : null,
-    productItemIds: [
-      ...new Set([
-        ...(typeof i.fieldData['lead-product'] === 'string' ? [i.fieldData['lead-product'] as string] : []),
-        ...(Array.isArray(i.fieldData['products-in-this-drop']) ? (i.fieldData['products-in-this-drop'] as string[]) : []),
-      ]),
-    ],
-  }));
-  await env.CACHE.put(CACHE_KEY, JSON.stringify(drops), { expirationTtl: 300 });
+  let r: { collections: { nodes: DropCollection[] } };
+  try {
+    r = await adminGraphql<{ collections: { nodes: DropCollection[] } }>(
+      env,
+      deps,
+      `query { collections(first: 100) { nodes { id handle title description
+         dropDate: metafield(namespace: "custom", key: "drop_date") { value }
+         products(first: 50) { nodes { id } } } } }`,
+    );
+  } catch (e) {
+    // Shopify unreachable: the last known list (kept a day) keeps sign-ups and pages working.
+    const last = (await env.CACHE.get(LAST_KEY, 'json')) as Drop[] | null;
+    if (last) return last;
+    throw e;
+  }
+  const drops: Drop[] = r.collections.nodes
+    .filter((c) => c.dropDate?.value && Number.isFinite(Date.parse(c.dropDate.value)))
+    .map((c) => ({
+      id: c.id,
+      slug: c.handle,
+      name: c.title,
+      status: 'unknown' as const,
+      dropDate: new Date(c.dropDate!.value).toISOString(),
+      quantity: null,
+      detailsLine: '',
+      statement: c.description || '',
+      productIds: c.products.nodes.map((p) => p.id),
+    }))
+    .sort((a, b) => a.dropDate!.localeCompare(b.dropDate!));
+  await env.CACHE.put(CACHE_KEY, JSON.stringify(drops), { expirationTtl: 60 });
+  await env.CACHE.put(LAST_KEY, JSON.stringify(drops), { expirationTtl: 86_400 });
   return drops;
 }
 
@@ -70,21 +88,34 @@ export async function forgetDrops(env: Env): Promise<void> {
   await env.CACHE.delete('product-labels');
 }
 
-/** The drop named by its address, or the one shown on the front page. */
+/**
+ * The drop named by its address, or else the current one: the newest drop on
+ * sale now, else the next one coming up, else the most recent one.
+ */
 export async function findDrop(env: Env, deps: Deps, slug: string | null): Promise<Drop | null> {
   const drops = await listDrops(env, deps);
   if (slug) return drops.find((d) => d.slug === slug) || null;
-  return drops.find((d) => d.onFrontPage) || drops.find((d) => d.status === 'upcoming') || null;
+  const now = deps.now().getTime();
+  const started = drops.filter((d) => Date.parse(d.dropDate!) <= now).reverse();
+  for (const d of started) if ((await effectiveStatus(env, deps, d)) === 'live') return d;
+  return drops.find((d) => Date.parse(d.dropDate!) > now) || started[0] || null;
+}
+
+/** The next drop coming up: where "Notify me" goes when no drop is named. */
+async function nextDrop(env: Env, deps: Deps): Promise<Drop | null> {
+  const now = deps.now().getTime();
+  return (await listDrops(env, deps)).find((d) => Date.parse(d.dropDate!) > now) || null;
 }
 
 export const dropTag = (slug: string) => `notify-drop-${slug}`.slice(0, 40);
 
 export async function signUpForDrop(env: Env, deps: Deps, input: { drop?: unknown; email?: unknown }, member: Member | null) {
   const slug = typeof input.drop === 'string' && /^[a-z0-9-]{1,100}$/.test(input.drop) ? input.drop : null;
-  const drop = await findDrop(env, deps, slug);
+  const drop = slug ? await findDrop(env, deps, slug) : await nextDrop(env, deps);
   if (!drop) throw new HttpError(404, 'drop_not_found', 'err-drop-not-found');
-  if ((await effectiveStatus(env, deps, drop)) !== 'upcoming') {
-    throw new HttpError(409, 'drop_not_upcoming', drop.status === 'live' ? 'err-drop-live' : 'err-drop-closed');
+  const status = await effectiveStatus(env, deps, drop);
+  if (status !== 'upcoming') {
+    throw new HttpError(409, 'drop_not_upcoming', status === 'live' ? 'err-drop-live' : 'err-drop-closed');
   }
   const email = (member?.email || (typeof input.email === 'string' ? input.email : '')).trim().toLowerCase();
   if (!EMAIL.test(email)) throw new HttpError(400, 'invalid_email', 'err-invalid-email');
@@ -156,14 +187,8 @@ export async function writeDropSignupToShopify(env: Env, deps: Deps, op: { email
 // date and quantity and from Shopify, so nothing has to be updated by hand.
 // ---------------------------------------------------------------------------
 
-async function shopifyIdOf(env: Env, cmsItemId: string | null): Promise<string | null> {
-  if (!cmsItemId) return null;
-  const r = await env.DB.prepare(`SELECT shopify_id FROM product_sync WHERE cms_item_id = ?1`).bind(cmsItemId).first<{ shopify_id: string }>();
-  return r?.shopify_id ?? null;
-}
-
 export interface DropStock {
-  /** Pieces in the drop: the pieces' edition sizes added up, or the CMS Quantity when a piece has no size. */
+  /** Pieces in the drop: the pieces' edition sizes added up (null when a piece has no size). */
   quantity: number | null;
   /** Pieces left across every piece of the drop; null when any piece's stock is not tracked. */
   left: number | null;
@@ -184,7 +209,7 @@ export async function dropStock(env: Env, deps: Deps, drop: Drop): Promise<DropS
   const key = `drop-stock:${drop.slug}`;
   const cached = (await env.CACHE.get(key, 'json')) as DropStock | null;
   if (cached && typeof cached === 'object') return cached;
-  const ids = (await Promise.all(drop.productItemIds.map((item) => shopifyIdOf(env, item)))).filter((id): id is string => !!id);
+  const ids = drop.productIds;
   const r = ids.length
     ? await adminGraphql<{ nodes: ({ id: string; tracksInventory: boolean; totalInventory: number; edition: { value: string } | null } | null)[] }>(
         env,
@@ -251,38 +276,6 @@ export async function dropState(env: Env, deps: Deps, slug: string | null) {
   };
 }
 
-const STATUS_ID: Record<Exclude<Drop['status'], 'unknown'>, string> = {
-  upcoming: CMS.drops.status.upcoming,
-  live: CMS.drops.status.live,
-  sold_out: CMS.drops.status.soldOut,
-};
-
-/**
- * Every tick: keeps each drop's Status and Details line in the CMS in step
- * with its date, quantity and stock, so the page is right even without
- * scripts and Mickey only sets the date, quantity and products.
- */
-export async function updateDropsInCms(env: Env, deps: Deps) {
-  await forgetDrops(env);
-  const drops = await listDrops(env, deps);
-  const changed: string[] = [];
-  for (const d of drops) {
-    if (!d.dropDate) continue;
-    const { quantity, left } = await dropStock(env, deps, d).catch(() => NO_STOCK(d));
-    const status = await effectiveStatus(env, deps, d, left);
-    if (status === 'unknown') continue;
-    const line = detailsLineFor({ quantity, dropDate: d.dropDate }, status);
-    const fieldData: Record<string, unknown> = {};
-    if (d.status !== status) fieldData.status = STATUS_ID[status];
-    if (line && line !== d.detailsLine) fieldData['details-line'] = line;
-    if (!Object.keys(fieldData).length) continue;
-    await webflow.updateLiveItem(env, deps, CMS.drops.id, d.id, fieldData);
-    changed.push(d.slug);
-  }
-  if (changed.length) await forgetDrops(env);
-  return { changed };
-}
-
 /**
  * Holds each upcoming drop's products back in Shopify until the drop's date
  * and time, using Shopify's scheduled publishing, so nobody can buy early
@@ -311,9 +304,7 @@ async function scheduleReleases(env: Env, deps: Deps) {
     const at = d.dropDate ? Date.parse(d.dropDate) : NaN;
     if (!Number.isFinite(at) || at <= now) continue;
     const releaseAt = new Date(at).toISOString();
-    for (const item of d.productItemIds) {
-      const productId = await shopifyIdOf(env, item);
-      if (!productId) continue;
+    for (const productId of d.productIds) {
       const done = await env.DB.prepare(`SELECT release_at FROM drop_releases WHERE product_id = ?1`).bind(productId).first<{ release_at: string }>();
       if (done?.release_at === releaseAt) continue;
       // Only the channels the product is on (or scheduled for) today: a drop
@@ -372,12 +363,12 @@ export async function shopDrops(env: Env, deps: Deps) {
       quantity,
       left,
       detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status) || d.detailsLine,
-      onFrontPage: d.onFrontPage,
       collection: d.slug,
       pledges: await dropPledges(env, d.slug),
     });
   }
-  const current = out.find((d) => d.onFrontPage && d.status !== 'sold_out') || out.find((d) => d.status === 'upcoming' || d.status === 'live') || null;
+  const cur = await findDrop(env, deps, null);
+  const current = (cur && out.find((d) => d.drop === cur.slug)) || null;
   const past = out.filter((d) => d !== current && d.status === 'sold_out').sort((a, b) => String(b.dropDate).localeCompare(String(a.dropDate)));
   return { current, past };
 }
@@ -409,18 +400,16 @@ export async function productLabels(env: Env, deps: Deps): Promise<Record<string
     `query { products(first: 100, query: "status:active") { nodes { id handle tracksInventory totalInventory edition: metafield(namespace: "custom", key: "edition_size") { value } } } }`,
   );
   const drops = await listDrops(env, deps);
-  const sync = await env.DB.prepare(`SELECT shopify_id, cms_item_id FROM product_sync WHERE cms_item_id IS NOT NULL`).all<{ shopify_id: string; cms_item_id: string }>();
   const dropOf = new Map<string, Drop>();
-  const byItem = new Map(sync.results.map((s) => [s.cms_item_id, s.shopify_id]));
-  for (const d of drops) for (const item of d.productItemIds) if (byItem.get(item) && !dropOf.has(byItem.get(item)!)) dropOf.set(byItem.get(item)!, d);
+  for (const d of drops) for (const id of d.productIds) if (!dropOf.has(id)) dropOf.set(id, d);
   const labels: Record<string, ProductLabel> = {};
   for (const p of r.products.nodes) {
     const left = p.tracksInventory ? Math.max(0, p.totalInventory) : null;
     const size = editionSize(p.edition?.value);
     const d = dropOf.get(p.id);
     if (d) {
-      // Each piece with its own size; a one-piece drop without a size uses the drop's Quantity.
-      const pieces = size ?? (d.productItemIds.length === 1 ? d.quantity : null);
+      // Each piece with its own edition size.
+      const pieces = size;
       const status = await effectiveStatus(env, deps, d);
       const soldOut = status === 'sold_out' || (status === 'live' && left === 0);
       labels[p.handle] = { name: d.name, size: pieces, left: !soldOut && status === 'live' && left !== null && pieces ? Math.min(left, pieces) : null, soldOut };

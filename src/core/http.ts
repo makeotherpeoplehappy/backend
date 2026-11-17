@@ -1,6 +1,6 @@
 /**
  * An error answered to the caller. `message` is either a wording key
- * ("err-...", worded from the site's wording block in Webflow) or, for
+ * ("err-...", worded from src/wording/en.json) or, for
  * staff-only and technical errors, the text itself.
  */
 export class HttpError extends Error {

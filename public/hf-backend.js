@@ -104,13 +104,11 @@
   }
 
   /**
-   * Wording kept in Webflow: the hidden "Site wording" block in the footer has
-   * one element per text, marked data-hf-copy="key". {name}-style parts are
-   * filled in from vars.
+   * Interface text from src/wording/en.json, served as /join/hf-wording.js
+   * (window.HFW, loaded below). {name}-style parts are filled in from vars.
    */
   function copy(key, vars) {
-    var e = document.querySelector ? document.querySelector('[data-hf-copy="' + key + '"]') : null;
-    var t = e ? e.textContent.trim() : '';
+    var t = (window.HFW && window.HFW[key]) || '';
     if (vars) Object.keys(vars).forEach(function (k) { t = t.split('{' + k + '}').join(vars[k] == null ? '' : String(vars[k])); });
     return t;
   }
@@ -364,16 +362,23 @@
     });
     return true;
   }
-  waitFor(function () { return !!window.HF; }, 10000).then(function () { return dropNotify(); }).catch(function () {});
+  waitFor(function () { return !!window.HF && !!window.HFW; }, 10000).then(function () { return dropNotify(); }).catch(function () {});
 
   window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, dropNotify: dropNotify, copy: copy, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor };
 
   // Page features (action page, account, stories, invites, drops) live in one
   // script served by the backend, so they ship with the backend and are tested.
+  // The interface text first, then the page features, in that order.
+  var parent = document.head || document.body;
+  if (parent && !window.HFW) {
+    var words = document.createElement('script');
+    words.src = BASE + '/hf-wording.js';
+    words.async = false;
+    parent.appendChild(words);
+  }
   var pages = document.createElement('script');
   pages.src = BASE + '/hf-pages.js';
-  pages.defer = true;
-  var parent = document.head || document.body;
+  pages.async = false;
   if (parent && !(window.HFB_NO_PAGES)) parent.appendChild(pages);
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);

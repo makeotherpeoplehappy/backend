@@ -1,7 +1,7 @@
 import { allowedOrigins, defaultDeps, missingEnv, type Ctx, type Deps, type Env } from './env';
 import { reportError } from './errors';
 import { verifyUnsubscribe } from './email';
-import { siteWording, word } from './wording';
+import { WORDING, WORDING_SCRIPT, word } from './wording';
 import { EMAIL_KINDS } from './config';
 import { HttpError, UpstreamError, base64url, errorResponse, hmac, iso, json, readJson, requireSecret, timingSafeEqual } from './http';
 import { optionalMember, requireMember, type Member } from './identity';
@@ -68,6 +68,11 @@ function memberWrite(name: string, fn: (c: Call, member: Member) => Promise<unkn
 }
 
 // --- Site calls -------------------------------------------------------------
+
+// The interface text for the page scripts (src/wording/en.json), loaded before them.
+route('GET', '/hf-wording.js', false, async () =>
+  new Response(WORDING_SCRIPT, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' } }),
+);
 
 route('GET', '/api/health', false, async ({ env }) => {
   const missing = missingEnv(env);
@@ -264,10 +269,9 @@ route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) 
 async function unsubscribe({ req, env, deps }: Call): Promise<Response> {
   const token = new URL(req.url).searchParams.get('t') || '';
   const parsed = await verifyUnsubscribe(env, token);
-  const w = await siteWording(env, deps);
-  if (!parsed) return new Response(word(w, 'unsub-invalid'), { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+  if (!parsed) return new Response(word('unsub-invalid'), { status: 400, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   await env.DB.prepare(`UPDATE members SET ${EMAIL_KINDS[parsed.kind]} = 0, updated_at = ?2 WHERE id = ?1`).bind(parsed.memberId, iso(deps.now())).run();
-  return new Response(word(w, 'unsub-done'), {
+  return new Response(word('unsub-done'), {
     status: 200,
     headers: { 'Content-Type': 'text/plain; charset=utf-8' },
   });
@@ -469,8 +473,7 @@ export function createApp(opts: AppOptions = {}) {
     let path = url.pathname;
     if (base && path.startsWith(base)) path = path.slice(base.length) || '/';
     const baseUrl = `${url.origin}${base}`;
-    // This request's own deps carry the site's address, for reading the site's wording.
-    const deps: Deps = { ...appDeps, site: url.origin };
+    const deps = appDeps;
 
     const match = routes
       .map((r) => ({ r, m: r.pattern.exec(path) }))
@@ -498,17 +501,16 @@ export function createApp(opts: AppOptions = {}) {
       const res = await found.r.handler({ req, env, deps, ctx, params, baseUrl });
       return withHeaders(res, found.r.site ? cors : {});
     } catch (e) {
-      const w = await siteWording(env, deps).catch(() => ({}) as Record<string, string>);
-      if (e instanceof HttpError) return withHeaders(errorResponse(e, w), found.r.site ? cors : {});
+      if (e instanceof HttpError) return withHeaders(errorResponse(e, WORDING), found.r.site ? cors : {});
       if (e instanceof UpstreamError) {
         ctx.waitUntil(reportError(env, deps, { where: `${req.method} ${path}`, error: e, details: { service: e.service, status: e.status } }));
         return withHeaders(
-          json({ error: 'service_unavailable', message: word(w, 'error-unavailable') }, 503, { 'Retry-After': '5' }),
+          json({ error: 'service_unavailable', message: word('error-unavailable') }, 503, { 'Retry-After': '5' }),
           found.r.site ? cors : {},
         );
       }
       ctx.waitUntil(reportError(env, deps, { where: `${req.method} ${path}`, error: e, details: { url: `${url.origin}${url.pathname}` } }));
-      return withHeaders(json({ error: 'server_error', message: word(w, 'error-something') }, 500), found.r.site ? cors : {});
+      return withHeaders(json({ error: 'server_error', message: word('error-something') }, 500), found.r.site ? cors : {});
     }
   }
 

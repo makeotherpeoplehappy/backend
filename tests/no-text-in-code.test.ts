@@ -1,7 +1,7 @@
-// Wording lives in Webflow (the footer's "Site wording" block, and elements on
-// the pages). This fails when a visible sentence is written into the code
-// again. Staff-only parts (/lab, admin emails) and a few technical answers
-// are allowed.
+// Text has one home per kind (README, "Where text lives"): interface text is
+// in src/wording/en.json, page content in Webflow. This fails when a visible
+// sentence is written into the code again. Staff-only parts (/lab, admin
+// emails) and a few technical answers are allowed.
 
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';

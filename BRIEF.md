@@ -17,7 +17,7 @@ Every feature follows these rules:
 - **One click makes one record.** Double clicks and retries never create duplicates.
 - **Pages render first.** Counts, stock and ripple numbers load afterwards and never block the page.
 - **First names only** are ever shown to other members. Emails are never shown.
-- **Native Webflow first.** The backend returns data; the site shows it in native Webflow elements styled with Style panel classes wherever possible.
+- **Native Webflow first.** The backend returns data; the site shows it in native Webflow elements styled with Style panel classes wherever possible. Where each kind of text lives (Webflow, Shopify, Resend, `src/wording/en.json`) is decided in the README, "Where text lives".
 
 ## What exists today
 

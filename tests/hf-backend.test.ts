@@ -33,7 +33,7 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
   const calls: { method: string; url: string; headers: Record<string, string>; body?: unknown }[] = [];
   let signinCalls = 0;
   const location = { pathname: opts.pathname ?? '/account', search: opts.search ?? '', href: '', origin: 'https://site.test' };
-  const window: Record<string, unknown> = {};
+  const window: Record<string, unknown> = { HFW: SITE_WORDING };
   const HF = {
     token: () => (opts.signedIn ? { a: 'shcat_test', exp: Date.now() + 3600_000 } : null),
     signin: () => {
@@ -69,10 +69,6 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
         return null;
       },
       body: { appendChild: () => undefined },
-      querySelector: (sel: string) => {
-        const m = /^\[data-hf-copy="([^"]+)"\]$/.exec(sel);
-        return m && m[1] in SITE_WORDING ? { textContent: SITE_WORDING[m[1]] } : null;
-      },
     },
     CustomEvent: class {
       type: string;

@@ -39,8 +39,9 @@ html:not(.hf-in) [data-hf-auth=in],html.hf-in [data-hf-auth=out]{display:none!im
 .hf-nav-avatar[data-hf-photo] span{display:none}
 
 /* Current page in the menu (Webflow's "Current" state) */
-.hf-nav-link.w--current{color:var(--colour--ink);box-shadow:inset 0 -2px 0 var(--colour--ink)}
-@media (max-width:767px){.hf-nav-link.w--current{box-shadow:none}}
+.hf-nav-link.w--current{color:var(--colour--ink);box-shadow:inset 0 -2px 0 var(--colour--brand-blue)}
+.hf-nav-link:not(.w--current):hover{box-shadow:inset 0 -2px 0 var(--colour--pale-blue)}
+@media (max-width:991px){.hf-nav-link.w--current,.hf-nav-link:hover{box-shadow:none}}
 
 /* The action finder's heading is bigger than other box headings */
 .hf-box:has(#hf-filter)>.hf-box-heading{font-family:var(--font--display),Arial,sans-serif;font-size:clamp(34px,5vw,56px);font-weight:800;line-height:1.04;letter-spacing:-.03em;color:var(--colour--ink);margin:0 0 16px}

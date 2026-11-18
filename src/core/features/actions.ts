@@ -1,5 +1,6 @@
 import { CMS, COUNT_THRESHOLD } from '../config';
 import type { Deps, Env } from '../env';
+import { refreshActive } from './active';
 import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
 import { enqueue } from '../queue';
@@ -165,7 +166,12 @@ export async function publicCount(env: Env, actionId: string): Promise<number | 
 }
 
 export async function memberTally(env: Env, memberId: number): Promise<number> {
-  const r = await env.DB.prepare(`SELECT COUNT(*) AS n FROM done_marks WHERE member_id = ?1`).bind(memberId).first<{ n: number }>();
+  // People made happy: each "I did this" counts the action's "how many" (1, 3, 8 or 25), as in the ripple.
+  const r = await env.DB.prepare(
+    `SELECT COALESCE(SUM(COALESCE(a.people_reached, 1)), 0) AS n FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id WHERE d.member_id = ?1`,
+  )
+    .bind(memberId)
+    .first<{ n: number }>();
   return r?.n ?? 0;
 }
 
@@ -240,7 +246,9 @@ export async function markDone(env: Env, deps: Deps, member: Member, actionId: s
     .first<{ id: number; done_at: string }>();
   await forgetCounts(env, actionId);
   await recomputeKeeps(env, member.id);
+  const active = await refreshActive(env, deps, member.id);
   return {
+    active,
     markId: mark!.id,
     doneAt: mark!.done_at,
     tally: await memberTally(env, member.id),
@@ -270,7 +278,8 @@ export async function undoDone(env: Env, deps: Deps, member: Member, actionId: s
   await forgetRings(env, member.id);
   await recomputeKeeps(env, member.id);
   const left = await env.DB.prepare(`SELECT COUNT(*) AS n FROM done_marks WHERE member_id = ?1 AND action_id = ?2`).bind(member.id, actionId).first<{ n: number }>();
-  return { actionId, done: (left?.n ?? 0) > 0, tally: await memberTally(env, member.id), count: await publicCount(env, actionId) };
+  const active = await refreshActive(env, deps, member.id);
+  return { active, actionId, done: (left?.n ?? 0) > 0, tally: await memberTally(env, member.id), count: await publicCount(env, actionId) };
 }
 
 async function forgetCounts(env: Env, actionId: string): Promise<void> {

@@ -10,6 +10,7 @@ import { claimGuest, expireGuests, guestFromRequest, memberOrGuest } from './fea
 import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
 import { recentActivity } from './features/activity';
+import { refreshAllActive } from './features/active';
 import { actionState, markDone, mostDone, resolveActionRef, setLike, syncActions, undoDone, writeCountsToCms } from './features/actions';
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
@@ -236,7 +237,7 @@ route(
   }),
 );
 
-route('GET', '/api/me', true, async ({ req, env, deps }) => json(await getAccount(env, await requireMember(req, env, deps))));
+route('GET', '/api/me', true, async ({ req, env, deps }) => json(await getAccount(env, deps, await requireMember(req, env, deps))));
 
 // The member's home area only: a light call for the header on a device that has no location yet.
 route('GET', '/api/me/home-area', true, async ({ req, env, deps }) => json({ homeArea: (await requireMember(req, env, deps)).home_area ?? null }));
@@ -383,6 +384,8 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['invite-summaries', 'inviteSummaries', 24 * HOUR, () => inviteSummaries(env, deps, baseUrl)],
     // Try before sign-up: guests not seen for 30 days can no longer be claimed.
     ['expire-guests', 'expireGuests', 24 * HOUR, () => expireGuests(env, deps)],
+    // Active membership: people drop out (and in) on time even without a new action.
+    ['active-members', 'activeMembers', 6 * HOUR, () => refreshAllActive(env, deps)],
   ];
   for (const [job, key, every, run] of jobs) {
     const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = ?1`).bind(job).first<{ last_run_at: string }>();

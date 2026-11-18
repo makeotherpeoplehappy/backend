@@ -87,7 +87,8 @@
     root.appendChild(el('h2', { text: 'Engagement' }));
     root.appendChild(el('div', { class: 'grid' }, [
       tile(e.members, 'Members', fmt(e.newMembers30d) + ' new in 30 days'),
-      tile(e.activeMembers7d, 'Active this week', fmt(e.activeMembers30d) + ' in 30 days'),
+      tile(i.activeMembers, 'Active members', 'Made someone happy in 4 of the last 5 weeks', true),
+      tile(e.activeMembers7d, 'Did an action this week', fmt(e.activeMembers30d) + ' in 30 days'),
       tile(e.likes, 'Likes'),
       tile(e.suggestions, 'Suggestions', fmt(e.suggestionsWaiting) + ' waiting for review'),
       tile(e.stories, 'Stories', fmt(e.storiesWaiting) + ' waiting for review')

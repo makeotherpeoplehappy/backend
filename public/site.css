@@ -98,5 +98,5 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 #hfp-auth::backdrop{background:rgba(17,20,24,.55)}
 #hfp-auth button[disabled]{opacity:.55;cursor:default}
 /* Live line (home): the dot pulses gently; still when the device asks for less motion */
-@keyframes hf-pulse{0%{box-shadow:0 0 0 0 rgba(255,111,94,.55)}70%{box-shadow:0 0 0 10px rgba(255,111,94,0)}100%{box-shadow:0 0 0 0 rgba(255,111,94,0)}}
+@keyframes hf-pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}70%{box-shadow:0 0 0 10px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
 .hf-live-dot{animation:hf-pulse 1.8s ease-out infinite}

@@ -95,7 +95,7 @@
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
     '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-ripple{margin:16px 0 0}.hfp-ripple-h{margin:0 0 8px}.hfp-ripple-svg{display:block;width:min(100%,360px);height:auto;margin:0 auto}.hfp-ripple-dot{cursor:pointer;outline:none}.hfp-ripple-dot:focus-visible{stroke:var(--colour--ink,#111418);stroke-width:2}.hfp-ripple-caption{min-height:1.5em;text-align:center;font-weight:600;margin:8px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-ripple{margin:16px 0 0}.hfp-ripple-h{margin:0 0 8px}.hfp-ripple-svg{display:block;height:auto;margin:0 auto}.hfp-ripple-dot{cursor:pointer;outline:none}.hfp-ripple-dot:focus-visible{stroke:var(--colour--ink,#111418);stroke-width:2}.hfp-ripple-caption{min-height:1.5em;text-align:center;font-weight:600;margin:8px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
     '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
@@ -381,7 +381,9 @@
     var box = el('div', { class: 'hfp-ripple' });
     box.appendChild(el(opts.small ? 'p' : 'h2', { class: 'hfp-ripple-h', text: copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached.toLocaleString() }) }));
     var size = 360, c = size / 2;
-    var svg = s('svg', { viewBox: '0 0 ' + size + ' ' + size, class: 'hfp-ripple-svg', role: 'img', 'aria-label': copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached }) });
+    // Only as big as the rings drawn, so a first ripple isn't lost in empty space.
+    var reach = 36 + Math.max(rings.length, 1) * 28 + 12;
+    var svg = s('svg', { viewBox: (c - reach) + ' ' + (c - reach) + ' ' + reach * 2 + ' ' + reach * 2, style: 'width:min(100%,' + Math.round(reach * 2.2) + 'px)', class: 'hfp-ripple-svg', role: 'img', 'aria-label': copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached }) });
     var caption = el('p', { class: 'hfp-ripple-caption', 'aria-live': 'polite', text: rings.length ? copyText('ripple-tap') : '' });
     var shown = Math.max(rings.length, 1);
     for (var k = 1; k <= shown; k++) svg.appendChild(s('circle', { cx: c, cy: c, r: 36 + k * 28, fill: 'none', stroke: 'var(--colour--pale-blue, #cfe0f2)', 'stroke-width': 1.5 }));

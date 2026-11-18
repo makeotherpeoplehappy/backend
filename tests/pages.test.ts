@@ -426,7 +426,7 @@ describe('Sign-in window', () => {
     const AUTH_HTML = `<footer><dialog id="hfp-auth" class="hf-auth" data-hf-auth="1"><a href="#" data-hf-act="auth-close" aria-label="Close">×</a><img class="hf-auth-logo" src="https://site.test/logo.png" alt="Happiness Foundation">
       <p id="hfp-auth-title" data-hf-fill="auth-title">Sign in</p>
       <div data-hf-show="auth-providers"><a href="#" data-hf-act="auth-google"><span>Continue with Google</span></a><a href="#" data-hf-act="auth-otp"><span>Email me a sign-in code</span></a><div><span>or</span></div></div>
-      <form data-hf-form="auth" novalidate>${field('first-name', 'text')}${field('email', 'email')}${field('code', 'text')}${field('password', 'password')}${field('password-new', 'password')}<button type="submit" data-hf-fill="auth-go">Sign in</button><p data-hf-fill="auth-msg"></p></form>
+      <div class="w-form"><form data-hf-form="auth" novalidate>${field('first-name', 'text')}${field('email', 'email')}${field('code', 'text')}${field('password', 'password')}${field('password-new', 'password')}<button type="submit" data-hf-fill="auth-go">Sign in</button><p data-hf-fill="auth-msg"></p></form><div class="w-form-done">Thank you</div><div class="w-form-fail">Oops</div></div>
       <div>${link('forgot', 'reset', 'Forgot password?')}${link('signup', 'signup', 'New here? Create a free account')}${link('signin', 'signin', 'Already have an account? Sign in')}${link('password', 'password', 'Use a password instead')}${link('back', 'signin', 'Back to sign in')}</div></dialog></footer>`;
     const p = await page('/account', AUTH_HTML, () => undefined);
     const done: { fn: string; arg: unknown }[] = [];

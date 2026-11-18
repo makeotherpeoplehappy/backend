@@ -388,9 +388,12 @@ describe('Share your story', () => {
 
 describe('Suggest an action', () => {
   it('sends the idea to the backend instead of the Webflow form', async () => {
-    const html = `<div class="w-form"><form id="wf-form-Suggest-an-action"><label for="name">Name</label><input id="name"><label for="email">Email</label><input id="email" required><textarea id="Idea"></textarea><input type="submit" value="Send"></form><div class="w-form-done" style="display:none"><p>Thank you. Your idea is with us.</p></div><div class="w-form-fail" style="display:none"></div></div>`;
+    const html = `<div class="w-form"><form id="wf-form-Suggest-an-action"><p data-hf-show="signin-note">You will be asked to sign in</p><textarea id="Idea"></textarea><input type="submit" value="Send"><p data-hf-fill="sug-msg"></p></form><div class="w-form-done" style="display:none"><p>Thank you. Your idea is with us.</p></div><div class="w-form-fail" style="display:none"></div></div>`;
     const p = await page('/suggest-an-action', html, (m, path) => (m === 'POST' && path === '/api/suggestions' ? { status: 201, data: { id: 1 } } : undefined));
-    expect((p.document.getElementById('email') as unknown as HTMLInputElement).required).toBe(false);
+    expect(p.document.querySelector('[data-hf-show="signin-note"]')!.hasAttribute('data-hf-on')).toBe(false);
+    p.document.getElementById('wf-form-Suggest-an-action')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
+    await p.settle();
+    expect(p.document.querySelector('[data-hf-fill="sug-msg"]')!.textContent).toBe(WORDING['sug-empty']);
     (p.document.getElementById('Idea') as unknown as HTMLTextAreaElement).value = 'Leave a note on a bike';
     p.document.getElementById('wf-form-Suggest-an-action')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
     await p.settle();
@@ -418,7 +421,14 @@ const DROP_WEBFLOW = `<div class="hf-drop"><div class="hf-drop-body"><p class="h
 
 describe('Sign-in window', () => {
   async function authPage() {
-    const p = await page('/account', '<a class="w-nav-brand" href="/"><img src="https://site.test/logo.png" alt="Happiness Foundation"></a>', () => undefined);
+    const field = (n: string, type: string) => `<div data-hf-show="auth-f-${n}"><label for="hfp-auth-${n}">${n}</label><input id="hfp-auth-${n}" class="hf-form-input" type="${type}" name="${n}" data-hf-field="${n}"></div>`;
+    const link = (show: string, to: string, text: string) => `<a href="#" data-hf-act="auth-to" data-hf-to="${to}" data-hf-show="auth-l-${show}">${text}</a>`;
+    const AUTH_HTML = `<footer><dialog id="hfp-auth" class="hf-auth" data-hf-auth="1"><a href="#" data-hf-act="auth-close" aria-label="Close">×</a><img class="hf-auth-logo" src="https://site.test/logo.png" alt="Happiness Foundation">
+      <p id="hfp-auth-title" data-hf-fill="auth-title">Sign in</p>
+      <div data-hf-show="auth-providers"><a href="#" data-hf-act="auth-google"><span>Continue with Google</span></a><a href="#" data-hf-act="auth-otp"><span>Email me a sign-in code</span></a><div><span>or</span></div></div>
+      <form data-hf-form="auth" novalidate>${field('first-name', 'text')}${field('email', 'email')}${field('code', 'text')}${field('password', 'password')}${field('password-new', 'password')}<button type="submit" data-hf-fill="auth-go">Sign in</button><p data-hf-fill="auth-msg"></p></form>
+      <div>${link('forgot', 'reset', 'Forgot password?')}${link('signup', 'signup', 'New here? Create a free account')}${link('signin', 'signin', 'Already have an account? Sign in')}${link('password', 'password', 'Use a password instead')}${link('back', 'signin', 'Back to sign in')}</div></dialog></footer>`;
+    const p = await page('/account', AUTH_HTML, () => undefined);
     const done: { fn: string; arg: unknown }[] = [];
     const fake = (fn: string, fail?: { code: string; message: string }) => async (arg: unknown) => {
       done.push({ fn, arg });
@@ -440,38 +450,46 @@ describe('Sign-in window', () => {
     let reloads = 0;
     Object.defineProperty(p.window.location, 'reload', { value: () => void reloads++, configurable: true });
     const fill = (name: string, value: string) => {
-      const i = p.document.querySelector(`#hfp-auth input[name="${name}"]`) as unknown as { value: string };
+      const i = p.document.querySelector(`#hfp-auth input[name="${name}"]:not([disabled])`) as unknown as { value: string };
       i.value = value;
     };
     const submit = async () => {
       (p.document.querySelector('#hfp-auth form') as unknown as { requestSubmit: () => void }).requestSubmit();
       await p.settle();
     };
-    const text = () => p.document.getElementById('hfp-auth')?.textContent || '';
-    return { ...p, w, done, fill, submit, text, reloads: () => reloads };
+    // What a visitor sees: text of the parts that are switched on (or never switched).
+    const text = () => {
+      const d = p.document.getElementById('hfp-auth')!.cloneNode(true) as unknown as Element;
+      d.querySelectorAll('[data-hf-show]:not([data-hf-on])').forEach((e) => e.remove());
+      return d.textContent || '';
+    };
+    const click = (sel: string) => (p.document.querySelector(`#hfp-auth ${sel}`) as unknown as { click: () => void }).click();
+    return { ...p, w, done, fill, submit, text, click, reloads: () => reloads };
   }
 
   it('is ours: our logo and wording, no Memberstack window, and a way to create an account', async () => {
     const a = await authPage();
     a.w.HFP.auth('signin');
-    const img = a.document.querySelector('#hfp-auth img.hfp-auth-logo') as unknown as { getAttribute: (n: string) => string };
-    expect(img.getAttribute('alt')).toBe('Happiness Foundation');
-    expect(a.text()).toContain(WORDING['auth-to-signup']);
-    expect(a.text()).toContain(WORDING['auth-google']);
+    expect((a.document.getElementById('hfp-auth') as unknown as { open: boolean }).open).toBe(true);
+    expect(a.text()).toContain('New here? Create a free account');
+    expect(a.text()).toContain('Continue with Google');
+    expect(a.text()).not.toContain('Back to sign in');
+    expect(a.document.getElementById('hfp-auth-title')!.textContent).toBe(WORDING['auth-signin-title']);
+    expect((a.document.querySelector('[data-hf-field="first-name"]') as unknown as { disabled: boolean }).disabled).toBe(true);
     expect(a.text().toLowerCase()).not.toContain('memberstack');
   });
 
   it('creates an account with the first name, and reloads signed in', async () => {
     const a = await authPage();
     a.w.HFP.auth('signin');
-    (a.document.querySelector('#hfp-auth .hfp-auth-links button:last-child') as unknown as { click: () => void }).click();
+    a.click('[data-hf-to="signup"]');
     expect(a.text()).toContain(WORDING['auth-signup-title']);
     a.fill('first-name', 'Tess');
     a.fill('email', 'tess@example.com');
-    a.fill('password', 'short');
+    a.fill('password-new', 'short');
     await a.submit();
     expect(a.text()).toContain(WORDING['auth-err-password']);
-    a.fill('password', 'long enough');
+    a.fill('password-new', 'long enough');
     await a.submit();
     expect(a.done).toEqual([{ fn: 'signup', arg: { email: 'tess@example.com', password: 'long enough', customFields: { 'first-name': 'Tess' } } }]);
     expect(a.reloads()).toBe(1);
@@ -484,12 +502,12 @@ describe('Sign-in window', () => {
     a.fill('password', 'wrong one');
     await a.submit();
     expect(a.text()).toContain(WORDING['auth-err-wrong']);
-    (a.document.querySelector('#hfp-auth .hfp-auth-links button') as unknown as { click: () => void }).click();
+    a.click('[data-hf-to="reset"]');
     a.fill('email', 'tess@example.com');
     await a.submit();
     expect(a.text()).toContain('We sent a code to tess@example.com');
     a.fill('code', '123456');
-    a.fill('password', 'a new password');
+    a.fill('password-new', 'a new password');
     await a.submit();
     expect(a.done.slice(1)).toEqual([
       { fn: 'reset', arg: { email: 'tess@example.com' } },
@@ -500,8 +518,9 @@ describe('Sign-in window', () => {
   it('signs in with a code by email, no password needed', async () => {
     const a = await authPage();
     a.w.HFP.auth('signin');
-    expect(a.text()).toContain(WORDING['auth-otp']);
-    (a.document.querySelector('#hfp-auth .hfp-auth-mail') as unknown as { click: () => void }).click();
+    expect(a.text()).toContain('Email me a sign-in code');
+    a.click('[data-hf-act="auth-otp"]');
+    expect(a.text()).toContain('Use a password instead');
     a.fill('email', 'tess@example.com');
     await a.submit();
     expect(a.text()).toContain('We sent a code to tess@example.com');
@@ -517,7 +536,7 @@ describe('Sign-in window', () => {
   it('creates an account with a code by email, keeping the first name', async () => {
     const a = await authPage();
     a.w.HFP.auth('signup');
-    (a.document.querySelector('#hfp-auth .hfp-auth-mail') as unknown as { click: () => void }).click();
+    a.click('[data-hf-act="auth-otp"]');
     a.fill('first-name', 'Tess');
     a.fill('email', 'tess@example.com');
     await a.submit();
@@ -770,5 +789,24 @@ describe('Account lists (built in Webflow)', () => {
     expect(calls).toContain('DELETE /api/invites/abc/join');
     expect(items('invited').length).toBe(0);
     expect(d.getElementById('acct-invited')!.hasAttribute('data-hf-on')).toBe(false);
+  });
+});
+
+describe('Keep your pledge', () => {
+  const HTML = `<div id="hf-claim"><p data-hf-fill="claim-msg"></p><div data-hf-show="claim-out"><a data-hf-act="signup" href="/account">Create a free account</a><a data-hf-act="signin" href="/account">Sign in</a></div><div data-hf-show="claim-done"><a href="/actions">Find an action</a></div></div>`;
+  const on = (d: Document, k: string) => d.querySelector(`[data-hf-show="${k}"]`)!.hasAttribute('data-hf-on');
+
+  it('asks a signed-out visitor to create an account or sign in', async () => {
+    const p = await page('/keep-your-pledge?c=ABC', HTML, () => undefined, { signedIn: false });
+    expect(on(p.document as unknown as Document, 'claim-out')).toBe(true);
+    expect(on(p.document as unknown as Document, 'claim-done')).toBe(false);
+  });
+
+  it('adds the pledge to the account and shows what to do next', async () => {
+    const p = await page('/keep-your-pledge?c=ABC', HTML, (m, path) => (m === 'POST' && path === '/api/pledges/claim' ? { data: { claimed: 2 } } : undefined));
+    expect(p.calls).toContainEqual(expect.objectContaining({ method: 'POST', path: '/api/pledges/claim', body: { code: 'ABC' } }));
+    expect(p.document.querySelector('[data-hf-fill="claim-msg"]')!.textContent).toContain('Your 2 pledges are in your account');
+    expect(on(p.document as unknown as Document, 'claim-done')).toBe(true);
+    expect(on(p.document as unknown as Document, 'claim-out')).toBe(false);
   });
 });

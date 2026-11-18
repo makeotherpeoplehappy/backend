@@ -680,7 +680,7 @@
   // ---------------------------------------------------------------------------
   // Account
   // ---------------------------------------------------------------------------
-  // Account lists are built in Webflow: each list (data-hf-slot) holds a hidden
+  // Lists are built in Webflow: each list (data-hf-slot) holds a hidden
   // design (data-hf-template) that is copied once per item and filled in.
   function fromTemplate(list, name) {
     var t = list.querySelector('[data-hf-template="' + name + '"]');
@@ -693,7 +693,7 @@
   function partIn(root, n) { return root.querySelector('[data-hf-part="' + n + '"]'); }
   // name is the list (data-hf-slot); its item design is data-hf-template=design (default: the same name).
   function fillList(name, items, draw, design) {
-    var list = document.querySelector('#hf-acct-in [data-hf-slot="' + name + '"]');
+    var list = document.querySelector('[data-hf-slot="' + name + '"]');
     if (!list) return;
     [].slice.call(list.children).forEach(function (c) { if (!c.hasAttribute('data-hf-template')) list.removeChild(c); });
     items.forEach(function (x) { var li = fromTemplate(list, design || name); if (li) { draw(li, x); list.appendChild(li); } });
@@ -1398,6 +1398,9 @@
   // ---------------------------------------------------------------------------
   // Do this with me (invite page)
   // ---------------------------------------------------------------------------
+  // The page is built in Webflow: the inviter's note, the group line, the first-name
+  // form, the "you're in" line with Leave, "See the action" and the list of other
+  // actions (for an invite whose action is gone). This fills them and shows the right ones.
   async function invitePage() {
     var titleEl = $('hf-join-title');
     if (!titleEl || titleEl.getAttribute('data-hfp')) return;
@@ -1407,14 +1410,42 @@
     var actionEl = $('hf-join-action');
     var descEl = $('hf-join-desc');
     var inBtn = $('hf-join-in');
-    var noteEl = $('hf-join-note') || status();
-    noteEl.setAttribute('role', 'status');
+    var noteEl = $('hf-join-note');
+    if (noteEl) { noteEl.setAttribute('role', 'status'); noteEl.setAttribute('aria-live', 'polite'); }
+    var P = partsOf(titleEl.parentNode);
+    var form = P.one('[data-hf-form="ask-name"]');
+    var nameIn = form && form.querySelector('[data-hf-field="first-name"]');
+    var see = P.one('[data-hf-link="see"]');
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (HF.finish) { try { await HF.finish(); } catch (e) {} }
 
+    async function join(firstName) {
+      var jr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'POST', guest: true, body: firstName ? { firstName: firstName } : {} });
+      if (jr.ok || (jr.data && jr.data.error === 'own_invite')) { P.show('ask-name', false); await render(); return; }
+      if (jr.data && jr.data.error === 'need_join_name') { P.show('ask-name', true); if (nameIn) nameIn.focus(); return; }
+      say(noteEl, msgOf(jr), true);
+    }
+    nativeForm(form, async function () {
+      var name = nameIn ? nameIn.value.trim() : '';
+      if (!name) { if (nameIn) nameIn.focus(); return; }
+      var go = form.querySelector('[type=submit]');
+      setBusy(go, true);
+      await join(name);
+      setBusy(go, false);
+    });
+    P.on('leave', async function (b) {
+      setBusy(b, true);
+      var lr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'DELETE' });
+      setBusy(b, false);
+      if (lr.ok) render();
+    });
+
     async function render() {
+      ['note', 'group', 'see', 'joined', 'ask-name', 'alternatives'].forEach(function (k) { P.show(k, false); });
+      say(noteEl, '');
+      inBtn.style.display = '';
       var r = await HFB.call('/api/invites/' + encodeURIComponent(code));
-      if (!r.ok) { titleEl.textContent = copyText('inv-invalid-h'); actionEl.textContent = copyText('inv-invalid'); descEl.textContent = ''; inBtn.textContent = copyText('inv-find'); inBtn.href = '/actions'; return; }
+      if (!r.ok) { titleEl.textContent = copyText('inv-invalid-h'); actionEl.textContent = copyText('inv-invalid'); descEl.textContent = ''; inBtn.textContent = copyText('inv-find'); inBtn.href = '/actions'; inBtn.onclick = null; return; }
       var v = r.data;
       var who = v.inviterName || copyText('inv-someone');
       if (!v.action.live) {
@@ -1422,21 +1453,19 @@
         actionEl.textContent = v.action.title ? copyText('inv-gone', { title: v.action.title }) : '';
         descEl.textContent = copyText('inv-others');
         inBtn.style.display = 'none';
-        var ul = el('ul', { class: 'hfp-list' });
-        v.alternatives.forEach(function (a) { ul.appendChild(el('li', null, [el('a', { href: '/action/' + a.slug, text: a.title })])); });
-        descEl.insertAdjacentElement('afterend', ul);
+        fillList('alternatives', v.alternatives || [], function (li, a) { setLink(partIn(li, 'title'), '/action/' + a.slug, a.title); }, 'alternative');
+        P.show('alternatives', !!(v.alternatives && v.alternatives.length));
         return;
       }
       actionEl.textContent = v.action.title;
       descEl.textContent = v.action.shortAnswer;
-      var groupEl = $('hfp-invite-group');
-      if (!groupEl) { groupEl = el('p', { id: 'hfp-invite-group', class: 'hfp-group' }); descEl.insertAdjacentElement('afterend', groupEl); }
-      groupEl.textContent = v.group ? groupLine(v.group) : '';
-      groupEl.style.display = v.group ? '' : 'none';
-      var link = el('a', { class: 'hf-button-light', href: '/action/' + v.action.slug, text: copyText('inv-see') });
+      P.fill('group', v.group ? groupLine(v.group) : '');
+      P.show('group', !!v.group);
+      if (see) see.setAttribute('href', '/action/' + v.action.slug);
       if (v.me && v.me.isMine) {
         titleEl.textContent = copyText('inv-mine-h');
         inBtn.textContent = copyText('inv-share');
+        inBtn.removeAttribute('aria-disabled');
         inBtn.onclick = function (e) {
           e.preventDefault();
           share({ title: document.title, text: copyText(v.kind === 'with_me' ? 'inv-share-with' : 'inv-share-pass', { name: who, title: v.action.title }), url: location.origin + HFB.base + '/' + code }, noteEl);
@@ -1444,50 +1473,25 @@
         return;
       }
       titleEl.textContent = copyText(v.kind === 'with_me' ? 'inv-with-h' : 'inv-pass-h', { name: who });
-      var noteBox = $('hfp-invite-note');
-      if (v.note && !noteBox) titleEl.insertAdjacentElement('afterend', el('blockquote', { id: 'hfp-invite-note', class: 'hf-lead', style: 'margin:0 0 16px;padding-left:16px;border-left:3px solid #222', text: copyText('inv-note', { note: v.note, name: who }) }));
+      P.fill('note', v.note ? copyText('inv-note', { note: v.note, name: who }) : '');
+      P.show('note', !!v.note);
       if (v.me && v.me.joined) {
         inBtn.textContent = copyText('inv-in');
         inBtn.setAttribute('aria-disabled', 'true');
         inBtn.onclick = function (e) { e.preventDefault(); };
-        noteEl.innerHTML = '';
-        noteEl.appendChild(document.createTextNode(copyText('inv-joined', { name: who }) + ' '));
-        var leave = el('button', { type: 'button', class: 'hfp-link', text: copyText('inv-leave') });
-        leave.addEventListener('click', async function () {
-          var lr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'DELETE' });
-          if (lr.ok) render();
-        });
-        noteEl.appendChild(leave);
-        if (!$('hfp-see-action')) { link.id = 'hfp-see-action'; inBtn.parentNode.appendChild(document.createTextNode(' ')); inBtn.parentNode.appendChild(link); }
+        P.fill('joined', copyText('inv-joined', { name: who }) + ' ');
+        P.show('joined', true);
+        P.show('see', true);
         return;
       }
       inBtn.textContent = copyText('inv-join');
       inBtn.removeAttribute('aria-disabled');
-      noteEl.textContent = '';
-      async function join(firstName) {
-        var jr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'POST', guest: true, body: firstName ? { firstName: firstName } : {} });
-        if (jr.ok || (jr.data && jr.data.error === 'own_invite')) { var f = $('hfp-join-name'); if (f) { f.style.display = 'none'; try { f.remove(); } catch (x) {} } render(); return true; }
-        noteEl.textContent = msgOf(jr);
-        return false;
-      }
-      inBtn.onclick = async function (e) {
+      inBtn.onclick = function (e) {
         e.preventDefault();
         if (signedIn()) return join();
         // No account needed: just a first name, so the group can see who joined.
-        if ($('hfp-join-name')) { $('hfp-join-first').focus(); return; }
-        var form = el('form', { id: 'hfp-join-name', class: 'hfp-card' });
-        var input = el('input', { class: 'hf-form-input w-input', id: 'hfp-join-first', autocomplete: 'given-name', maxlength: '40', required: true });
-        form.appendChild(el('label', { for: 'hfp-join-first', class: 'hf-form-label', text: copyText('join-name-label') }));
-        form.appendChild(input);
-        form.appendChild(el('button', { type: 'submit', class: 'hf-button', text: copyText('inv-join') }));
-        form.appendChild(el('p', { class: 'hfp-muted hfp-small', text: copyText('join-name-help') }));
-        form.addEventListener('submit', async function (ev) {
-          ev.preventDefault();
-          if (!input.value.trim()) return input.focus();
-          await join(input.value);
-        });
-        inBtn.parentNode.insertAdjacentElement('afterend', form);
-        input.focus();
+        P.show('ask-name', true);
+        if (nameIn) nameIn.focus();
       };
     }
     document.addEventListener('hfb:resumed', function () { render(); });
@@ -1497,22 +1501,9 @@
   // /stories and each story's page are rendered by Webflow from the CMS (newest
   // first, 20 a page); only their uploaded videos and report links need this script.
 
-  // ---------------------------------------------------------------------------
-  // /actions: "Most done"
-  // ---------------------------------------------------------------------------
-  async function mostDone() {
-    if (location.pathname !== '/actions' || $('hfp-most-done')) return;
-    await wait(function () { return window.HFB; }, 10000);
-    var r = await HFB.call('/api/most-done', { auth: false });
-    if (!r.ok || !r.data.actions.length) return;
-    var ol = el('ol', { class: 'hfp-list' });
-    r.data.actions.slice(0, 10).forEach(function (a) {
-      ol.appendChild(el('li', null, [el('a', { href: '/action/' + a.slug, text: a.title }), el('span', { class: 'hfp-muted', text: ' · ' + copyText('most-done-people', { n: a.people.toLocaleString() }) })]));
-    });
-    var box = el('section', { id: 'hfp-most-done', 'aria-labelledby': 'hfp-most-done-h' }, [el('h2', { id: 'hfp-most-done-h', text: copyText('most-done-h') }), ol]);
-    var footer = document.querySelector('footer');
-    footer ? footer.parentNode.insertBefore(box, footer) : document.body.appendChild(box);
-  }
+  // /actions: "Most done" is a Webflow collection list (Actions by their public done-count,
+  // which the backend writes to the CMS every hour). No script needed.
+
 
 
   // Header button (Webflow element with class hf-nav-cta, linking to /account):
@@ -1964,7 +1955,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, mostDone, weeklyDare, cmsClips];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, cmsClips];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

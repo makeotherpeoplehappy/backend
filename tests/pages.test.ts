@@ -228,7 +228,15 @@ describe('Action page', () => {
   });
 });
 
-const INVITE_HTML = `<h1 id="hf-join-title">Do this with me</h1><p id="hf-join-action"></p><p id="hf-join-desc"></p><p><a id="hf-join-in" href="/x" class="hf-button">I'm in</a></p><p id="hf-join-note"></p>`;
+const INVITE_HTML = `<div><h1 id="hf-join-title">Do this with me</h1><blockquote data-hf-show="note" data-hf-fill="note">x</blockquote>
+  <div><p id="hf-join-action"></p><p id="hf-join-desc"></p></div>
+  <div data-hf-show="alternatives"><ul data-hf-slot="alternatives"><li data-hf-template="alternative" data-hf-show="template"><a data-hf-part="title" href="/actions">x</a></li></ul></div>
+  <p data-hf-show="group" data-hf-fill="group">x</p>
+  <p><a id="hf-join-in" href="/x" class="hf-button">I'm in</a><a data-hf-show="see" data-hf-link="see" href="/actions">See the action</a></p>
+  <div data-hf-show="ask-name"><form data-hf-form="ask-name"><label for="first-name">Your first name</label><input id="first-name" data-hf-field="first-name" required><input type="submit" value="I'm in"></form></div>
+  <div data-hf-show="joined"><span data-hf-fill="joined">x</span><a data-hf-act="leave" href="#">Leave this invite</a></div>
+  <p id="hf-join-note"></p></div>`;
+const invOn = (d: Document, k: string) => d.querySelector(`[data-hf-show="${k}"]`)!.hasAttribute('data-hf-on');
 
 describe('Invite page', () => {
   it("shows who it is from and joins on \"I'm in\"", async () => {
@@ -236,13 +244,20 @@ describe('Invite page', () => {
     const p = await page('/do-this-with-me?i=AbCdEfGh23', INVITE_HTML, (m, path) => {
       if (m === 'GET' && path === '/api/invites/AbCdEfGh23') return { data: { kind: 'with_me', inviterName: 'Ana', note: 'Saturday?', action: { title: 'Cook a meal', shortAnswer: 'Cook for someone', slug: 'cook', live: true }, alternatives: [], me: { isMine: false, joined } } };
       if (m === 'POST') { joined = true; return { data: { joined: true } }; }
+      if (m === 'DELETE') { joined = false; return { data: { left: true } }; }
     });
     expect(p.document.getElementById('hf-join-title')!.textContent).toBe('Ana wants to do this with you');
-    expect(p.document.getElementById('hfp-invite-note')!.textContent).toBe('“Saturday?” – Ana');
+    expect(p.document.querySelector('[data-hf-fill="note"]')!.textContent).toBe('“Saturday?” – Ana');
+    expect(invOn(p.document as unknown as Document, 'note')).toBe(true);
     p.document.getElementById('hf-join-in')!.click();
     await p.settle();
     expect(p.document.getElementById('hf-join-in')!.textContent).toBe("You're in");
-    expect(p.document.body.textContent).toContain('Leave this invite');
+    expect(invOn(p.document as unknown as Document, 'joined')).toBe(true);
+    expect(invOn(p.document as unknown as Document, 'see')).toBe(true);
+    expect(p.document.querySelector('[data-hf-link="see"]')!.getAttribute('href')).toBe('/action/cook');
+    (p.document.querySelector('[data-hf-act="leave"]') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(p.calls).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/api/invites/AbCdEfGh23/join' }));
   });
 
   it('a signed-out visitor joins with just a first name, and sees the group', async () => {
@@ -256,30 +271,35 @@ describe('Invite page', () => {
       },
       { signedIn: false },
     );
-    expect(p.document.getElementById('hfp-invite-group')!.textContent).toContain('Just you so far');
+    expect(p.document.querySelector('[data-hf-fill="group"]')!.textContent).toContain('Just you so far');
+    expect(invOn(p.document as unknown as Document, 'ask-name')).toBe(false);
     p.document.getElementById('hf-join-in')!.click();
     await p.settle();
     expect(p.signIns).toEqual([]);
-    const input = p.document.getElementById('hfp-join-first') as unknown as { value: string };
+    expect(invOn(p.document as unknown as Document, 'ask-name')).toBe(true);
+    const input = p.document.getElementById('first-name') as unknown as { value: string };
     input.value = 'Ben';
-    p.document.getElementById('hfp-join-name')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }));
+    p.document.querySelector('[data-hf-form="ask-name"]')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }));
     await p.settle();
     expect(p.calls).toContainEqual({ method: 'POST', path: '/api/invites/AbCdEfGh23/join', body: { firstName: 'Ben' } });
     expect(p.document.getElementById('hf-join-in')!.textContent).toBe("You're in");
-    expect(p.document.getElementById('hfp-invite-group')!.textContent).toBe('2 of you are in: Ben');
-    expect(p.document.getElementById('hfp-join-name')?.style.display ?? 'none').toBe('none');
+    expect(p.document.querySelector('[data-hf-fill="group"]')!.textContent).toBe('2 of you are in: Ben');
+    expect(invOn(p.document as unknown as Document, 'ask-name')).toBe(false);
   });
 
   it('caps the names at five, then "+ N more"', async () => {
     const p = await page('/do-this-with-me?i=AbCdEfGh23', INVITE_HTML, () => ({ data: { kind: 'with_me', inviterName: 'Ana', action: { title: 'Cook', shortAnswer: '', slug: 'cook', live: true }, alternatives: [], group: { count: 201, names: ['A', 'B', 'C', 'D', 'E'], more: 195 }, me: null } }));
-    expect(p.document.getElementById('hfp-invite-group')!.textContent).toBe('201 of you are in: A, B, C, D, E + 195 more');
+    expect(p.document.querySelector('[data-hf-fill="group"]')!.textContent).toBe('201 of you are in: A, B, C, D, E + 195 more');
   });
 
   it('a removed action shows three others', async () => {
     const alts = [1, 2, 3].map((n) => ({ slug: `a${n}`, title: `Action ${n}` }));
     const p = await page('/do-this-with-me?i=AbCdEfGh23', INVITE_HTML, () => ({ data: { kind: 'with_me', inviterName: 'Ana', action: { title: 'Old', slug: null, live: false }, alternatives: alts, me: null } }));
     expect(p.document.getElementById('hf-join-title')!.textContent).toBe('This action is no longer available');
-    expect(p.document.querySelectorAll('.hfp-list a')).toHaveLength(3);
+    const links = [...p.document.querySelectorAll('[data-hf-slot="alternatives"] > li:not([data-hf-template]) a')];
+    expect(links.map((a) => a.getAttribute('href'))).toEqual(['/action/a1', '/action/a2', '/action/a3']);
+    expect(invOn(p.document as unknown as Document, 'alternatives')).toBe(true);
+    expect(p.document.getElementById('hf-join-in')!.style.display).toBe('none');
   });
 });
 

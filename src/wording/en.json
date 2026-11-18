@@ -298,5 +298,6 @@
   "shop-notify-saved": "Done. We'll email you when you can buy.",
   "shop-size-pick": "Pick a size",
   "shop-size-sold-out": "{size} – sold out",
-  "shop-buying": "Taking you to checkout…"
+  "shop-buying": "Taking you to checkout…",
+  "shop-edition": "Edition of {n}"
 }

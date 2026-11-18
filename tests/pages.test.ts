@@ -928,7 +928,7 @@ describe('Shop', () => {
     expect(shown(d.querySelector('[data-hf-show="product-upcoming"]'))).toBe(true);
     expect(shown(d.querySelector('[data-hf-show="product-buy"]'))).toBe(false);
     expect(shown(d.querySelector('[data-hf-show="product-sizes"]'))).toBe(false);
-    expect(d.querySelector('[data-hf-fill="product-left"]')!.textContent).toBe('38 of 100 left');
+    expect(d.querySelector('[data-hf-fill="product-left"]')!.textContent).toBe('Edition of 100');
     expect(d.querySelector('[data-hf-fill="product-countdown"]')!.textContent).toMatch(/^Opens in \d+ days$/);
     (act(d, 'notify') as unknown as { click: () => void }).click();
     await p.settle();

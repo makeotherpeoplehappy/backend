@@ -100,7 +100,9 @@ fulfilment; Memberstack keeps members (there are no Shopify customer logins).
   **Hero headline** (`custom.hero_headline`; mark the accent word with asterisks,
   e.g. `Happiness is felt by making other people *happy*.`) and **Lead piece**
   (`custom.lead_product`; else the collection's first product). The copy also
-  carries the drop's pieces and **sold out** (every piece counted, none left);
+  carries the drop's pieces, **sold out** (every piece counted, none left) and the
+  switches the home page shows or hides its parts with (**Hero on**, **Hero off**,
+  **Open**);
   orders, cancellations and refunds queue a copy so it follows stock. Until a drop
   has a hero photo, and once it is sold out, the home page shows its usual hero.
 - **Early access:** Active members can buy `EARLY_ACCESS_HOURS` (24) before the drop

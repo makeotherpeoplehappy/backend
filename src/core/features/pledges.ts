@@ -11,6 +11,7 @@ import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
 import { listDrops } from './drops';
 import { OWN_SHOP, ensureClaim } from './claims';
+import { ORDER_MEMBER_ATTRIBUTE, memberFromTag } from './order-member';
 
 export interface OrderLine {
   lineId: string;
@@ -21,6 +22,8 @@ export interface OrderLine {
 
 export interface Order {
   orderId: string;
+  /** The member the site's checkout put on the order (signed), when they were signed in. */
+  memberTag?: string | null;
   email: string | null;
   customerId: string | null;
   orderedAt: string;
@@ -53,8 +56,11 @@ export function orderFromWebhook(body: Record<string, unknown>): Order | null {
       return { lineId, productId: gid('Product', l.product_id), quantity: Number(l.quantity || 0), refunded: refunded.get(lineId) || 0 };
     });
   const email = String(body.email || body.contact_email || customer.email || '').trim().toLowerCase() || null;
+  const attrs = ((body.note_attributes as { name?: unknown; value?: unknown }[] | undefined) || []);
+  const memberTag = attrs.find((a) => a.name === ORDER_MEMBER_ATTRIBUTE)?.value;
   return {
     orderId: id,
+    memberTag: typeof memberTag === 'string' ? memberTag : null,
     email,
     customerId: gid('Customer', customer.admin_graphql_api_id || customer.id),
     orderedAt: new Date(String(body.processed_at || body.created_at || Date.now())).toISOString(),
@@ -70,9 +76,15 @@ async function dropOfProduct(env: Env, deps: Deps): Promise<Map<string, string>>
   return map;
 }
 
-// The shop's customer accounts are separate from foundation members
-// (Memberstack), so an order joins the member with the same verified email.
+// Members are Memberstack's, not Shopify's. An order from the site's checkout
+// carries the member (signed); any other order joins the member with the same
+// verified email, else the buyer gets a "Keep your pledge" link.
 async function memberFor(env: Env, order: Order): Promise<number | null> {
+  const tagged = await memberFromTag(env, order.memberTag);
+  if (tagged) {
+    const m = await env.DB.prepare(`SELECT id FROM members WHERE id = ?1 AND deleted_at IS NULL`).bind(tagged).first<{ id: number }>();
+    if (m) return m.id;
+  }
   if (order.email) {
     const m = await env.DB.prepare(`SELECT id FROM members WHERE email = ?1 AND deleted_at IS NULL ORDER BY id LIMIT 1`).bind(order.email).first<{ id: number }>();
     if (m) return m.id;

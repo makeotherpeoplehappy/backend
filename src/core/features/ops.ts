@@ -253,6 +253,10 @@ export async function labKpis(env: Env, deps: Deps) {
        FROM outbox WHERE status = 'dead' ORDER BY updated_at DESC LIMIT 10`,
     ),
     actionsMirrored: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
+    // The shop: Buy needs the Headless channel's Storefront token in the backend settings.
+    shopCheckoutReady: !!env.SHOPIFY_STOREFRONT_TOKEN,
+    notifySignups: await n(`SELECT COUNT(*) AS n FROM drop_notify WHERE notified_at IS NULL`),
+    checkouts7d: await n(`SELECT COUNT(*) AS n FROM checkouts WHERE created_at >= '${iso(new Date(now.getTime() - 7 * 86_400_000))}'`),
     jobs: await many<{ job: string; last_run_at: string }>(`SELECT job, last_run_at FROM job_runs ORDER BY job`),
     dareWarnings: await dareWarnings(env, deps),
   };

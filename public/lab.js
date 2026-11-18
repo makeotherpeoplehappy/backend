@@ -103,13 +103,16 @@
     root.appendChild(accessPanel(k.me));
     // Technical checks: one quiet line when all is well; the details open on a tap, and show
     // straight away when something needs attention.
-    var trouble = h.queueFailed > 0 || h.queuePending > 0;
+    var trouble = h.queueFailed > 0 || h.queuePending > 0 || h.shopCheckoutReady === false;
     var details = el('details', trouble ? { open: '' } : {}, [
       el('summary', { class: 'sub', style: 'cursor:pointer;margin:48px 0 12px', text: trouble ? 'System: needs attention' : 'System: all running normally' }),
       table(['Check', 'Value'], [
         ['Writes waiting to retry', h.queuePending],
         ['Writes that failed', h.queueFailed],
-        ['Actions mirrored', h.actionsMirrored]
+        ['Actions mirrored', h.actionsMirrored],
+        ['Shop checkout', h.shopCheckoutReady ? 'Ready' : 'Needs the Storefront token (SHOPIFY_STOREFRONT_TOKEN)'],
+        ['Notify me sign-ups waiting', h.notifySignups],
+        ['Checkouts started, 7 days', h.checkouts7d]
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))
     ]);
     if ((h.failedWrites || []).length) {

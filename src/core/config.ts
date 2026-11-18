@@ -47,16 +47,13 @@ export const CMS = {
       rejected: 'e2e01c9b7f6584b7f9e65faca50e1773',
     },
   },
+  /** Shop products, copied from Shopify by shop.ts (product pages at /product/<handle>). */
   products: {
-    id: '6af88f08848599f43fec76c8',
+    id: '6afe00a75969cf93ee81b0bc',
   },
+  /** Drops (Shopify collections with a drop date), copied by shop.ts. */
   drops: {
-    id: '6af92c5cccbe9a8c51c0789b',
-    status: {
-      upcoming: '84e93c6e454298fb5d27b0560cfcb722',
-      live: 'd0f494f8da2232e9bec526a3cce776af',
-      soldOut: 'd804c22cd5d0d4c42b9be6c997cd94dc',
-    },
+    id: '6afe009d7ff9b83f1cac80fa',
   },
   stories: {
     id: '6af93db2a61504315554fd90',
@@ -95,3 +92,6 @@ export type EmailKind = keyof typeof EMAIL_KINDS;
 
 // How many public "done" people an action needs before its count is shown.
 export const COUNT_THRESHOLD = 10;
+
+/** Hours before a drop's date when Active members can buy it (one of each piece). */
+export const EARLY_ACCESS_HOURS = 24;

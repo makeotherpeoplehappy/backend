@@ -2069,11 +2069,174 @@
     window.addEventListener('hf-done', refresh);
   }
 
+  // ---------------------------------------------------------------------------
+  // The shop. Shop page: each drop block in Webflow carries data-hf-drop="<slug>"
+  // (bound to the Drops collection); product page: [data-hf-row="product"] with
+  // data-hf-product="<handle>". Everything you read is Webflow's; this only shows
+  // the right state block (drop-upcoming, drop-early, drop-live, drop-sold-out,
+  // product-…), fills times, stock and sizes, and runs Notify me and Buy.
+  // ---------------------------------------------------------------------------
+  /** "Opens in 3 days" / "in 5 hours" / "in 20 minutes". */
+  function opensIn(ms) {
+    var min = Math.floor(ms / 60000), h = Math.floor(min / 60), d = Math.floor(h / 24);
+    if (d >= 2) return copyText('shop-opens-days', { n: d });
+    if (h >= 2) return copyText('shop-opens-hours', { n: h });
+    if (h === 1) return copyText('shop-opens-hour');
+    if (min >= 1) return copyText('shop-opens-minutes', { n: min });
+    return copyText('shop-opens-soon');
+  }
+  /** "Fri 4 Dec, 17:00" in the visitor's own time zone. */
+  function whenText(iso2) {
+    if (!iso2) return '';
+    try { return new Date(iso2).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch (e) { return iso2; }
+  }
+  function leftText(left, total) {
+    if (left == null) return '';
+    return total ? copyText('shop-left-of', { n: left, total: total }) : copyText('shop-left', { n: left });
+  }
+  var PHASES = ['upcoming', 'early', 'live', 'sold_out'];
+  function showPhase(P, prefix, phase, list) {
+    (list || PHASES).forEach(function (ph) { P.show(prefix + '-' + ph.replace(/_/g, '-'), phase === ph); });
+  }
+  function notifyButtons(P, on) {
+    P.acts('notify').forEach(function (b) {
+      b.textContent = copyText(on ? 'shop-notified' : 'shop-notify');
+      b.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+  /** Notify me (or stop): signed out, it goes to sign-in and comes back here. */
+  async function toggleNotify(b, slug, on, msg) {
+    if (!signedIn()) { say(msg, copyText('shop-notify-signin')); return HFB.requireSignIn({ kind: 'return' }); }
+    setBusy(b, true);
+    var r = await HFB.call('/api/shop/notify', { method: 'POST', body: { drop: slug, on: on } });
+    setBusy(b, false);
+    if (!r.ok) { say(msg, msgOf(r), true); return null; }
+    say(msg, on ? copyText('shop-notify-saved') : '');
+    return r.data.notified;
+  }
+
+  async function shopPage() {
+    var blocks = [].slice.call(document.querySelectorAll('[data-hf-drop]'));
+    if (!blocks.length || blocks[0].getAttribute('data-hfp')) return;
+    await wait(function () { return window.HFB; }, 10000);
+    var data = null;
+    function draw() {
+      blocks.forEach(function (b) {
+        var P = partsOf(b);
+        var d = data && data.drops.filter(function (x) { return x.drop === b.getAttribute('data-hf-drop'); })[0];
+        if (!d) return;
+        showPhase(P, 'drop', d.phase);
+        P.fill('drop-early-at', whenText(d.earlyAt));
+        P.fill('drop-at', whenText(d.dropDate));
+        var to = d.phase === 'upcoming' ? d.earlyAt : d.phase === 'early' ? d.dropDate : null;
+        P.fill('drop-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
+        P.fill('drop-left', leftText(d.left, d.quantity));
+        notifyButtons(P, d.notified);
+        P.show('drop-notify', d.phase === 'upcoming' || d.phase === 'early');
+      });
+    }
+    async function load() {
+      var r = await HFB.call('/api/drops');
+      if (r.ok) { data = r.data; draw(); }
+    }
+    blocks.forEach(function (b) {
+      b.setAttribute('data-hfp', '1');
+      var P = partsOf(b);
+      P.on('notify', async function (btn) {
+        var d = data && data.drops.filter(function (x) { return x.drop === b.getAttribute('data-hf-drop'); })[0];
+        if (!d) return;
+        var now = await toggleNotify(btn, d.drop, !d.notified, P.one('[data-hf-fill="drop-msg"]'));
+        if (now !== null && now !== undefined) { d.notified = now; draw(); }
+      });
+    });
+    await load();
+    setInterval(function () {
+      if (document.hidden || !data) return;
+      // A phase may have changed (early access opened, the drop opened): ask again then.
+      var turn = data.drops.some(function (d) { return [d.earlyAt, d.dropDate].some(function (t) { return t && Date.parse(t) <= Date.now() && Date.parse(t) > Date.now() - 30000; }); });
+      if (turn) load(); else draw();
+    }, 20000);
+    document.addEventListener('hfb:resumed', load);
+  }
+
+  async function productPage() {
+    var row = document.querySelector('[data-hf-row="product"]');
+    if (!row || row.getAttribute('data-hfp')) return;
+    row.setAttribute('data-hfp', '1');
+    var handle = row.getAttribute('data-hf-product') || slugFromPath();
+    var P = partsOf(row.closest('section') || document.body);
+    var sizes = P.one('[data-hf-field="variant"]');
+    var msg = P.one('[data-hf-fill="product-msg"]');
+    await wait(function () { return window.HFB; }, 10000);
+    var st = null;
+    function draw() {
+      showPhase(P, 'product', st.status, PHASES.concat(['not_for_sale']));
+      P.show('product-buy', st.canBuy);
+      P.show('product-locked', !st.canBuy && st.status === 'early');
+      var why = st.reason ? 'err-buy-' + String(st.reason).split('_').join('-') : '';
+      P.fill('product-locked-why', !st.canBuy && why ? copyText(why) : '');
+      var d = st.drop;
+      P.fill('product-early-at', d ? whenText(d.earlyAt) : '');
+      P.fill('product-drop-at', d ? whenText(d.dropDate) : '');
+      var to = d ? (st.status === 'upcoming' ? d.earlyAt : st.status === 'early' ? d.dropDate : null) : null;
+      P.fill('product-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
+      P.fill('product-left', leftText(st.left, st.edition));
+      P.show('product-sizes', st.variants.length > 1);
+      if (sizes && st.variants.length > 1) {
+        var keep = sizes.value;
+        sizes.innerHTML = '';
+        var first = document.createElement('option');
+        first.value = '';
+        first.textContent = copyText('shop-size-pick');
+        sizes.appendChild(first);
+        st.variants.forEach(function (v) {
+          var o = document.createElement('option');
+          o.value = v.id;
+          o.textContent = v.available ? v.title : copyText('shop-size-sold-out', { size: v.title });
+          o.disabled = !v.available;
+          sizes.appendChild(o);
+        });
+        if (keep) sizes.value = keep;
+      }
+      notifyButtons(P, st.notified);
+      P.show('product-notify', !!d && (st.status === 'upcoming' || st.status === 'early') && !st.canBuy);
+    }
+    async function load() {
+      var r = await HFB.call('/api/shop/products/' + encodeURIComponent(handle));
+      if (r.ok) { st = r.data; draw(); }
+    }
+    P.on('buy', async function (b) {
+      if (!st || !st.canBuy || b.getAttribute('aria-busy')) return;
+      var v = st.variants.length === 1 ? st.variants[0].id : sizes && sizes.value;
+      if (!v) { say(msg, copyText('err-invalid-variant'), true); if (sizes) sizes.focus(); return; }
+      setBusy(b, true);
+      say(msg, copyText('shop-buying'));
+      var r = await HFB.call('/api/shop/checkout', { method: 'POST', body: { variant: v } });
+      if (r.ok && r.data && r.data.checkoutUrl) { location.href = r.data.checkoutUrl; return; }
+      setBusy(b, false);
+      say(msg, msgOf(r), true);
+      load();
+    });
+    P.on('notify', async function (b) {
+      if (!st || !st.drop) return;
+      var now = await toggleNotify(b, st.drop.slug, !st.notified, msg);
+      if (now !== null && now !== undefined) { st.notified = now; draw(); }
+    });
+    await load();
+    setInterval(function () {
+      if (document.hidden || !st) return;
+      var d = st.drop;
+      var turn = d && [d.earlyAt, d.dropDate].some(function (t) { return t && Date.parse(t) <= Date.now() && Date.parse(t) > Date.now() - 30000; });
+      if (turn) load(); else draw();
+    }, 20000);
+    document.addEventListener('hfb:resumed', load);
+  }
+
   function start() {
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

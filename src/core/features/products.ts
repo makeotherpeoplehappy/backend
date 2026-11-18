@@ -1,6 +1,6 @@
-// Shopify webhook subscriptions for this backend. Products are no longer
-// copied into Webflow: the shop is Shopify's own, and the backend only reads
-// Shopify (drops, stock, orders).
+// Shopify webhook subscriptions for this backend: orders and refunds (pledges),
+// products and collections (the shop is copied to Webflow by shop.ts) and
+// customer deletions.
 
 import type { Deps, Env } from '../env';
 import { adminGraphql, customerGid } from '../shopify';
@@ -9,7 +9,7 @@ import { adminGraphql, customerGid } from '../shopify';
 // Shopify webhook subscriptions for this backend.
 // ---------------------------------------------------------------------------
 
-const TOPICS = ['PRODUCTS_CREATE', 'PRODUCTS_UPDATE', 'PRODUCTS_DELETE', 'CUSTOMERS_DELETE', 'ORDERS_CREATE', 'ORDERS_UPDATED', 'ORDERS_CANCELLED', 'REFUNDS_CREATE'] as const;
+const TOPICS = ['PRODUCTS_CREATE', 'PRODUCTS_UPDATE', 'PRODUCTS_DELETE', 'COLLECTIONS_CREATE', 'COLLECTIONS_UPDATE', 'COLLECTIONS_DELETE', 'CUSTOMERS_DELETE', 'ORDERS_CREATE', 'ORDERS_UPDATED', 'ORDERS_CANCELLED', 'REFUNDS_CREATE'] as const;
 
 /** Makes sure Shopify sends order, product and customer-deletion events to this backend. */
 export async function ensureShopifyWebhooks(env: Env, deps: Deps, callbackUrl: string) {

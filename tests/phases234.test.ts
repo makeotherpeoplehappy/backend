@@ -541,12 +541,12 @@ describe('Phase 3: stock and drop state', () => {
     expect(await (await h.request('GET', '/api/drops/state')).json()).toMatchObject({ status: 'live', detailsLine: "100 pieces. Out now. Gone when they're gone." });
   });
 
-  it('holds drop products back in Shopify until the drop date, once', async () => {
+  it('holds drop products back in Shopify until early access opens (24 h before the drop), once', async () => {
     await setupDrop({ dropDate: '2026-12-05T17:00:00.000Z' });
     const out = await (await tick()).json();
     expect(out.dropReleases.scheduled).toEqual([PRODUCT]);
-    // Only the channel it was on; never a channel it was not on.
-    expect(h.fake.published.get(PRODUCT)).toEqual({ 'gid://shopify/Publication/1': '2026-12-05T17:00:00.000Z' });
+    // Only the channel it was on; never a channel it was not on. The site's checkout decides who may buy early.
+    expect(h.fake.published.get(PRODUCT)).toEqual({ 'gid://shopify/Publication/1': '2026-12-04T17:00:00.000Z' });
     h.clock.advance(61 * 60 * 1000);
     expect((await (await tick()).json()).dropReleases.scheduled).toEqual([]);
   });

@@ -35,6 +35,9 @@ export interface FakeProduct {
   seoDescription?: string | null;
   imageUrl?: string | null;
   editionSize?: number;
+  /** Sizes; default one size "One size" with the product's tracked stock. */
+  variants?: { id: string; title: string; available: boolean }[];
+  price?: string;
 }
 
 export interface FakeItem {
@@ -73,6 +76,8 @@ export class FakeServices {
   webflowDown = false;
   /** Webflow creates the item but the answer is lost (network drop). */
   webflowLoseNextCreateResponse = false;
+  /** Carts made through the Storefront API (the site's checkout). */
+  carts: { input: Record<string, unknown>; token: string | null; buyerIp: string | null }[] = [];
   shopifyDown = false;
   /** Memberstack's Admin API is unreachable. */
   memberstackDown = false;
@@ -157,6 +162,16 @@ export class FakeServices {
       return j({ access_token: this.adminToken, scope: 'read_customers,write_customers', expires_in: 86399 });
     }
 
+    // Shopify Storefront API (the site's checkout makes carts with the private token).
+    if (url.hostname === STORE && /^\/api\/[^/]+\/graphql\.json$/.test(url.pathname)) {
+      const q = body as { query: string; variables: { input: Record<string, unknown> } };
+      const token = headers.get('Shopify-Storefront-Private-Token');
+      if (token !== 'storefront_private_token') return j({ errors: [{ message: 'Unauthorized' }] }, 401);
+      this.carts.push({ input: q.variables.input, token, buyerIp: headers.get('Shopify-Storefront-Buyer-IP') });
+      const id = `gid://shopify/Cart/c${this.carts.length}`;
+      return j({ data: { cartCreate: { cart: { id, checkoutUrl: `https://${STORE}/cart/c/c${this.carts.length}` }, userErrors: [] } } });
+    }
+
     // Shopify Admin API
     if (url.hostname === STORE && url.pathname.startsWith('/admin/api/')) {
       if (!this.adminToken || headers.get('X-Shopify-Access-Token') !== this.adminToken) return j({ errors: 'Invalid API key or access token' }, 401);
@@ -178,6 +193,29 @@ export class FakeServices {
         seo: { description: p.seoDescription ?? null },
         featuredMedia: p.imageUrl ? { preview: { image: { url: p.imageUrl, altText: null } } } : null,
       });
+      const variantsOf = (p: FakeProduct) =>
+        p.variants || [{ id: `gid://shopify/ProductVariant/${p.id.split('/').pop()}1`, title: 'One size', available: true }];
+      if (q.query.includes('productByIdentifier')) {
+        const p = this.products.find((x) => x.handle === (q.variables.handle as string));
+        const inv = p ? this.inventory.get(p.id) : undefined;
+        return j({ data: { productByIdentifier: p ? {
+          id: p.id, handle: p.handle, status: p.status, tracksInventory: inv !== undefined && inv !== null, totalInventory: inv ?? 0,
+          edition: p.editionSize ? { value: String(p.editionSize) } : null,
+          variants: { nodes: variantsOf(p).map((v) => ({ id: v.id, title: v.title, availableForSale: v.available, inventoryQuantity: inv ?? null, price: p.price || '45.00' })) },
+        } : null } });
+      }
+      if (q.query.includes('productVariant(id:')) {
+        const p = this.products.find((x) => variantsOf(x).some((v) => v.id === q.variables.id));
+        return j({ data: { productVariant: p ? { id: q.variables.id, product: { handle: p.handle } } : null } });
+      }
+      if (q.query.includes('priceRangeV2 { minVariantPrice') && q.query.includes('media(first')) {
+        return j({ data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: this.products.filter((p) => p.status === 'ACTIVE').map((p) => ({
+          id: p.id, handle: p.handle, title: p.title, status: p.status, descriptionHtml: p.descriptionHtml, seo: { description: p.seoDescription ?? null },
+          edition: p.editionSize ? { value: String(p.editionSize) } : null,
+          priceRangeV2: { minVariantPrice: { amount: p.price || '45.0', currencyCode: 'USD' } },
+          media: { nodes: p.imageUrl ? [{ preview: { image: { url: p.imageUrl, altText: null } } }] : [] },
+        })) } } });
+      }
       if (q.query.includes('customers(first: 1, query: $q)')) {
         const email = String(q.variables.q).replace(/^email:"|"$/g, '');
         const m = this.marketing.get(email);
@@ -447,6 +485,7 @@ export async function createHarness(): Promise<Harness> {
     SHOPIFY_STORE_DOMAIN: STORE,
     SHOPIFY_CLIENT_ID: 'shopify_client_id',
     SHOPIFY_CLIENT_SECRET: 'shopify_webhook_secret',
+    SHOPIFY_STOREFRONT_TOKEN: 'storefront_private_token',
     WEBFLOW_API_TOKEN: 'wf_test',
     RESEND_API_KEY: 're_test',
     MEMBERSTACK_SECRET_KEY: 'sk_sb_test',

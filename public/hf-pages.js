@@ -2134,7 +2134,8 @@
         P.fill('drop-at', whenText(d.dropDate));
         var to = d.phase === 'upcoming' ? d.earlyAt : d.phase === 'early' ? d.dropDate : null;
         P.fill('drop-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
-        // The home hero's countdown: days, hours and minutes in their own boxes.
+        // The home hero's countdown: days, hours and minutes in their own boxes, until the drop opens to everyone.
+        P.show('drop-count', !!to);
         var ms = to ? Math.max(0, Date.parse(to) - Date.now()) : 0;
         P.fill('drop-days', String(Math.floor(ms / 864e5)));
         P.fill('drop-hours', String(Math.floor(ms / 36e5) % 24).padStart(2, '0'));

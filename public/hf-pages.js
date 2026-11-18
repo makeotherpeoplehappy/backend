@@ -438,46 +438,6 @@
     P.show('ripple-hint', rings.length <= 1);
   }
 
-  // Account (until its ripple card is built in Webflow): the same picture in a script-made box.
-  function rippleViz(view, opts) {
-    opts = opts || {};
-    var SVGNS = 'http://www.w3.org/2000/svg';
-    function s(tag, attrs) { var e = document.createElementNS(SVGNS, tag); Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); }); return e; }
-    var rings = (view && view.rings) || [];
-    var reached = (view && view.reached) || 0;
-    var box = el('div', { class: 'hfp-ripple' });
-    box.appendChild(el(opts.small ? 'p' : 'h2', { class: 'hfp-ripple-h', text: copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached.toLocaleString() }) }));
-    var size = 360, c = size / 2;
-    // Only as big as the rings drawn, so a first ripple isn't lost in empty space.
-    var reach = 36 + Math.max(rings.length, 1) * 28 + 12;
-    var svg = s('svg', { viewBox: (c - reach) + ' ' + (c - reach) + ' ' + reach * 2 + ' ' + reach * 2, style: 'width:min(100%,' + Math.round(reach * 2.2) + 'px)', class: 'hfp-ripple-svg', role: 'img', 'aria-label': copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached }) });
-    var caption = el('p', { class: 'hfp-ripple-caption', 'aria-live': 'polite', text: rings.length ? copyText('ripple-tap') : '' });
-    var shown = Math.max(rings.length, 1);
-    for (var k = 1; k <= shown; k++) svg.appendChild(s('circle', { cx: c, cy: c, r: 36 + k * 28, fill: 'none', stroke: 'var(--colour--pale-blue, #cfe0f2)', 'stroke-width': 1.5 }));
-    rings.forEach(function (ring, i) {
-      var r = 36 + (i + 1) * 28, n = ring.dots.length, turn = i * 0.37;
-      ring.dots.forEach(function (title, j) {
-        var a = turn + (j / Math.max(n, 1)) * Math.PI * 2;
-        var dot = s('circle', { cx: (c + r * Math.cos(a)).toFixed(1), cy: (c + r * Math.sin(a)).toFixed(1), r: i === 0 ? 7 : 5.5, fill: i === 0 ? 'var(--colour--deep-blue, #2e5e8e)' : i % 2 ? 'var(--colour--brand-blue, #69c)' : 'var(--colour--light-blue, #9ec0e3)', tabindex: '0', role: 'button', 'aria-label': title, class: 'hfp-ripple-dot' });
-        var t = s('title'); t.textContent = title; dot.appendChild(t);
-        function show() { caption.textContent = title; }
-        dot.addEventListener('click', show);
-        dot.addEventListener('focus', show);
-        svg.appendChild(dot);
-      });
-    });
-    svg.appendChild(s('circle', { cx: c, cy: c, r: 26, fill: 'var(--colour--deep-blue, #2e5e8e)' }));
-    var you = s('text', { x: c, y: c + 5, 'text-anchor': 'middle', fill: '#fff', 'font-size': 15, 'font-weight': 700 });
-    you.textContent = copyText('ripple-you');
-    svg.appendChild(you);
-    box.appendChild(svg);
-    box.appendChild(caption);
-    var more = rings.map(function (r, i) { return r.marks > r.dots.length ? copyText('ripple-more', { n: (r.marks - r.dots.length).toLocaleString(), ring: i + 1 }) : ''; }).filter(Boolean);
-    if (more.length) box.appendChild(el('p', { class: 'hfp-muted hfp-small', text: more.join(' · ') }));
-    if (rings.length <= 1) box.appendChild(el('p', { class: 'hfp-muted', text: copyText('ripple-share-hint') }));
-    return box;
-  }
-
   // ---------------------------------------------------------------------------
   // Action page. The buttons, messages, invite forms, win card, share card,
   // ripple and stories area are all built in the Action template in Webflow.
@@ -720,17 +680,41 @@
   // ---------------------------------------------------------------------------
   // Account
   // ---------------------------------------------------------------------------
-  // An extra account section, drawn as the same card as the Webflow ones.
-  function section(title, kids, id) { return el('div', { class: 'hf-acct-card', id: id || null }, [el('h2', { class: 'hf-acct-card-title', text: title })].concat(kids)); }
+  // Account lists are built in Webflow: each list (data-hf-slot) holds a hidden
+  // design (data-hf-template) that is copied once per item and filled in.
+  function fromTemplate(list, name) {
+    var t = list.querySelector('[data-hf-template="' + name + '"]');
+    if (!t) return null;
+    var c = t.cloneNode(true);
+    c.removeAttribute('data-hf-template');
+    c.removeAttribute('data-hf-show');
+    return c;
+  }
+  function partIn(root, n) { return root.querySelector('[data-hf-part="' + n + '"]'); }
+  // name is the list (data-hf-slot); its item design is data-hf-template=design (default: the same name).
+  function fillList(name, items, draw, design) {
+    var list = document.querySelector('#hf-acct-in [data-hf-slot="' + name + '"]');
+    if (!list) return;
+    [].slice.call(list.children).forEach(function (c) { if (!c.hasAttribute('data-hf-template')) list.removeChild(c); });
+    items.forEach(function (x) { var li = fromTemplate(list, design || name); if (li) { draw(li, x); list.appendChild(li); } });
+    var empty = list.parentNode && list.parentNode.querySelector('[data-hf-part="empty"]');
+    if (empty) empty.style.display = items.length ? 'none' : '';
+  }
+  function setLink(a, href, text) {
+    if (!a) return;
+    if (href) a.setAttribute('href', href); else a.removeAttribute('href');
+    if (text != null) a.textContent = text;
+  }
 
-  // Account sections open and close (the title is the switch). The impact card
-  // stays open. Defaults put what needs doing first; a section someone opens or
-  // closes stays that way on this device. The jump links open what they point to.
+  // Account sections open and close: the title in each card is a Webflow link
+  // (data-hf-act="fold"). The impact card stays open. Defaults put what needs
+  // doing first; a section someone opens or closes stays that way on this device.
+  // The jump links open what they point to.
   var FOLD_KEY = 'hfp_acct_open';
   function foldPrefs() { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {}; } catch (e) { return {}; } }
   function setFold(card, open, remember) {
     if (open) card.removeAttribute('data-hf-closed'); else card.setAttribute('data-hf-closed', '');
-    var b = card.querySelector('.hfp-fold');
+    var b = card.querySelector('[data-hf-act="fold"]');
     if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (remember && card.id) { var p = foldPrefs(); p[card.id] = open; try { localStorage.setItem(FOLD_KEY, JSON.stringify(p)); } catch (e) {} }
   }
@@ -750,20 +734,17 @@
     var opens = { 'acct-pledges': openPledges > 0, 'acct-saved': true, 'acct-actions': true, 'acct-joined': true, 'acct-invited': false, 'hfp-settings': false, 'acct-data': false };
     var prefs = foldPrefs();
     root.querySelectorAll('.hf-acct-card').forEach(function (card) {
-      var h = card.querySelector('.hf-acct-card-title');
-      if (!h || !card.id) return;
-      var count = card.querySelector('.hfp-fold-count');
-      if (!card.getAttribute('data-hfp-fold')) {
+      var b = card.querySelector('[data-hf-act="fold"]');
+      if (!b || !card.id) return;
+      if (!card.hasAttribute('data-hfp-fold')) {
         card.setAttribute('data-hfp-fold', '1');
-        var b = el('button', { type: 'button', class: 'hfp-fold', 'aria-expanded': 'true' });
-        while (h.firstChild) b.appendChild(h.firstChild);
-        count = el('span', { class: 'hfp-fold-count' });
-        b.appendChild(count);
-        h.appendChild(b);
-        b.addEventListener('click', function () { setFold(card, card.hasAttribute('data-hf-closed'), true); });
+        var toggle = function (e) { e.preventDefault(); e.stopPropagation(); setFold(card, card.hasAttribute('data-hf-closed'), true); };
+        b.addEventListener('click', toggle);
+        b.addEventListener('keydown', function (e) { if (e.key === ' ') toggle(e); });
         setFold(card, card.id in prefs ? !!prefs[card.id] : card.id in opens ? opens[card.id] : true, false);
       }
-      count.textContent = counts[card.id] || '';
+      var count = b.querySelector('[data-hf-fill="fold-count"]');
+      if (count) count.textContent = counts[card.id] || '';
     });
   }
   // A jump link (or an address ending in #section) opens the section it points to.
@@ -900,117 +881,79 @@
     var inn = $('hf-acct-in');
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
-    var tally = $('hf-tally');
-    // Your ripple: the picture goes right under the impact numbers.
-    if (me.rippleView) {
-      var oldViz = $('hfp-ripple-viz');
-      var viz = rippleViz(me.rippleView);
-      viz.id = 'hfp-ripple-viz';
-      viz.classList.add('hf-acct-card');
-      var impact = document.querySelector('#hf-acct-in .hf-acct-impact');
-      if (oldViz) oldViz.replaceWith(viz);
-      else if (impact) impact.insertAdjacentElement('afterend', viz);
-    }
-    var rippleText = me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : copyText('acct-ripple-none');
-    if ($('hfp-ripple')) $('hfp-ripple').textContent = rippleText;
-    else if (tally) tally.insertAdjacentElement('afterend', el('p', { id: 'hfp-ripple', class: 'hfp-muted', text: rippleText }));
+    var P = partsOf(inn);
+    // Your ripple: its card is built in Webflow, right under the impact numbers.
+    P.show('ripple', !!me.rippleView);
+    if (me.rippleView) drawRipple(partsOf($('acct-ripple') || inn), me.rippleView);
     // People who can open the Lab dashboard get a link to it (the card is in Webflow).
     if ($('hf-acct-lab') && me.lab) $('hf-acct-lab').setAttribute('data-hf-on', '1');
 
-    // Pledges
-    var pl = $('hf-pledges');
-    if (pl) {
-      pl.innerHTML = '';
-      if (!me.pledges.length) pl.appendChild(el('p', { text: copyText('acct-pledges-none') }));
-      else {
-        var ul = el('ul', { class: 'hfp-list' });
-        me.pledges.forEach(function (p) {
-          var kept = p.status === 'kept';
-          var li = el('li', { class: 'hfp-item' }, [el('div', { class: 'hfp-item-top' }, [
-            el('span', { class: 'hfp-pill' + (kept ? '' : ' is-open'), text: copyText(kept ? 'acct-pledge-done' : 'acct-pledge-open') }),
-            el('span', { class: 'hfp-muted hfp-small', text: copyText('acct-pledged', { date: day(p.orderedAt) }) }),
-          ])]);
-          if (kept) {
-            var by = p.keptBySlug ? el('a', { href: '/action/' + p.keptBySlug, text: p.keptByTitle }) : p.keptByTitle || copyText('acct-pledge-an-action');
-            var line = el('div');
-            copyNodes('acct-pledge-kept', { action: by, date: day(p.keptOn) }).forEach(function (n) { line.appendChild(n); });
-            li.appendChild(line);
-          } else {
-            li.appendChild(el('a', { class: 'hfp-chip-link', href: '/actions', text: copyText('acct-pledge-keep') }));
-          }
-          ul.appendChild(li);
-        });
-        pl.appendChild(ul);
-      }
-    }
+    fillList('pledges', me.pledges || [], function (li, p) {
+      var kept = p.status === 'kept';
+      var pill = partIn(li, 'state');
+      if (pill) { pill.textContent = copyText(kept ? 'acct-pledge-done' : 'acct-pledge-open'); pill.classList.toggle('is-open', !kept); }
+      var date = partIn(li, 'date');
+      if (date) date.textContent = copyText('acct-pledged', { date: day(p.orderedAt) });
+      var line = partIn(li, 'kept');
+      if (kept && line) {
+        line.textContent = '';
+        var by = p.keptBySlug ? el('a', { href: '/action/' + p.keptBySlug, text: p.keptByTitle }) : p.keptByTitle || copyText('acct-pledge-an-action');
+        copyNodes('acct-pledge-kept', { action: by, date: day(p.keptOn) }).forEach(function (n) { line.appendChild(n); });
+      } else drop(line);
+      if (kept) drop(partIn(li, 'keep'));
+    }, 'pledge');
 
-    // Actions taken
-    var ah = $('hf-actions');
-    if (ah) {
-      ah.innerHTML = '';
-      if (!me.done.length) ah.appendChild(el('p', { text: copyText('acct-actions-none') }));
-      else {
-        var storyFor = {};
-        me.stories.forEach(function (s) { storyFor[s.actionId] = s; });
-        var seen = {};
-        var list = el('ul', { class: 'hfp-list' });
-        me.done.forEach(function (d) {
-          if (seen[d.actionId]) return;
-          seen[d.actionId] = 1;
-          var times = me.done.filter(function (x) { return x.actionId === d.actionId; }).length;
-          var live = d.slug && d.actionStatus === 'published';
-          var li = el('li', { class: 'hfp-item' });
-          li.appendChild(live ? el('a', { class: 'hfp-item-title', href: '/action/' + d.slug, text: d.title }) : el('span', { class: 'hfp-item-title', text: d.title }));
-          li.appendChild(el('span', { class: 'hfp-muted hfp-small', text: day(d.doneAt) + (times > 1 ? ' · ' + copyText('acct-times', { n: times }) : '') }));
-          var s = storyFor[d.actionId];
-          var acts = el('div', { class: 'hfp-item-acts' });
-          if (live) acts.appendChild(el('a', { class: 'hfp-chip-link hf-story-link', href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') }));
-          if (s) acts.appendChild(el('span', { class: 'hfp-pill', text: copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') }));
-          if (acts.firstChild) li.appendChild(acts);
-          list.appendChild(li);
-        });
-        ah.appendChild(list);
-      }
-      // The actions list sits in its own card; extra sections go next to that card.
-      var card = ah.closest('.hf-acct-card') || ah;
-      var holder = card.parentNode;
-      // Saved for later
-      if ($('hfp-saved')) ($('hfp-saved').closest('.hf-acct-card') || $('hfp-saved')).remove();
-      if ($('hfp-invites')) $('hfp-invites').remove();
-      if (me.saved && me.saved.length) {
-        var sv = el('ul', { class: 'hfp-list', id: 'hfp-saved' });
-        me.saved.forEach(function (d) { sv.appendChild(el('li', { class: 'hfp-item' }, [el('a', { class: 'hfp-item-title', href: '/action/' + d.slug, text: d.title })])); });
-        holder.insertBefore(section(copyText('acct-saved-h'), [sv], 'acct-saved'), card === ah ? ah.previousElementSibling : card);
-      }
-      // Invites
-      {
-        var inv = el('div', { id: 'hfp-invites' });
-        if (me.joinedMyInvites.length) {
-          var j = el('ul', { class: 'hfp-list' });
-          me.joinedMyInvites.forEach(function (x) { j.appendChild(el('li', { class: 'hfp-item', text: copyText('acct-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '', date: day(x.joinedAt) }) })); });
-          inv.appendChild(section(copyText('acct-joined-h'), [j], 'acct-joined'));
-        }
-        if (me.invitesIJoined.length) {
-          var k = el('ul', { class: 'hfp-list' });
-          me.invitesIJoined.forEach(function (x) {
-            var leave = el('button', { type: 'button', class: 'hfp-chip-link', text: copyText('acct-leave') });
-            var li = el('li', { class: 'hfp-item' }, [
-              x.actionSlug ? el('a', { class: 'hfp-item-title', href: '/action/' + x.actionSlug, text: x.actionTitle }) : el('span', { class: 'hfp-item-title', text: x.actionTitle || '' }),
-              el('span', { class: 'hfp-muted hfp-small', text: copyText('acct-invited', { name: x.inviterName || copyText('acct-someone') }) }),
-              leave,
-            ]);
-            leave.addEventListener('click', async function () {
-              var rr = await HFB.call('/api/invites/' + encodeURIComponent(x.code) + '/join', { method: 'DELETE' });
-              if (rr.ok) li.remove();
-            });
-            k.appendChild(li);
-          });
-          inv.appendChild(section(copyText('acct-invited-h'), [k], 'acct-invited'));
-        }
-        if (card !== ah) holder.insertBefore(inv, card.nextElementSibling);
-        else ah.nextElementSibling ? holder.insertBefore(inv, ah.nextElementSibling.nextElementSibling) : holder.appendChild(inv);
-      }
-    }
+    var storyFor = {};
+    (me.stories || []).forEach(function (s) { storyFor[s.actionId] = s; });
+    var firstDone = [];
+    var times = {};
+    (me.done || []).forEach(function (d) {
+      if (!times[d.actionId]) firstDone.push(d);
+      times[d.actionId] = (times[d.actionId] || 0) + 1;
+    });
+    fillList('done', firstDone, function (li, d) {
+      var live = d.slug && d.actionStatus === 'published';
+      setLink(partIn(li, 'title'), live ? '/action/' + d.slug : null, d.title);
+      var meta = partIn(li, 'meta');
+      if (meta) meta.textContent = day(d.doneAt) + (times[d.actionId] > 1 ? ' · ' + copyText('acct-times', { n: times[d.actionId] }) : '');
+      var s = storyFor[d.actionId];
+      var chip = partIn(li, 'story');
+      if (live && chip) {
+        chip.setAttribute('href', '/share-your-story?action=' + encodeURIComponent(d.slug));
+        var label = partIn(chip, 'story-label');
+        if (label) label.textContent = copyText(s ? 'story-edit' : 'story-share');
+      } else drop(chip);
+      var state = partIn(li, 'story-state');
+      if (s && state) state.textContent = copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review');
+      else drop(state);
+    });
+
+    P.show('saved', !!(me.saved && me.saved.length));
+    fillList('saved', me.saved || [], function (li, d) { setLink(partIn(li, 'title'), '/action/' + d.slug, d.title); });
+
+    P.show('joined', !!(me.joinedMyInvites && me.joinedMyInvites.length));
+    fillList('joined', me.joinedMyInvites || [], function (li, x) {
+      var t = partIn(li, 'text');
+      if (t) t.textContent = copyText('acct-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '', date: day(x.joinedAt) });
+    });
+
+    P.show('invited', !!(me.invitesIJoined && me.invitesIJoined.length));
+    fillList('invited', me.invitesIJoined || [], function (li, x) {
+      setLink(partIn(li, 'title'), x.actionSlug ? '/action/' + x.actionSlug : null, x.actionTitle || '');
+      var by = partIn(li, 'by');
+      if (by) by.textContent = copyText('acct-invited', { name: x.inviterName || copyText('acct-someone') });
+      var leave = li.querySelector('[data-hf-act="leave"]');
+      if (leave) leave.addEventListener('click', async function (e) {
+        e.preventDefault();
+        setBusy(leave, true);
+        var rr = await HFB.call('/api/invites/' + encodeURIComponent(x.code) + '/join', { method: 'DELETE' });
+        setBusy(leave, false);
+        if (!rr.ok) return;
+        var list = li.parentNode;
+        drop(li);
+        if (list && !list.querySelector(':scope > :not([data-hf-template])')) P.show('invited', false);
+      });
+    });
 
     // Settings and your data: the section, form and boxes are built in Webflow (#hfp-settings);
     // this fills them in and saves each change.

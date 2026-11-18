@@ -5,6 +5,7 @@ import { WORDING, WORDING_SCRIPT, word } from './wording';
 import { EMAIL_KINDS } from './config';
 import { HttpError, UpstreamError, base64url, errorResponse, hmac, iso, json, readJson, requireSecret, timingSafeEqual } from './http';
 import { optionalMember, requireMember, type Member } from './identity';
+import { claimGuest, expireGuests, guestFromRequest, memberOrGuest } from './features/guests';
 import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
 import { actionState, markDone, mostDone, resolveActionRef, setLike, syncActions, undoDone, writeCountsToCms } from './features/actions';
@@ -69,6 +70,18 @@ function memberWrite(name: string, fn: (c: Call, member: Member) => Promise<unkn
   };
 }
 
+/** Like memberWrite, but a visitor without an account acts as their guest (made on the first "I did this"). */
+function doerWrite(name: string, create: boolean, fn: (c: Call, member: Member) => Promise<unknown>, status = 200): Handler {
+  return async (c) => {
+    const member = await memberOrGuest(c.req, c.env, c.deps, create);
+    if (!member) throw new HttpError(401, 'signin_required', 'err-signin-required');
+    const key = idempotencyKey(c.req);
+    const res = await once(c.env, c.deps, `m:${member.id}`, key, name, async () => json(await fn(c, member), status));
+    c.ctx.waitUntil(drain(c.env, c.deps, { limit: 5, deadlineMs: 10_000 }).catch((e) => reportError(c.env, c.deps, { where: 'drain after write', error: e })));
+    return res;
+  };
+}
+
 // --- Site calls -------------------------------------------------------------
 
 // The interface text for the page scripts (src/wording/en.json), loaded before them.
@@ -83,13 +96,20 @@ route('GET', '/api/health', false, async ({ env }) => {
 
 route('GET', '/api/actions/:id/state', true, async ({ req, env, deps, params }) => {
   const id = await resolveActionRef(env, deps, params.id);
-  const member = await optionalMember(req, env, deps);
+  const member = (await optionalMember(req, env, deps)) || (await guestFromRequest(req, env, deps, false));
   return json(await actionState(env, deps, id, member));
 });
 
-route('POST', '/api/actions/:id/done', true, memberWrite('done', async ({ env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id)), 201));
+// "I did this" and undo also work without an account (try before sign-up).
+route('POST', '/api/actions/:id/done', true, doerWrite('done', true, async ({ env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id)), 201));
 
-route('DELETE', '/api/actions/:id/done', true, memberWrite('undo', async ({ env, deps, params }, m) => undoDone(env, deps, m, await resolveActionRef(env, deps, params.id))));
+route('DELETE', '/api/actions/:id/done', true, doerWrite('undo', false, async ({ env, deps, params }, m) => undoDone(env, deps, m, await resolveActionRef(env, deps, params.id))));
+
+// After sign-in: the marks made on this device before it move to the account.
+route('POST', '/api/me/claim-guest', true, async ({ req, env, deps }) => {
+  const member = await requireMember(req, env, deps);
+  return json(await claimGuest(env, deps, member, await guestFromRequest(req, env, deps, false)));
+});
 
 route('GET', '/api/impact', true, async ({ env }) => json(await publicImpact(env), 200, { 'Cache-Control': 'public, max-age=300' }));
 route('GET', '/api/most-done', true, async ({ env }) => json(await mostDone(env), 200, { 'Cache-Control': 'public, max-age=60' }));
@@ -329,6 +349,8 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['partner-reports', 'partnerReports', HOUR, () => partnerReports(env, deps)],
     // Phase 4: one summary email a day per inviter.
     ['invite-summaries', 'inviteSummaries', 24 * HOUR, () => inviteSummaries(env, deps, baseUrl)],
+    // Try before sign-up: guests not seen for 30 days can no longer be claimed.
+    ['expire-guests', 'expireGuests', 24 * HOUR, () => expireGuests(env, deps)],
   ];
   for (const [job, key, every, run] of jobs) {
     const last = await env.DB.prepare(`SELECT last_run_at FROM job_runs WHERE job = ?1`).bind(job).first<{ last_run_at: string }>();
@@ -465,7 +487,7 @@ function corsHeaders(req: Request, env: Env): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'false',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, CF-Turnstile-Response',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, CF-Turnstile-Response, X-HF-Guest',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',

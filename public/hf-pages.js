@@ -95,7 +95,7 @@
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
     '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
     '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
@@ -260,6 +260,16 @@
     shareLine.insertAdjacentElement('afterend', shareNote);
     var card = el('div', { class: 'hfp-card', style: 'display:none' });
     shareNote.insertAdjacentElement('afterend', card);
+    // Try before sign-up: marks made signed out are kept on this device until an account keeps them.
+    var keep = el('p', { class: 'hfp-muted hfp-small', style: 'display:none' });
+    card.insertAdjacentElement('afterend', keep);
+    function keepButtons() {
+      var up = el('button', { type: 'button', class: 'hf-button', text: copyText('action-keep-signup') });
+      up.addEventListener('click', function () { if (HF.signup) HF.signup(); else HF.signin(); });
+      var inn = el('button', { type: 'button', class: 'hfp-link', text: copyText('action-keep-signin') });
+      inn.addEventListener('click', function () { HF.signin(); });
+      return el('div', { class: 'hfp-row' }, [up, inn]);
+    }
     var lead = document.querySelector('.hf-lead');
     var suggested = el('p', { class: 'hfp-muted hfp-small', style: 'display:none' });
     if (lead) lead.insertAdjacentElement('afterend', suggested);
@@ -280,24 +290,42 @@
         btn.textContent = copyText('action-did-again');
         btn.setAttribute('aria-disabled', 'false');
         msg.textContent = copyText(me.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: me.tally });
-        story.style.display = '';
+        story.style.display = me.guest ? 'none' : '';
         story.textContent = copyText(me.story ? 'story-edit' : 'story-share');
+        if (me.guest && card.style.display === 'none') {
+          keep.innerHTML = '';
+          keep.appendChild(document.createTextNode(copyText('action-keep-text') + ' '));
+          var k = el('button', { type: 'button', class: 'hfp-link', text: copyText('action-keep-signup') });
+          k.addEventListener('click', function () { if (HF.signup) HF.signup(); else HF.signin(); });
+          keep.appendChild(k);
+          keep.style.display = '';
+        } else keep.style.display = 'none';
         undo.style.display = me.canUndo ? '' : 'none';
         if (me.doneWith && me.doneWith.length) { together.textContent = copyText('action-together', { names: me.doneWith.join(', ') }); together.style.display = ''; } else together.style.display = 'none';
       } else {
         btn.textContent = copyText('action-did');
         btn.setAttribute('aria-disabled', 'false');
         story.style.display = 'none';
+        keep.style.display = 'none';
         undo.style.display = 'none';
         together.style.display = 'none';
       }
     }
 
-    function showCard(ripple) {
+    function showCard(ripple, guest) {
       card.innerHTML = '';
       card.appendChild(el('p', { class: 'hf-drop-label', text: copyText('action-card-label') }));
       card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: copyText('action-card-headline') }));
       if (ripple > 0) card.appendChild(el('p', { text: copyText('ripple', { n: ripple }) }));
+      if (guest) {
+        // The win first; then a soft ask to keep it. Never a wall.
+        keep.style.display = 'none';
+        card.appendChild(el('h3', { class: 'hfp-keep-title', text: copyText('action-keep-title') }));
+        card.appendChild(el('p', { class: 'hfp-muted', text: copyText('action-keep-text') }));
+        card.appendChild(keepButtons());
+        card.style.display = '';
+        return;
+      }
       var pass = el('button', { type: 'button', class: 'hf-button', text: copyText('action-pass') });
       pass.addEventListener('click', function () { compose(id, 'pass_it_on', card, shareNote); });
       card.appendChild(el('div', { class: 'hfp-row' }, [pass]));
@@ -337,15 +365,15 @@
     btn.addEventListener('click', async function (e) {
       e.preventDefault();
       if (busy || !id || btn.getAttribute('aria-disabled') === 'true') return;
-      if (!signedIn()) return ask('done');
       busy = true;
       btn.setAttribute('aria-busy', 'true');
-      var r = await HFB.call('/api/actions/' + id + '/done', { method: 'POST' });
+      // Signed out, this is saved on this device (try before sign-up).
+      var r = await HFB.call('/api/actions/' + id + '/done', { method: 'POST', guest: true });
       busy = false;
       btn.removeAttribute('aria-busy');
       if (r.ok) {
+        showCard(r.data.ripple || 0, r.data.guest);
         await load();
-        showCard(r.data.ripple || 0);
       } else if (r.status === 401) ask('done');
       else msg.textContent = msgOf(r);
     });
@@ -355,7 +383,7 @@
       undo.disabled = true;
       var r = await HFB.call('/api/actions/' + id + '/done', { method: 'DELETE' });
       undo.disabled = false;
-      if (r.ok) { card.style.display = 'none'; await load(); msg.textContent = copyText('action-undone', { message: msg.textContent }); }
+      if (r.ok) { card.style.display = 'none'; keep.style.display = 'none'; await load(); msg.textContent = copyText('action-undone', { message: msg.textContent }); }
       else msg.textContent = msgOf(r);
     });
 

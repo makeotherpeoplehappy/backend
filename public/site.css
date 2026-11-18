@@ -98,3 +98,5 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 #hf-dare-tag{margin:8px 0 4px}
 #hf-dare-tag .hf-local-pin{margin-bottom:2px}
 #hf-dare-tag .hf-dare-count{margin-top:0}
+/* Phone menu: the location options are listed inline; the pin lines up with the first one */
+@media (max-width:991px){.hf-nav-right .hf-loc-form>.w-embed{margin-top:15px}}

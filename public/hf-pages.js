@@ -2180,7 +2180,8 @@
       P.fill('product-drop-at', d ? whenText(d.dropDate) : '');
       var to = d ? (st.status === 'upcoming' ? d.earlyAt : st.status === 'early' ? d.dropDate : null) : null;
       P.fill('product-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
-      P.fill('product-left', leftText(st.left, st.edition));
+      // Before it opens: the edition size; once on sale: how many are left.
+      P.fill('product-left', st.status === 'upcoming' ? (st.edition ? copyText('shop-edition', { n: st.edition }) : '') : leftText(st.left, st.edition));
       P.show('product-sizes', st.variants.length > 1);
       if (sizes && st.variants.length > 1) {
         var keep = sizes.value;

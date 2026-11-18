@@ -502,9 +502,14 @@ route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
     }
     if (topic === 'orders/create' || topic === 'orders/updated' || topic === 'orders/cancelled' || topic === 'orders/paid') {
       const order = orderFromWebhook(body);
+      // Stock moved: the site's "sold out" (home hero, menu) follows shortly.
+      if (topic === 'orders/create' || topic === 'orders/cancelled') await queueShopSync(env, deps).run();
       return json({ ok: true, ...(order ? await ingestOrder(env, deps, order) : { ignored: 'no order' }) });
     }
-    if (topic === 'refunds/create') return json({ ok: true, ...(await refundOrder(env, deps, body.order_id)) });
+    if (topic === 'refunds/create') {
+      await queueShopSync(env, deps).run();
+      return json({ ok: true, ...(await refundOrder(env, deps, body.order_id)) });
+    }
     return json({ ok: true, ignored: topic });
   });
 });

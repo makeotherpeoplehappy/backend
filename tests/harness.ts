@@ -66,7 +66,7 @@ export class FakeServices {
   /** Shopify collections by handle: product ids. */
   shopCollections = new Map<string, string[]>();
   /** Drops: Shopify collections with a drop date (custom.drop_date), by handle; their products are in shopCollections. */
-  dropCollections = new Map<string, { title: string; description?: string; dropDate: string }>();
+  dropCollections = new Map<string, { title: string; description?: string; dropDate: string; heroHeadline?: string; heroImageUrl?: string; leadProductId?: string }>();
   /** Shopify customers created or updated by drop sign-ups, by email. */
   marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
@@ -211,6 +211,7 @@ export class FakeServices {
       if (q.query.includes('priceRangeV2 { minVariantPrice') && q.query.includes('media(first')) {
         return j({ data: { products: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: this.products.filter((p) => p.status === 'ACTIVE').map((p) => ({
           id: p.id, handle: p.handle, title: p.title, status: p.status, descriptionHtml: p.descriptionHtml, seo: { description: p.seoDescription ?? null },
+          tracksInventory: this.inventory.has(p.id) && this.inventory.get(p.id) !== null, totalInventory: this.inventory.get(p.id) ?? 0,
           edition: p.editionSize ? { value: String(p.editionSize) } : null,
           priceRangeV2: { minVariantPrice: { amount: p.price || '45.0', currencyCode: 'USD' } },
           media: { nodes: p.imageUrl ? [{ preview: { image: { url: p.imageUrl, altText: null } } }] : [] },
@@ -250,6 +251,9 @@ export class FakeServices {
           title: c.title,
           description: c.description || '',
           dropDate: { value: c.dropDate },
+          heroHeadline: c.heroHeadline ? { value: c.heroHeadline } : null,
+          heroImage: c.heroImageUrl ? { reference: { image: { url: c.heroImageUrl, altText: null } } } : null,
+          lead: c.leadProductId ? { reference: { id: c.leadProductId } } : null,
           products: { nodes: (this.shopCollections.get(handle) || []).map((id) => ({ id })) },
         }));
         return j({ data: { collections: { nodes } } });
@@ -481,7 +485,7 @@ export async function createHarness(): Promise<Harness> {
     CACHE: (await mf.getKVNamespace('CACHE')) as unknown as KVNamespace,
     MEDIA: (await mf.getR2Bucket('MEDIA')) as unknown as R2Bucket,
     ENVIRONMENT: 'test',
-    ALLOWED_ORIGINS: `${SITE},https://happiness.foundation`,
+    ALLOWED_ORIGINS: `${SITE},https://other.example`,
     SHOPIFY_STORE_DOMAIN: STORE,
     SHOPIFY_CLIENT_ID: 'shopify_client_id',
     SHOPIFY_CLIENT_SECRET: 'shopify_webhook_secret',
@@ -490,7 +494,7 @@ export async function createHarness(): Promise<Harness> {
     RESEND_API_KEY: 're_test',
     MEMBERSTACK_SECRET_KEY: 'sk_sb_test',
     MEMBERSTACK_WEBHOOK_SECRET: 'whsec_' + btoa('memberstack-webhook-secret'),
-    EMAIL_FROM: 'Happiness Foundation <team@happiness.foundation>',
+    EMAIL_FROM: 'Happiness Foundation <team@makeotherpeoplehappy.com>',
     ERROR_EMAIL_TO: 'mickey@example.com',
     TURNSTILE_SECRET_KEY: 'ts_secret',
     JOBS_SECRET: 'jobs_secret',

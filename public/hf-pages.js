@@ -2116,6 +2116,10 @@
   }
 
   async function shopPage() {
+    // The "sold out" line under the home hero only shows when no drop leads the hero.
+    if (document.querySelector('[data-hf-hero="drop"]')) {
+      document.querySelectorAll('[data-hf-hero="sold-out"]').forEach(function (e) { e.style.display = 'none'; });
+    }
     var blocks = [].slice.call(document.querySelectorAll('[data-hf-drop]'));
     if (!blocks.length || blocks[0].getAttribute('data-hfp')) return;
     await wait(function () { return window.HFB; }, 10000);
@@ -2130,7 +2134,20 @@
         P.fill('drop-at', whenText(d.dropDate));
         var to = d.phase === 'upcoming' ? d.earlyAt : d.phase === 'early' ? d.dropDate : null;
         P.fill('drop-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
+        // The home hero's countdown: days, hours and minutes in their own boxes.
+        var ms = to ? Math.max(0, Date.parse(to) - Date.now()) : 0;
+        P.fill('drop-days', String(Math.floor(ms / 864e5)));
+        P.fill('drop-hours', String(Math.floor(ms / 36e5) % 24).padStart(2, '0'));
+        P.fill('drop-minutes', String(Math.floor(ms / 6e4) % 60).padStart(2, '0'));
         P.fill('drop-left', leftText(d.left, d.quantity));
+        P.all('[data-hf-part="drop-bar"]').forEach(function (bar) {
+          bar.style.width = d.left != null && d.quantity ? Math.round((100 * d.left) / d.quantity) + '%' : '100%';
+        });
+        // Buy goes to the lead piece's page once buying is open (Webflow keeps its handle in data-hf-lead).
+        P.all('[data-hf-lead]').forEach(function (a) {
+          var h = a.getAttribute('data-hf-lead');
+          if (h && (d.phase === 'early' || d.phase === 'live')) a.setAttribute('href', '/product/' + encodeURIComponent(h));
+        });
         notifyButtons(P, d.notified);
         P.show('drop-notify', d.phase === 'upcoming' || d.phase === 'early');
       });
@@ -2138,6 +2155,29 @@
     async function load() {
       var r = await HFB.call('/api/drops');
       if (r.ok) { data = r.data; draw(); }
+      progress();
+    }
+    // The early-access strip: a signed-in member's own way there.
+    async function progress() {
+      var lines = [].slice.call(document.querySelectorAll('[data-hf-fill="drop-progress"]'));
+      if (!lines.length) return;
+      var A = null;
+      if (signedIn()) {
+        var me = await HFB.call('/api/me');
+        A = me.ok ? me.data.active : null;
+      }
+      lines.forEach(function (el) {
+        var t = '';
+        if (A) {
+          if (A.active) t = copyText('drop-progress-active');
+          else if (A.weeksDone === 0) t = copyText('drop-progress-start');
+          else if (A.toGo === 1) t = copyText('drop-progress-to-go-one', { n: A.weeksDone });
+          else t = copyText('drop-progress-to-go', { n: A.weeksDone, left: A.toGo });
+        }
+        el.textContent = t;
+        var box = el.closest('[data-hf-show="drop-progress"]');
+        if (box) { if (t) box.setAttribute('data-hf-on', '1'); else box.removeAttribute('data-hf-on'); }
+      });
     }
     blocks.forEach(function (b) {
       b.setAttribute('data-hfp', '1');

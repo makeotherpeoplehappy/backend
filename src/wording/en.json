@@ -93,7 +93,7 @@
   "card-named-community": "{name} made their community happier today",
   "card-named-any": "{name} made someone happy today",
   "card-motto": "Happiness is felt by making other people happy.",
-  "card-address": "happiness.foundation",
+  "card-address": "makeotherpeoplehappy.com",
   "card-share": "Share to your Story",
   "card-download": "Download the card",
   "card-hint": "Save it, then post it to your Story.",
@@ -299,5 +299,9 @@
   "shop-size-pick": "Pick a size",
   "shop-size-sold-out": "{size} – sold out",
   "shop-buying": "Taking you to checkout…",
-  "shop-edition": "Edition of {n}"
+  "shop-edition": "Edition of {n}",
+  "drop-progress-active": "You're an Active member – you get every drop 24 hours early.",
+  "drop-progress-start": "Make someone happy this week to start your first week.",
+  "drop-progress-to-go-one": "You're {n} of 4 weeks there – one more week and you get early access.",
+  "drop-progress-to-go": "You're {n} of 4 weeks there – {left} more weeks and you get early access."
 }

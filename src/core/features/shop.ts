@@ -34,6 +34,8 @@ interface ShopifyProduct {
   descriptionHtml: string | null;
   seo: { description: string | null } | null;
   edition: { value: string } | null;
+  tracksInventory: boolean;
+  totalInventory: number;
   priceRangeV2: { minVariantPrice: { amount: string; currencyCode: string } };
   media: { nodes: { preview: { image: { url: string; altText: string | null } | null } | null }[] };
 }
@@ -45,17 +47,26 @@ interface ShopifyDrop {
   description: string;
   image: { url: string; altText: string | null } | null;
   dropDate: { value: string } | null;
+  /** The words across the home page hero; *word* marks the accent word. */
+  heroHeadline: { value: string } | null;
+  /** The hero photo: the home page shows the drop hero only once a drop has one. */
+  heroImage: { reference: { image: { url: string; altText: string | null } | null } | null } | null;
+  /** The piece the hero leads with (else the collection's first piece). */
+  lead: { reference: { id: string } | null } | null;
   products: { nodes: { id: string }[] };
 }
 
 const PRODUCTS = `query ($cursor: String) { products(first: 50, after: $cursor, query: "status:active") {
   pageInfo { hasNextPage endCursor }
-  nodes { id handle title status descriptionHtml seo { description }
+  nodes { id handle title status descriptionHtml seo { description } tracksInventory totalInventory
     edition: metafield(namespace: "custom", key: "edition_size") { value }
     priceRangeV2 { minVariantPrice { amount currencyCode } }
     media(first: 8) { nodes { preview { image { url altText } } } } } } }`;
 const DROPS = `query { collections(first: 100) { nodes { id handle title description image { url altText }
   dropDate: metafield(namespace: "custom", key: "drop_date") { value }
+  heroHeadline: metafield(namespace: "custom", key: "hero_headline") { value }
+  heroImage: metafield(namespace: "custom", key: "hero_image") { reference { ... on MediaImage { image { url altText } } } }
+  lead: metafield(namespace: "custom", key: "lead_product") { reference { ... on Product { id } } }
   products(first: 50) { nodes { id } } } } }`;
 
 /** Plain text from Shopify's HTML, with a space wherever a paragraph or line ends. */
@@ -101,9 +112,32 @@ function editionSize(value: string | null | undefined): number | null {
 
 const image = (i: { url: string; altText: string | null } | null | undefined, alt: string) => (i ? { url: i.url, alt: i.altText || alt } : null);
 
-function dropFields(d: ShopifyDrop) {
+/**
+ * The hero headline in three parts, so Webflow can set the accent word apart:
+ * "Happiness is felt by making other people *happy*." → before "Happiness is
+ * felt by making other people ", accent "happy", after ".". Without a marked
+ * word the whole line is "before".
+ */
+export function splitHeadline(line: string): { before: string; accent: string; after: string } {
+  const m = /^([^*]*)\*([^*]+)\*(.*)$/.exec(line.trim());
+  if (!m) return { before: line.trim(), accent: '', after: '' };
+  return { before: m[1], accent: m[2].trim(), after: m[3] };
+}
+
+/** A piece as the hero needs it: its page, name and price. */
+interface Piece { productId: string; itemId: string; handle: string; title: string; price: string; left: number | null }
+
+/** Pieces left of one product: its stock up to its edition size; null when stock isn't tracked. */
+function piecesLeft(p: ShopifyProduct): number | null {
+  if (!p.tracksInventory) return null;
+  const stock = Math.max(0, p.totalInventory);
+  const size = editionSize(p.edition?.value);
+  return size === null ? stock : Math.min(stock, size);
+}
+
+function dropFields(d: ShopifyDrop, pieces: Piece[] | null) {
   const date = new Date(d.dropDate!.value).toISOString();
-  return {
+  const base = {
     name: d.title.slice(0, 256),
     slug: d.handle,
     'shopify-id': d.id,
@@ -111,6 +145,24 @@ function dropFields(d: ShopifyDrop) {
     'early-access': earlyAccessAt(date),
     description: d.description || '',
     image: image(d.image, d.title),
+  };
+  if (!pieces) return base;
+  const head = splitHeadline(d.heroHeadline?.value?.trim() || d.title);
+  const leadId = d.lead?.reference?.id;
+  const lead = pieces.find((p) => p.productId === leadId) || pieces[0] || null;
+  return {
+    ...base,
+    'hero-before': head.before.slice(0, 256),
+    'hero-accent': head.accent.slice(0, 256),
+    'hero-after': head.after.slice(0, 256),
+    'hero-image': image(d.heroImage?.reference?.image, d.title),
+    'lead-name': lead?.title.slice(0, 256) || '',
+    'lead-price': lead?.price || '',
+    'lead-slug': lead?.handle || '',
+    pieces: pieces.map((p) => p.itemId),
+    'piece-count': pieces.length,
+    // Sold out once every piece is counted and none is left.
+    'sold-out': pieces.length > 0 && pieces.every((p) => p.left === 0),
   };
 }
 
@@ -209,15 +261,39 @@ export async function syncShop(env: Env, deps: Deps): Promise<ShopSyncResult> {
     }
   }
 
-  // Drops first: products point at them.
+  // Products point at their drop, and a drop lists its pieces: a new drop is
+  // created first with its own fields, then the products, then every drop in full.
   const dropItems = await itemsByShopifyId(env, deps, CMS.drops.id);
+  const dropItemId = new Map<string, string>();
+  for (const d of drops) {
+    const existing = dropItems.get(d.id);
+    if (existing) { dropItemId.set(d.id, existing.id); continue; }
+    try {
+      const created = await webflow.createLiveItem(env, deps, CMS.drops.id, dropFields(d, null));
+      dropItemId.set(d.id, created.id);
+      dropItems.set(d.id, { ...created, isDraft: false } as webflow.WebflowItem);
+      result.created++;
+    } catch (e) {
+      result.errors.push({ item: d.handle, error: (e as Error).message.slice(0, 300) });
+    }
+  }
   const dropItemOfProduct = new Map<string, string>();
   for (const d of drops) {
-    const id = await put(CMS.drops.id, d.id, d.handle, dropFields(d), dropItems.get(d.id));
+    const id = dropItemId.get(d.id);
     if (id) for (const p of d.products.nodes) if (!dropItemOfProduct.has(p.id)) dropItemOfProduct.set(p.id, id);
   }
   const productItems = await itemsByShopifyId(env, deps, CMS.products.id);
-  for (const p of products) await put(CMS.products.id, p.id, p.handle, productFields(p, dropItemOfProduct.get(p.id) ?? null), productItems.get(p.id));
+  const pieceOf = new Map<string, Piece>();
+  for (const p of products) {
+    const fields = productFields(p, dropItemOfProduct.get(p.id) ?? null);
+    const itemId = await put(CMS.products.id, p.id, p.handle, fields, productItems.get(p.id));
+    if (itemId) pieceOf.set(p.id, { productId: p.id, itemId, handle: p.handle, title: p.title, price: fields.price, left: piecesLeft(p) });
+  }
+  for (const d of drops) {
+    if (!dropItemId.has(d.id)) continue;
+    const pieces = d.products.nodes.map((n) => pieceOf.get(n.id)).filter((x): x is Piece => !!x);
+    await put(CMS.drops.id, d.id, d.handle, dropFields(d, pieces), dropItems.get(d.id));
+  }
 
   await takeOff(CMS.drops.id, dropItems, new Set(drops.map((d) => d.id)));
   await takeOff(CMS.products.id, productItems, new Set(products.map((p) => p.id)));

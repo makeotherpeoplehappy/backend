@@ -54,10 +54,27 @@ describe('Shopify → Webflow', () => {
     expect(product.live).toBe(true);
     expect(product.fieldData).toMatchObject({ name: 'Drop 01 Tee', slug: 'drop-01-tee', price: '$45', 'edition-size': 100, drop: drop.id, 'short-description': 'Soft. Kind.' });
     expect((product.fieldData.image as { url: string }).url).toBe('https://cdn.shopify.com/tee.jpg');
+    // The home page hero: no headline or photo yet (the hero waits for a photo), the lead piece and its pieces.
+    expect(drop.fieldData).toMatchObject({ 'hero-before': 'Drop 01', 'hero-accent': '', 'hero-image': null, 'lead-name': 'Drop 01 Tee', 'lead-price': '$45', 'lead-slug': 'drop-01-tee', pieces: [product.id], 'piece-count': 1, 'sold-out': false });
     expect(await syncShop(h.env, h.app.deps)).toMatchObject({ created: 0, updated: 0, unchanged: 2 });
     h.fake.products[0].status = 'ARCHIVED';
     expect(await syncShop(h.env, h.app.deps)).toMatchObject({ removed: 1 });
     expect(h.fake.collection(CMS.products.id)[0].live).toBe(false);
+  });
+
+  it('the hero: headline with its accent word, photo, lead piece, and sold out once nothing is left', async () => {
+    h.fake.products.push({ id: 'gid://shopify/Product/556', handle: 'drop-01-cap', title: 'Drop 01 Cap', status: 'ACTIVE', descriptionHtml: '', description: '', editionSize: 50, price: '30.0' });
+    h.fake.inventory.set('gid://shopify/Product/556', 50);
+    h.fake.shopCollections.set('drop-01', [PRODUCT, 'gid://shopify/Product/556']);
+    Object.assign(h.fake.dropCollections.get('drop-01')!, { heroHeadline: 'Happiness is felt by making other people *happy*.', heroImageUrl: 'https://cdn.shopify.com/hero.jpg', leadProductId: 'gid://shopify/Product/556' });
+    await syncShop(h.env, h.app.deps);
+    const [drop] = h.fake.collection(CMS.drops.id);
+    expect(drop.fieldData).toMatchObject({ 'hero-before': 'Happiness is felt by making other people ', 'hero-accent': 'happy', 'hero-after': '.', 'lead-name': 'Drop 01 Cap', 'lead-price': '$30', 'lead-slug': 'drop-01-cap', 'piece-count': 2, 'sold-out': false });
+    expect((drop.fieldData['hero-image'] as { url: string }).url).toBe('https://cdn.shopify.com/hero.jpg');
+    h.fake.inventory.set(PRODUCT, 0);
+    h.fake.inventory.set('gid://shopify/Product/556', 0);
+    await syncShop(h.env, h.app.deps);
+    expect(h.fake.collection(CMS.drops.id)[0].fieldData['sold-out']).toBe(true);
   });
 
   it('a product webhook queues one sync shortly after', async () => {

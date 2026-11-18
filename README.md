@@ -51,6 +51,7 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `SHOPIFY_CLIENT_ID` | no | Client ID of the Shopify Dev Dashboard app |
 | `SHOPIFY_CLIENT_SECRET` | yes | That app's client secret. The backend exchanges ID and secret for a 24-hour Admin API token, and uses the secret to verify webhooks |
 | `SHOPIFY_ADMIN_API_VERSION` | no | Optional, default `2026-07` |
+| `SHOPIFY_STOREFRONT_TOKEN` | for the shop | Private Storefront API token of the **Happiness Foundation Headless** channel (Shopify admin › Headless › Storefront API). Makes checkouts; without it Buy says the shop is not open yet. The Shopify app needs the scopes `read_publications` and `write_publications` too (Dev Dashboard, released in backend-3) |
 | `WEBFLOW_API_TOKEN` | yes | Site API token with CMS read and write |
 | `RESEND_API_KEY` | yes | Resend API key for happiness.foundation (sending access only) |
 | `MEMBERSTACK_SECRET_KEY` | yes | Memberstack secret key (`sk_sb_…` in test mode, `sk_…` live): checks member sign-ins |

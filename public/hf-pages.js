@@ -1195,8 +1195,13 @@
       el('p', { class: 'hf-form-help hfp-small', text: copyText('st-video-hint') }),
       vInput, vMsg, vPrev, el('div', { class: 'hfp-row' }, [vRetry, vRemove]), vAsk,
     ]);
-    var vAnchor = (video && video.closest('.hf-field-group, .hfp-field, div')) || area;
-    if (vAnchor) vAnchor.insertAdjacentElement('afterend', vBox); else form.insertBefore(vBox, form.firstChild);
+    // Right before the video link field (with its label and help), so the two video options sit together.
+    var vLabel = video && form.querySelector('label[for="' + video.id + '"]');
+    var vGroup = video && video.parentNode !== form ? video.parentNode : null;
+    if (vGroup && vGroup !== form && vGroup.tagName !== 'FORM' && vGroup.contains(vLabel || video)) vGroup.insertAdjacentElement('beforebegin', vBox);
+    else if (vLabel) vLabel.insertAdjacentElement('beforebegin', vBox);
+    else if (video) video.insertAdjacentElement('afterend', vBox);
+    else form.insertBefore(vBox, form.firstChild);
     function vSay(t, bad) { vMsg.textContent = t; if (bad) vMsg.setAttribute('data-kind', 'error'); else vMsg.removeAttribute('data-kind'); }
     function meta(file) {
       return new Promise(function (resolve) {

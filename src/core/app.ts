@@ -384,6 +384,8 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     try {
       const result = await run();
       out[key] = result;
+      // The Lab shows each job's last answer (counts and any errors), kept a week.
+      await env.CACHE.put(`job-result:${job}`, JSON.stringify({ at: iso(deps.now()), result }).slice(0, 2000), { expirationTtl: 7 * 86_400 });
       const errs = (result as { errors?: unknown[] }).errors;
       if (errs?.length) await reportError(env, deps, { where: `job ${job}`, error: new Error(`${errs.length} item(s) failed`), details: { errors: errs } });
       await env.DB.prepare(`INSERT INTO job_runs (job, last_run_at) VALUES (?1, ?2) ON CONFLICT (job) DO UPDATE SET last_run_at = excluded.last_run_at`)
@@ -391,6 +393,7 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
         .run();
     } catch (e) {
       out[key] = { error: (e as Error).message };
+      await env.CACHE.put(`job-result:${job}`, JSON.stringify({ at: iso(deps.now()), error: (e as Error).message }).slice(0, 2000), { expirationTtl: 7 * 86_400 });
       await reportError(env, deps, { where: `job ${job}`, error: e });
     }
   }

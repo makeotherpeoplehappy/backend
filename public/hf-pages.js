@@ -1685,8 +1685,8 @@
   }
 
   /**
-   * The location picker remembers its choice on this device, and a signed-in member's choice is
-   * also their "Home area" on their account (so a new device picks it up). Changing it in
+   * The location picker remembers its choice on this device, and a signed-in member's choice of a
+   * place is also their "Home area" on their account (so a new device picks it up). Changing it in
    * My account > Settings changes the picker too.
    */
   var locFromAccount = false;
@@ -1716,7 +1716,13 @@
       window.dispatchEvent(new Event('hf-loc'));
       fitSelect(s);
       showLocation(s);
-      if (!locFromAccount) saveHomeArea(s.value);
+      // Picking a place makes it the home area (and the Account box follows); browsing
+      // "All locations" leaves the home area alone – only Account can clear it.
+      if (!locFromAccount && s.value) {
+        saveHomeArea(s.value);
+        var home = $('hfp-home-area');
+        if (home) home.value = s.value;
+      }
     });
     // A device with no location yet takes the member's home area.
     if (saved === null) {

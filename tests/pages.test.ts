@@ -615,6 +615,23 @@ describe('Header', () => {
     expect(p.calls).toContainEqual({ method: 'PATCH', path: '/api/me/settings', body: { homeArea: 'copenhagen' } });
   });
 
+  it('the Account home area box follows the header, and browsing "All locations" keeps the home area', async () => {
+    const html = HTML + '<select id="hfp-home-area"><option value="">No home area</option><option value="copenhagen">Copenhagen</option></select>';
+    const p = await page('/', html, () => ({ data: {} }));
+    const loc = p.document.getElementById('hf-loc') as unknown as { value: string; dispatchEvent: (e: unknown) => void };
+    const home = p.document.getElementById('hfp-home-area') as unknown as { value: string };
+    loc.value = 'copenhagen';
+    loc.dispatchEvent(new p.window.Event('change'));
+    expect(home.value).toBe('copenhagen');
+    await new Promise((r) => setTimeout(r, 700));
+    p.calls.length = 0;
+    loc.value = '';
+    loc.dispatchEvent(new p.window.Event('change'));
+    await new Promise((r) => setTimeout(r, 700));
+    expect(home.value).toBe('copenhagen');
+    expect(p.calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);
+  });
+
   it('a new device takes the home area from the account', async () => {
     const p = await page('/', HTML, (_m, path) => (path === '/api/me/home-area' ? { data: { homeArea: 'copenhagen' } } : { data: {} }));
     await p.settle();

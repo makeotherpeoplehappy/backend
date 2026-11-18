@@ -18,6 +18,7 @@ import { dropState, forgetDrops, scheduleDropReleases, shopDrops } from './featu
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
+import { completeVideo, serveVideo, startVideo, uploadVideoPart } from './features/videos';
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, publicImpact, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
@@ -162,8 +163,19 @@ route('POST', '/api/stories/photo', true, async ({ req, env, deps }) => json(awa
 route('GET', '/api/stories', true, async ({ req, env }) => {
   const u = new URL(req.url);
   const page = Math.max(1, Number(u.searchParams.get('page') || '1') || 1);
-  return json({ page, stories: await storiesFor(env, { limit: 20, offset: (page - 1) * 20 }) }, 200, { 'Cache-Control': 'public, max-age=60' });
+  const v = u.searchParams.get('videos');
+  const videos = v === '1' ? true : v === '0' ? false : undefined;
+  return json({ page, stories: await storiesFor(env, { limit: 20, offset: (page - 1) * 20, videos }) }, 200, { 'Cache-Control': 'public, max-age=60' });
 });
+
+// Video stories: uploaded in parts (a weak connection retries one part), checked, then served with ranges.
+route('POST', '/api/stories/video/start', true, async ({ req, env, deps }) => json(await startVideo(env, deps, await requireMember(req, env, deps), await readJson(req)), 201));
+route('PUT', '/api/stories/video/part', true, async ({ req, env, deps }) => {
+  const u = new URL(req.url);
+  return json(await uploadVideoPart(env, await requireMember(req, env, deps), u.searchParams.get('u') || '', Number(u.searchParams.get('n')), req));
+});
+route('POST', '/api/stories/video/complete', true, async ({ req, env, deps }) => json(await completeVideo(env, await requireMember(req, env, deps), await readJson(req))));
+route('GET', '/media/videos/:key', false, async ({ req, env, params }) => serveVideo(env, `videos/${params.key}`, req));
 
 route('POST', '/api/stories/:id/report', true, async ({ req, env, deps, params, ctx }) => {
   const body = await readJson<{ reason?: unknown; turnstileToken?: unknown }>(req);

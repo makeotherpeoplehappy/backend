@@ -86,7 +86,7 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 .hf-acct-card[data-hf-closed] .hf-acct-card-title{margin-bottom:0}
 /* Weekly dare line on the dare's action page */
 #hf-dare-tag{margin:8px 0 4px}
-#hf-dare-tag .hf-local-pin{margin-bottom:2px}
+#hf-dare-tag .hf-sticker{margin-bottom:6px}
 #hf-dare-tag .hf-dare-count{margin-top:0}
 /* Phone menu: the location options are listed inline; the pin lines up with the first one */
 @media (max-width:991px){.hf-nav-right .hf-loc-form>.w-embed{margin-top:15px}}
@@ -97,3 +97,6 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 /* Sign-in window (built in Webflow, Footer component): the backdrop is a pseudo-element Webflow cannot style */
 #hfp-auth::backdrop{background:rgba(17,20,24,.55)}
 #hfp-auth button[disabled]{opacity:.55;cursor:default}
+/* Live line (home): the dot pulses gently; still when the device asks for less motion */
+@keyframes hf-pulse{0%{box-shadow:0 0 0 0 rgba(255,111,94,.55)}70%{box-shadow:0 0 0 10px rgba(255,111,94,0)}100%{box-shadow:0 0 0 0 rgba(255,111,94,0)}}
+.hf-live-dot{animation:hf-pulse 1.8s ease-out infinite}

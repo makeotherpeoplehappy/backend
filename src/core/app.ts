@@ -9,6 +9,7 @@ import { currentDare } from './features/dare';
 import { claimGuest, expireGuests, guestFromRequest, memberOrGuest } from './features/guests';
 import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
+import { recentActivity } from './features/activity';
 import { actionState, markDone, mostDone, resolveActionRef, setLike, syncActions, undoDone, writeCountsToCms } from './features/actions';
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
@@ -128,6 +129,7 @@ route('POST', '/api/me/claim-guest', true, async ({ req, env, deps }) => {
 route('GET', '/api/impact', true, async ({ env }) => json(await publicImpact(env), 200, { 'Cache-Control': 'public, max-age=300' }));
 // Weekly dare: this week's action and how many people took it (from 10 up).
 route('GET', '/api/dare', true, async ({ env, deps }) => json(await currentDare(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
+route('GET', '/api/activity', true, async ({ env, deps }) => json(await recentActivity(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 route('GET', '/api/most-done', true, async ({ env }) => json(await mostDone(env), 200, { 'Cache-Control': 'public, max-age=60' }));
 
 route(

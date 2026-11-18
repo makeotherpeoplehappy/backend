@@ -115,9 +115,26 @@
     ]);
     if ((h.failedWrites || []).length) {
       details.appendChild(el('h2', { text: 'Writes that failed' }));
-      details.appendChild(table(['When', 'Where', 'What', 'Tries', 'Error'], h.failedWrites.map(function (f) {
-        return [new Date(f.at).toLocaleString(), f.target, f.what, f.attempts, f.error];
-      })));
+      var ft = table(['When', 'Where', 'What', 'Tries', 'Error', ''], h.failedWrites.map(function (f) {
+        return [new Date(f.at).toLocaleString(), f.target, f.what, f.attempts, f.error, ''];
+      }));
+      var note = el('p', { class: 'sub' });
+      [].slice.call(ft.querySelectorAll('tr')).slice(1).forEach(function (tr, i) {
+        var f = h.failedWrites[i], cell = tr.lastElementChild;
+        [['retry', 'Try again'], ['dismiss', 'Dismiss']].forEach(function (a) {
+          var b = el('button', { type: 'button', text: a[1] });
+          b.className = 'light'; b.style.cssText = 'margin:0 6px 4px 0;padding:2px 10px;font-size:14px';
+          b.onclick = async function () {
+            b.disabled = true;
+            var r = await window.HFB.call('/api/lab/failed', { method: 'POST', body: { what: f.what, do: a[0] } });
+            if (r.ok) { note.textContent = a[0] === 'retry' ? 'Queued again.' : 'Dismissed.'; tr.remove(); }
+            else { b.disabled = false; note.textContent = (r.data && r.data.message) || 'That did not work.'; }
+          };
+          cell.appendChild(b);
+        });
+      });
+      details.appendChild(ft);
+      details.appendChild(note);
     }
     root.appendChild(details);
     (h.dareWarnings || []).forEach(function (w) { root.insertBefore(el('p', { class: 'warn', text: w }), root.children[2]); });

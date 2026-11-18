@@ -277,3 +277,23 @@ export async function publicImpact(env: Env): Promise<{ peopleMadeHappy: number;
   await env.CACHE.put('impact:public', JSON.stringify(out), { expirationTtl: 300 });
   return out;
 }
+
+/**
+ * A write that gave up, from the Lab: "Try again" queues it once more from scratch;
+ * "Dismiss" keeps it for the record but stops counting it as a problem.
+ */
+export async function labFailedWrite(env: Env, deps: Deps, body: unknown): Promise<{ ok: true }> {
+  const b = (body || {}) as { what?: unknown; do?: unknown };
+  const what = typeof b.what === 'string' ? b.what : '';
+  if (!what || (b.do !== 'retry' && b.do !== 'dismiss')) throw new HttpError(400, 'invalid_failed_write', 'Pick a failed write, then Try again or Dismiss.');
+  const now = iso(deps.now());
+  const r = await env.DB.prepare(
+    b.do === 'retry'
+      ? `UPDATE outbox SET status = 'pending', attempts = 0, next_attempt_at = ?2, locked_until = NULL, updated_at = ?2 WHERE dedupe_key = ?1 AND status = 'dead'`
+      : `UPDATE outbox SET status = 'dismissed', locked_until = NULL, updated_at = ?2 WHERE dedupe_key = ?1 AND status = 'dead'`,
+  )
+    .bind(what, now)
+    .run();
+  if (!r.meta.changes) throw new HttpError(404, 'failed_write_gone', 'That failed write is no longer there.');
+  return { ok: true };
+}

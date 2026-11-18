@@ -101,6 +101,26 @@ describe('/lab access managed on the page', () => {
     ]);
   });
 
+  it('a failed write can be dismissed or tried again from the Lab, by Lab people only', async () => {
+    const add = (key: string) => h.env.DB.prepare(
+      `INSERT INTO outbox (target, op, payload, dedupe_key, status, attempts, last_error, next_attempt_at, created_at, updated_at)
+       VALUES ('email', 'email.send', '{}', ?1, 'dead', 1, 'Resend failed (422)', '2026-11-17T22:05:44Z', '2026-11-17T22:05:44Z', '2026-11-17T22:05:44Z')`,
+    ).bind(key).run();
+    await add('partner-report:2:2026-10');
+    await add('partner-report:2:2026-11');
+    const failed = (body: unknown, token = 'shcat_owner') => h.request('POST', '/api/lab/failed', { token, body, key: null });
+    expect((await failed({ what: 'partner-report:2:2026-10', do: 'dismiss' }, 'shcat_guest')).status).toBe(403);
+    expect((await failed({ what: 'partner-report:2:2026-10', do: 'dismiss' })).status).toBe(200);
+    expect((await failed({ what: 'partner-report:2:2026-10', do: 'dismiss' })).status).toBe(404);
+    expect((await failed({ what: 'partner-report:2:2026-11', do: 'retry' })).status).toBe(200);
+    expect((await failed({ what: 'x', do: 'delete' })).status).toBe(400);
+    const rows = await h.db<{ dedupe_key: string; status: string; attempts: number }>(`SELECT dedupe_key, status, attempts FROM outbox WHERE dedupe_key LIKE 'partner-report:2:%' ORDER BY dedupe_key`);
+    expect(rows[0]).toMatchObject({ status: 'dismissed' });
+    expect(rows[1].status).not.toBe('dead');
+    const k = await (await h.request('GET', '/api/lab/kpis', { token: 'shcat_owner' })).json();
+    expect(k.health.failedWrites.map((f: { what: string }) => f.what)).not.toContain('partner-report:2:2026-10');
+  });
+
   it('an owner invites someone: they get access and an invitation email, no redeploy', async () => {
     expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_guest' })).status).toBe(403);
     const r = await (await access('POST', 'shcat_owner', { email: 'Guest@Example.com' })).json();

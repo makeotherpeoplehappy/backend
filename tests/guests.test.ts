@@ -64,7 +64,7 @@ describe('Without an account', () => {
     expect((await guestDone(a, 'guest-key-one-too-many-000')).status).toBe(429);
     // Someone on another network is not affected.
     expect((await guestDone(a, 'guest-key-elsewhere-00000', '5.6.7.8')).status).toBe(201);
-  });
+  }, 30_000); // 32 requests in a row: more than the default 5 s when the whole suite runs at once
 
   it('counts in public totals like any other mark', async () => {
     await guestDone(a);

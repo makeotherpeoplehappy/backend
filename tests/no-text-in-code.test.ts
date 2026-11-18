@@ -18,13 +18,6 @@ const TECHNICAL = new Set([
   'No Shopify customer with that ID.',
   'That decision could not be read.',
   'Someone has already reviewed this.',
-  // Staff-only (/lab partners).
-  'Only an owner can do this.',
-  'Please give the partner a name.',
-  'That partner cannot be changed here.',
-  'That report email does not look right.',
-  // Pledge API answer to a developer.
-  'Send no customer data: no order number, no email.',
 ]);
 
 function files(dir: string): string[] {

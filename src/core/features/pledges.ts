@@ -1,4 +1,4 @@
-// Pledges: one per purchase (order), from our Shopify shop or a partner shop.
+// Pledges: one per purchase (order) from our Shopify shop.
 // A pledge is kept when the buyer marks an action done after the order date;
 // one done mark keeps one pledge, oldest open pledge first. A partial refund
 // keeps the pledge; a cancellation or full refund removes it.
@@ -10,7 +10,7 @@ import { memberEmail } from '../email';
 import { enqueue } from '../queue';
 import { adminGraphql } from '../shopify';
 import { listDrops } from './drops';
-import { OWN_SHOP, ensureClaim } from './partners';
+import { OWN_SHOP, ensureClaim } from './claims';
 
 export interface OrderLine {
   lineId: string;

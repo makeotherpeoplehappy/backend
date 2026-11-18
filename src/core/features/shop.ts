@@ -150,19 +150,26 @@ function dropFields(d: ShopifyDrop, pieces: Piece[] | null) {
   const head = splitHeadline(d.heroHeadline?.value?.trim() || d.title);
   const leadId = d.lead?.reference?.id;
   const lead = pieces.find((p) => p.productId === leadId) || pieces[0] || null;
+  // Sold out once every piece is counted and none is left.
+  const soldOut = pieces.length > 0 && pieces.every((p) => p.left === 0);
+  const heroImage = image(d.heroImage?.reference?.image, d.title);
+  // Webflow shows or hides the home page parts with these (native conditional visibility).
+  const heroOn = !!heroImage && !soldOut;
   return {
     ...base,
     'hero-before': head.before.slice(0, 256),
     'hero-accent': head.accent.slice(0, 256),
     'hero-after': head.after.slice(0, 256),
-    'hero-image': image(d.heroImage?.reference?.image, d.title),
+    'hero-image': heroImage,
     'lead-name': lead?.title.slice(0, 256) || '',
     'lead-price': lead?.price || '',
     'lead-slug': lead?.handle || '',
     pieces: pieces.map((p) => p.itemId),
     'piece-count': pieces.length,
-    // Sold out once every piece is counted and none is left.
-    'sold-out': pieces.length > 0 && pieces.every((p) => p.left === 0),
+    'sold-out': soldOut,
+    open: !soldOut,
+    'hero-on': heroOn,
+    'hero-off': !heroOn,
   };
 }
 

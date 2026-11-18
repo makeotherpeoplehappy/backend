@@ -2116,10 +2116,6 @@
   }
 
   async function shopPage() {
-    // The "sold out" line under the home hero only shows when no drop leads the hero.
-    if (document.querySelector('[data-hf-hero="drop"]')) {
-      document.querySelectorAll('[data-hf-hero="sold-out"]').forEach(function (e) { e.style.display = 'none'; });
-    }
     var blocks = [].slice.call(document.querySelectorAll('[data-hf-drop]'));
     if (!blocks.length || blocks[0].getAttribute('data-hfp')) return;
     await wait(function () { return window.HFB; }, 10000);
@@ -2134,7 +2130,8 @@
         P.fill('drop-at', whenText(d.dropDate));
         var to = d.phase === 'upcoming' ? d.earlyAt : d.phase === 'early' ? d.dropDate : null;
         P.fill('drop-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
-        // The home hero's countdown: days, hours and minutes in their own boxes.
+        // The home hero's countdown: days, hours and minutes in their own boxes, until the drop opens to everyone.
+        P.show('drop-count', !!to);
         var ms = to ? Math.max(0, Date.parse(to) - Date.now()) : 0;
         P.fill('drop-days', String(Math.floor(ms / 864e5)));
         P.fill('drop-hours', String(Math.floor(ms / 36e5) % 24).padStart(2, '0'));
@@ -2197,6 +2194,17 @@
       if (turn) load(); else draw();
     }, 20000);
     document.addEventListener('hfb:resumed', load);
+  }
+
+  /** The dot next to Shop in the menu (in Webflow): on while a drop is coming up or on sale. */
+  async function shopDot() {
+    var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
+    if (!dots.length || dots[0].getAttribute('data-hfp')) return;
+    dots.forEach(function (d) { d.setAttribute('data-hfp', '1'); });
+    await wait(function () { return window.HFB; }, 10000);
+    var r = await HFB.call('/api/drops');
+    var on = !!(r.ok && r.data.drops.some(function (d) { return d.phase === 'upcoming' || d.phase === 'early' || d.phase === 'live'; }));
+    dots.forEach(function (d) { if (on) d.setAttribute('data-hf-on', '1'); else d.removeAttribute('data-hf-on'); });
   }
 
   async function productPage() {
@@ -2277,7 +2285,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

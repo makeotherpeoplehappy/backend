@@ -150,6 +150,16 @@ describe('Action page', () => {
     expect([...p.document.querySelectorAll('a')].find((a) => a.textContent === 'Share your story')?.getAttribute('style')).toContain('none');
   });
 
+  it('after undo, says the new total, not the old one', async () => {
+    const p = await page('/action/cook-a-meal', ACTION_HTML, (m, path) => {
+      if (path.endsWith('/state')) return { data: { actionId: 'a1', stories: [], me: m === 'GET' ? { done: true, tally: 1, canUndo: true, doneWith: [] } : null } };
+      if (m === 'DELETE') return { data: { done: false, tally: 0 } };
+    });
+    [...p.document.querySelectorAll('button')].find((b) => b.textContent === 'Undo')!.click();
+    await p.settle();
+    expect(p.document.getElementById('hf-did-msg')!.textContent).toBe('Undone.');
+  });
+
   it('shows approved stories with a vertical player and a report link', async () => {
     const story = { id: 7, text: 'They cried.', name: 'Ana', with: ['Ben'], createdAt: '2026-11-16T09:00:00Z', photo: null, video: { embed: 'https://www.tiktok.com/embed/v2/1?muted=1', vertical: true }, action: { title: 'Cook', slug: 'cook' } };
     const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [story] } } : undefined));

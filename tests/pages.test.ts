@@ -390,6 +390,17 @@ describe('Header', () => {
     expect(avatar.style.backgroundImage).toContain('https://img.test/me.jpg');
   });
 
+  it('the desktop dropdown sets the picker, its label and the tick', async () => {
+    const html = HTML + '<div class="w-dropdown"><div><span data-hf-fill="loc-label">All locations</span></div><nav><a href="#" data-hf-loc="all">All locations</a><a href="#" data-hf-loc="copenhagen">Copenhagen</a></nav></div>';
+    const p = await page('/', html, () => undefined);
+    (p.document.querySelector('[data-hf-loc="copenhagen"]') as unknown as Clickable).click();
+    expect((p.document.getElementById('hf-loc') as unknown as { value: string }).value).toBe('copenhagen');
+    expect(p.document.querySelector('[data-hf-fill="loc-label"]')!.textContent).toBe('Copenhagen');
+    expect(p.document.querySelector('[data-hf-loc="copenhagen"]')!.getAttribute('aria-selected')).toBe('true');
+    expect(p.document.querySelector('[data-hf-loc="all"]')!.getAttribute('aria-selected')).toBe('false');
+    expect(p.window.localStorage.getItem('hf_loc')).toBe('copenhagen');
+  });
+
   it('the phone pin picks a location through the same picker', async () => {
     const p = await page('/', HTML, () => undefined);
     const mini = p.document.querySelector('.hf-loc-mini') as unknown as { value: string; options: unknown[]; dispatchEvent: (e: unknown) => void };

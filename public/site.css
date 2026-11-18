@@ -33,6 +33,10 @@ html:not(.hf-in) [data-hf-auth=in],html.hf-in [data-hf-auth=out]{display:none!im
 .hf-nav-button.w--open{background-color:transparent;color:var(--colour--ink)}
 .hf-nav-button .hf-x,.hf-nav-button.w--open .hf-bars{display:none}
 .hf-nav-button.w--open .hf-x{display:block}
+/* Desktop location dropdown (Webflow dropdown): small chevron right after the text, a tick on the chosen place */
+.hf-loc-toggle .w-icon-dropdown-toggle{margin-right:2px;font-size:11px}
+.hf-loc-option[aria-selected=true]::after{content:"";width:14px;height:10px;margin-left:16px;flex:none;background:no-repeat center/14px 10px url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 14 10'%3E%3Cpath d='M1 5l4 4 8-8' fill='none' stroke='%232E5E8E' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")}
+.hf-loc-option[aria-selected=true]{font-weight:600}
 /* Phone bar: the pin opens the phone's own location picker (an invisible select over the icon) */
 .hf-loc-mini{position:absolute;inset:0;width:100%;height:100%;opacity:0;font-size:16px;cursor:pointer;-webkit-appearance:none;appearance:none}
 /* Avatar with a profile photo: the photo fills the circle, the initial steps aside */

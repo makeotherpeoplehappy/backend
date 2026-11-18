@@ -1150,8 +1150,29 @@
       try { localStorage.setItem('hf_loc', s.value); } catch (e) {}
       window.dispatchEvent(new Event('hf-loc'));
       fitSelect(s);
+      showLocation(s);
     });
     fitSelect(s);
+    // Desktop: a Webflow dropdown in the site's style; each option (data-hf-loc) sets the picker above.
+    document.querySelectorAll('[data-hf-loc]').forEach(function (o) {
+      o.addEventListener('click', function (e) {
+        e.preventDefault();
+        var v = o.getAttribute('data-hf-loc');
+        s.value = v === 'all' ? '' : v;
+        s.dispatchEvent(new Event('change'));
+        var dd = o.closest('.w-dropdown');
+        if (dd && window.jQuery) window.jQuery(dd).triggerHandler('w-close.w-dropdown');
+      });
+    });
+    showLocation(s);
+  }
+  function showLocation(s) {
+    var o = s.options[s.selectedIndex];
+    document.querySelectorAll('[data-hf-fill="loc-label"]').forEach(function (l) { if (o) l.textContent = o.text; });
+    document.querySelectorAll('[data-hf-loc]').forEach(function (x) {
+      var v = x.getAttribute('data-hf-loc');
+      x.setAttribute('aria-selected', String((v === 'all' ? '' : v) === s.value));
+    });
   }
 
   // The picker hugs the chosen location so its arrow sits right after the text. Browsers with CSS

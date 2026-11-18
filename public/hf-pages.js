@@ -481,8 +481,32 @@
     });
   }
 
+  // Home area (Account > Settings): the same list as the header picker, with "No home area" first.
+  function homeAreaRow(me) {
+    var sel = $('hfp-home-area');
+    var loc = $('hf-loc');
+    if (!sel || !loc) return;
+    if (!sel.getAttribute('data-hfp')) {
+      sel.setAttribute('data-hfp', '1');
+      sel.innerHTML = loc.innerHTML;
+      if (sel.options[0] && !sel.options[0].value) sel.options[0].text = copyText('acct-no-home-area');
+      sel.addEventListener('change', async function () {
+        var msg = $('hfp-settings-msg');
+        var rr = await HFB.call('/api/me/settings', { method: 'PATCH', body: { homeArea: sel.value || null } });
+        if (msg) msg.textContent = rr.ok ? copyText('saved') : msgOf(rr);
+        if (rr.ok) setLocation(sel.value, true);
+      });
+    }
+    sel.value = me.homeArea || '';
+    // A location picked before signing in becomes the home area the first time.
+    var local = '';
+    try { local = localStorage.getItem('hf_loc') || ''; } catch (e) {}
+    if (!me.homeArea && local && window.HFB) { sel.value = local; saveHomeArea(local); }
+  }
+
   function renderAccount(me) {
     photoRow();
+    homeAreaRow(me);
     var inn = $('hf-acct-in');
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
@@ -1140,18 +1164,48 @@
     });
   }
 
-  /** The location picker remembers its choice. */
+  /**
+   * The location picker remembers its choice on this device, and a signed-in member's choice is
+   * also their "Home area" on their account (so a new device picks it up). Changing it in
+   * My account > Settings changes the picker too.
+   */
+  var locFromAccount = false;
+  var locSaveTimer = null;
+  function saveHomeArea(v) {
+    clearTimeout(locSaveTimer);
+    locSaveTimer = setTimeout(function () {
+      if (window.HFB && signedIn()) HFB.call('/api/me/settings', { method: 'PATCH', body: { homeArea: v || null } });
+    }, 500);
+  }
+  function setLocation(v, fromAccount) {
+    var s = $('hf-loc');
+    if (!s) return;
+    locFromAccount = !!fromAccount;
+    s.value = v || '';
+    s.dispatchEvent(new Event('change'));
+    locFromAccount = false;
+  }
   function rememberLocation() {
     var s = $('hf-loc');
     if (!s || s.getAttribute('data-hfp')) return;
     s.setAttribute('data-hfp', '1');
-    try { s.value = localStorage.getItem('hf_loc') || ''; } catch (e) {}
+    var saved = null;
+    try { saved = localStorage.getItem('hf_loc'); s.value = saved || ''; } catch (e) {}
     s.addEventListener('change', function () {
       try { localStorage.setItem('hf_loc', s.value); } catch (e) {}
       window.dispatchEvent(new Event('hf-loc'));
       fitSelect(s);
       showLocation(s);
+      if (!locFromAccount) saveHomeArea(s.value);
     });
+    // A device with no location yet takes the member's home area.
+    if (saved === null) {
+      wait(function () { return window.HF && window.HFB && (window.$memberstackDom || !document.querySelector('script[data-memberstack-app]')); }, 8000).then(async function () {
+        if (!signedIn()) return;
+        var r = await HFB.call('/api/me/home-area');
+        if (r.ok && r.data.homeArea && [].some.call(s.options, function (o) { return o.value === r.data.homeArea; })) setLocation(r.data.homeArea, true);
+      });
+    }
     fitSelect(s);
     // Desktop: a Webflow dropdown in the site's style; each option (data-hf-loc) sets the picker above.
     document.querySelectorAll('[data-hf-loc]').forEach(function (o) {

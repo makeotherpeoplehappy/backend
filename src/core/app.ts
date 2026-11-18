@@ -186,6 +186,9 @@ route(
 
 route('GET', '/api/me', true, async ({ req, env, deps }) => json(await getAccount(env, await requireMember(req, env, deps))));
 
+// The member's home area only: a light call for the header on a device that has no location yet.
+route('GET', '/api/me/home-area', true, async ({ req, env, deps }) => json({ homeArea: (await requireMember(req, env, deps)).home_area ?? null }));
+
 route('PATCH', '/api/me/settings', true, memberWrite('settings', async ({ req, env, deps }, m) => updateSettings(env, deps, m, await readJson(req))));
 
 route(

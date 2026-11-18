@@ -95,7 +95,7 @@
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
     '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-ripple{margin:16px 0 0}.hfp-ripple-h{margin:0 0 8px}.hfp-ripple-svg{display:block;height:auto;margin:0 auto}.hfp-ripple-dot{cursor:pointer;outline:none}.hfp-ripple-dot:focus-visible{stroke:var(--colour--ink,#111418);stroke-width:2}.hfp-ripple-caption{min-height:1.5em;text-align:center;font-weight:600;margin:8px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-clip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:20px;margin:16px 0 32px}.hfp-clip{position:relative;aspect-ratio:9/16;border-radius:20px;overflow:hidden;background:#111418}.hfp-clip-video{display:block;width:100%;height:100%;object-fit:cover;cursor:pointer}.hfp-clip-sound{position:absolute;left:12px;bottom:12px;border:0;border-radius:999px;padding:8px 14px;background:rgba(17,20,24,.7);color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}.hfp-clip-sorry{display:none;position:absolute;inset:auto 12px 12px;margin:0;padding:10px 12px;border-radius:12px;background:rgba(17,20,24,.75);color:#fff;font-size:14px}.hfp-clip.is-broken .hfp-clip-sorry{display:block}.hfp-clip.is-broken .hfp-clip-sound{display:none}.hf-story.is-clip{max-width:420px}.hfp-video-box{margin:20px 0}.hfp-video-preview{display:block;width:min(100%,240px);aspect-ratio:9/16;object-fit:cover;border-radius:16px;margin:12px 0;background:#111418}.hfp-ripple{margin:16px 0 0}.hfp-ripple-h{margin:0 0 8px}.hfp-ripple-svg{display:block;height:auto;margin:0 auto}.hfp-ripple-dot{cursor:pointer;outline:none}.hfp-ripple-dot:focus-visible{stroke:var(--colour--ink,#111418);stroke-width:2}.hfp-ripple-caption{min-height:1.5em;text-align:center;font-weight:600;margin:8px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
     '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
@@ -205,8 +205,37 @@
     return el('span', null, [b, note]);
   }
 
+  // An uploaded vertical video: plays muted, looped and inline while on screen;
+  // tap for sound. If the browser can't play it, the still and a short note show.
+  var clipWatch = null;
+  function clipPlayer(c, label) {
+    var v = el('video', { class: 'hfp-clip-video', src: HFB.base + '/media/' + c.key, poster: c.poster ? HFB.base + '/media/' + c.poster : null, muted: true, loop: true, playsinline: true, preload: 'none', 'aria-label': label });
+    v.muted = true;
+    var sound = el('button', { type: 'button', class: 'hfp-clip-sound', text: copyText('clip-sound-on') });
+    var sorry = el('p', { class: 'hfp-clip-sorry', text: copyText('clip-cant-play') });
+    var box = el('div', { class: 'hfp-clip' }, [v, sound, sorry]);
+    function toggle() {
+      var on = v.muted;
+      document.querySelectorAll('.hfp-clip-video').forEach(function (o) { if (o !== v) { o.muted = true; var b = o.parentNode.querySelector('.hfp-clip-sound'); if (b) b.textContent = copyText('clip-sound-on'); } });
+      v.muted = !on;
+      sound.textContent = copyText(on ? 'clip-sound-off' : 'clip-sound-on');
+      if (v.paused) v.play().catch(function () {});
+    }
+    sound.addEventListener('click', toggle);
+    v.addEventListener('click', toggle);
+    v.addEventListener('error', function () { box.classList.add('is-broken'); });
+    if (window.IntersectionObserver) {
+      clipWatch = clipWatch || new IntersectionObserver(function (es) {
+        es.forEach(function (e) { var x = e.target; if (e.isIntersecting && e.intersectionRatio >= 0.6) x.play().catch(function () {}); else x.pause(); });
+      }, { threshold: [0, 0.6] });
+      clipWatch.observe(v);
+    }
+    return box;
+  }
+
   function storyCard(s, withAction) {
     var kids = [];
+    if (s.clip) kids.push(clipPlayer(s.clip, copyText('clip-label', { title: (s.action && s.action.title) || '' })));
     if (s.photo) kids.push(el('img', { class: 'hfp-photo', src: HFB.base + '/media/' + s.photo.key, alt: s.photo.description || copyText('story-photo-alt'), loading: 'lazy' }));
     if (s.video) {
       kids.push(el('div', { class: 'hfp-video' + (s.video.vertical ? ' is-vertical' : '') }, [
@@ -222,7 +251,7 @@
       kids.push(s.action.slug ? el('p', null, [el('a', { class: 'hf-story-link', href: '/action/' + s.action.slug, text: copyText('story-action-link', { title: s.action.title }) })]) : el('p', { class: 'hf-story-meta', text: copyText('story-action', { title: s.action.title }) }));
     }
     kids.push(reportLink(s.id));
-    return el('article', { class: 'hf-story' }, kids);
+    return el('article', { class: 'hf-story' + (s.clip ? ' is-clip' : '') }, kids);
   }
 
   // A group's line: "3 of you are in: Ana, Ben + 1 more" (private to the group, so from 1).
@@ -552,7 +581,13 @@
       }
       storiesBox.innerHTML = '';
       storiesBox.appendChild(el('h2', { id: 'hfp-stories-h', text: copyText('action-stories-h') }));
-      list.forEach(function (s) { storiesBox.appendChild(storyCard(s, false)); });
+      var clipList = list.filter(function (s) { return s.clip; });
+      if (clipList.length) {
+        var grid = el('div', { class: 'hfp-clip-grid' });
+        clipList.forEach(function (s) { grid.appendChild(storyCard(s, false)); });
+        storiesBox.appendChild(grid);
+      }
+      list.filter(function (s) { return !s.clip; }).forEach(function (s) { storiesBox.appendChild(storyCard(s, false)); });
     }
 
     // Signed out: straight to sign-in. The click is remembered and finished
@@ -1135,6 +1170,133 @@
     });
     removePhoto.addEventListener('click', function () { photoKey = null; preview.style.display = 'none'; removePhoto.style.display = 'none'; if (photo) photo.value = ''; photoMsg.textContent = copyText('st-photo-removed'); });
 
+    // Video: checked here first (vertical, 15–30 seconds, at most 100 MB), then
+    // uploaded in parts; a dropped part is retried, and "Try again" picks up
+    // where it stopped. The backend checks the file again.
+    var vid = { key: s.videoKey || null, poster: s.posterKey || null, busy: false, isNew: false, up: null };
+    var vInput = el('input', { type: 'file', id: 'hfp-video-file', accept: 'video/mp4,video/quicktime,video/*', class: 'hfp-file' });
+    var vMsg = status('hfp-status hfp-small');
+    var vPrev = el('video', { class: 'hfp-video-preview', controls: true, playsinline: true, muted: true, preload: 'metadata', style: vid.key ? '' : 'display:none', src: vid.key ? HFB.base + '/media/' + vid.key : null, poster: vid.poster ? HFB.base + '/media/' + vid.poster : null });
+    var vRetry = el('button', { type: 'button', class: 'hf-button-light', style: 'display:none', text: copyText('st-video-retry') });
+    var vRemove = el('button', { type: 'button', class: 'hfp-link hfp-small', style: vid.key ? '' : 'display:none', text: copyText('st-video-remove') });
+    var vConsent = el('input', { type: 'checkbox', id: 'hfp-video-consent' });
+    var vKidsYes = el('input', { type: 'radio', name: 'hfp-video-kids', id: 'hfp-video-kids-yes', value: 'yes', checked: s.hasChildren === 1 });
+    var vKidsNo = el('input', { type: 'radio', name: 'hfp-video-kids', id: 'hfp-video-kids-no', value: 'no', checked: s.hasChildren === 0 });
+    var vAsk = el('div', { class: 'hfp-video-ask', style: vid.key ? '' : 'display:none' }, [
+      el('div', { class: 'hfp-check' }, [vConsent, el('label', { for: 'hfp-video-consent', text: copyText('st-video-consent') })]),
+      el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:12px 0 0' }, [
+        el('legend', { class: 'hf-form-label', text: copyText('st-video-children') }),
+        el('div', { class: 'hfp-check' }, [vKidsYes, el('label', { for: 'hfp-video-kids-yes', text: copyText('st-yes') })]),
+        el('div', { class: 'hfp-check' }, [vKidsNo, el('label', { for: 'hfp-video-kids-no', text: copyText('st-no') })]),
+      ]),
+    ]);
+    var vBox = el('div', { class: 'hfp-field hfp-video-box' }, [
+      el('label', { for: 'hfp-video-file', class: 'hf-form-label', text: copyText('st-video-label') }),
+      el('p', { class: 'hf-form-help hfp-small', text: copyText('st-video-hint') }),
+      vInput, vMsg, vPrev, el('div', { class: 'hfp-row' }, [vRetry, vRemove]), vAsk,
+    ]);
+    var vAnchor = (video && video.closest('.hf-field-group, .hfp-field, div')) || area;
+    if (vAnchor) vAnchor.insertAdjacentElement('afterend', vBox); else form.insertBefore(vBox, form.firstChild);
+    function vSay(t, bad) { vMsg.textContent = t; if (bad) vMsg.setAttribute('data-kind', 'error'); else vMsg.removeAttribute('data-kind'); }
+    function meta(file) {
+      return new Promise(function (resolve) {
+        var t = el('video', { preload: 'metadata', muted: true, playsinline: true });
+        var url = URL.createObjectURL(file), finished = false;
+        function end(v) { if (finished) return; finished = true; resolve(v); }
+        t.onloadedmetadata = function () { end({ el: t, url: url, seconds: t.duration, w: t.videoWidth, h: t.videoHeight }); };
+        t.onerror = function () { end({ el: null, url: url, seconds: NaN, w: 0, h: 0 }); };
+        setTimeout(function () { end({ el: null, url: url, seconds: NaN, w: 0, h: 0 }); }, 10000);
+        t.src = url;
+      });
+    }
+    function posterOf(m) {
+      return new Promise(function (resolve) {
+        if (!m.el || !m.w) return resolve(null);
+        var done2 = false;
+        m.el.onseeked = function () {
+          if (done2) return; done2 = true;
+          try {
+            var c = document.createElement('canvas'), k = Math.min(1, 720 / m.w);
+            c.width = Math.round(m.w * k); c.height = Math.round(m.h * k);
+            c.getContext('2d').drawImage(m.el, 0, 0, c.width, c.height);
+            c.toBlob(function (b) { resolve(b); }, 'image/jpeg', 0.82);
+          } catch (e) { resolve(null); }
+        };
+        setTimeout(function () { if (!done2) { done2 = true; resolve(null); } }, 8000);
+        m.el.currentTime = Math.min(1, (m.seconds || 2) / 2);
+      });
+    }
+    async function sendParts() {
+      var up = vid.up, tok = await HFB.token();
+      for (var n = 1; n <= up.parts; n++) {
+        if (up.done[n]) continue;
+        var start = (n - 1) * up.partSize, chunk = up.file.slice(start, Math.min(start + up.partSize, up.file.size)), ok = false;
+        for (var tries = 0; tries < 4 && !ok; tries++) {
+          if (tries) await new Promise(function (r2) { setTimeout(r2, 1000 * tries * tries); });
+          try {
+            var res = await fetch(HFB.base + '/api/stories/video/part?u=' + encodeURIComponent(up.uploadId) + '&n=' + n, { method: 'PUT', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'application/octet-stream' }, body: chunk });
+            if (res.ok) { up.done[n] = (await res.json()).etag; ok = true; }
+            else if (res.status < 500 && res.status !== 429) { var d0 = null; try { d0 = await res.json(); } catch (e) {} throw new Error((d0 && d0.message) || copyText('err-video-upload-gone')); }
+          } catch (e) { if (e && e.message && !/fetch|network|load/i.test(e.message)) throw e; }
+        }
+        if (!ok) return false;
+        vSay(copyText('st-video-uploading', { n: Math.round((n / up.parts) * 100) }));
+      }
+      return true;
+    }
+    async function finishUpload() {
+      vid.busy = true; vRetry.style.display = 'none';
+      try {
+        if (!(await sendParts())) { vSay(copyText('st-video-stopped'), true); vRetry.style.display = ''; return; }
+        var parts = Object.keys(vid.up.done).map(function (k) { return { partNumber: Number(k), etag: vid.up.done[k] }; });
+        var c = await HFB.call('/api/stories/video/complete', { method: 'POST', body: { uploadId: vid.up.uploadId, parts: parts } });
+        if (!c.ok) { vSay(msgOf(c), true); vid.up = null; vInput.value = ''; vPrev.style.display = 'none'; vAsk.style.display = 'none'; return; }
+        vid.key = c.data.videoKey; vid.isNew = true; vid.up = null;
+        vSay(copyText('st-video-added'));
+        vRemove.style.display = '';
+      } catch (e) {
+        vSay((e && e.message) || copyText('st-video-stopped'), true); vRetry.style.display = '';
+      } finally { vid.busy = false; }
+    }
+    vRetry.addEventListener('click', function () { if (vid.up) finishUpload(); });
+    vRemove.addEventListener('click', function () {
+      vid.key = null; vid.poster = null; vid.isNew = true; vid.up = null;
+      vPrev.removeAttribute('src'); vPrev.style.display = 'none'; vRemove.style.display = 'none'; vAsk.style.display = 'none'; vInput.value = '';
+      vSay(copyText('st-video-removed'));
+    });
+    vInput.addEventListener('change', async function () {
+      var file = vInput.files && vInput.files[0];
+      if (!file) return;
+      vRetry.style.display = 'none';
+      var type = /\.mov$/i.test(file.name) || file.type === 'video/quicktime' ? 'video/quicktime' : file.type === 'video/mp4' || /\.mp4$/i.test(file.name) ? 'video/mp4' : '';
+      if (!type) return vSay(copyText('err-video-type'), true);
+      if (file.size > 100 * 1024 * 1024) return vSay(copyText('err-video-too-large'), true);
+      vSay(copyText('st-video-checking'));
+      var m = await meta(file);
+      // Checked here before anything is uploaded (the backend checks again).
+      if (m.seconds && isFinite(m.seconds)) {
+        if (m.seconds < 14.5) return vSay(copyText('err-video-too-short'), true);
+        if (m.seconds > 30.99) return vSay(copyText('err-video-too-long'), true);
+      }
+      if (m.w && m.h && m.h <= m.w) return vSay(copyText('err-video-not-vertical'), true);
+      vPrev.src = m.url; vPrev.removeAttribute('poster'); vPrev.style.display = '';
+      vAsk.style.display = ''; vConsent.checked = false; vKidsYes.checked = vKidsNo.checked = false;
+      vid.key = null; vid.poster = null;
+      var still = await posterOf(m);
+      if (still) {
+        try {
+          var tok = await HFB.token();
+          var pr = await fetch(HFB.base + '/api/stories/photo', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'image/jpeg' }, body: still });
+          if (pr.ok) vid.poster = (await pr.json()).photoKey;
+        } catch (e) {}
+      }
+      var st0 = await HFB.call('/api/stories/video/start', { method: 'POST', body: { size: file.size, type: type } });
+      if (!st0.ok) return vSay(msgOf(st0), true);
+      vid.up = { file: file, uploadId: st0.data.uploadId, partSize: st0.data.partSize, parts: st0.data.parts, done: {} };
+      vSay(copyText('st-video-uploading', { n: 0 }));
+      finishUpload();
+    });
+
     // People the member did the action with (from their account).
     var withBoxes = [];
     var withHolder = $('hfp-with');
@@ -1172,7 +1334,10 @@
       if (!consent || !consent.checked) { msg.textContent = copyText('st-need-consent'); msg.setAttribute('data-kind', 'error'); consent && consent.focus(); return; }
       var words = text ? text.value : '';
       var link = video ? video.value : '';
-      if (!words.trim() && !photoKey && !link.trim()) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text && text.focus(); return; }
+      if (vid.busy || vid.up) { msg.textContent = copyText('st-video-wait'); msg.setAttribute('data-kind', 'error'); return; }
+      if (vid.key && vid.isNew && !vConsent.checked) { msg.textContent = copyText('err-video-consent'); msg.setAttribute('data-kind', 'error'); vConsent.focus(); return; }
+      if (vid.key && !vKidsYes.checked && !vKidsNo.checked) { msg.textContent = copyText('err-video-children'); msg.setAttribute('data-kind', 'error'); vKidsYes.focus(); return; }
+      if (!words.trim() && !photoKey && !link.trim() && !vid.key) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text && text.focus(); return; }
       if (submit) { submit.setAttribute('data-hfp-busy', '1'); submit.disabled = true; }
       var body = {
         actionId: slug,
@@ -1182,8 +1347,10 @@
         videoUrl: link,
         showName: showName ? showName.checked : true,
         consent: true,
+        childrenInVideo: vid.key ? vKidsYes.checked : undefined,
         withMemberIds: withBoxes.filter(function (b) { return b.checked; }).map(function (b) { return Number(b.value); }),
       };
+      if (vid.isNew) { body.videoKey = vid.key; body.posterKey = vid.poster; body.videoConsent = vConsent.checked; }
       var rr = await HFB.call('/api/stories', { method: 'POST', body: body });
       if (submit) { submit.removeAttribute('data-hfp-busy'); submit.disabled = false; }
       if (rr.ok) {
@@ -1308,16 +1475,23 @@
     if (location.pathname !== '/stories') return;
     var native = document.querySelector('.w-dyn-list');
     await wait(function () { return window.HFB; }, 10000);
-    var r = await HFB.call('/api/stories?page=1', { auth: false });
-    if (!r.ok || !r.data.stories.length) return;
+    var rv = await HFB.call('/api/stories?videos=1', { auth: false });
+    var clips = rv.ok ? rv.data.stories : [];
+    var r = await HFB.call('/api/stories?page=1&videos=0', { auth: false });
+    if (!r.ok || (!r.data.stories.length && !clips.length)) return;
     var box = el('div', { id: 'hfp-stories' });
+    if (clips.length) {
+      var grid = el('div', { class: 'hfp-clip-grid' });
+      clips.forEach(function (s) { grid.appendChild(storyCard(s, true)); });
+      box.appendChild(el('section', { 'aria-labelledby': 'hfp-clips-h' }, [el('h2', { id: 'hfp-clips-h', text: copyText('stories-videos-h') }), grid]));
+    }
     var more = el('button', { type: 'button', class: 'hf-button-light', text: copyText('stories-more') });
     var page = 1;
     function add(list) { list.forEach(function (s) { box.appendChild(storyCard(s, true)); }); more.style.display = list.length === 20 ? '' : 'none'; }
     add(r.data.stories);
     more.addEventListener('click', async function () {
       page++;
-      var rr = await HFB.call('/api/stories?page=' + page, { auth: false });
+      var rr = await HFB.call('/api/stories?videos=0&page=' + page, { auth: false });
       if (rr.ok) add(rr.data.stories);
     });
     if (native) { native.parentNode.insertBefore(box, native); native.style.display = 'none'; }

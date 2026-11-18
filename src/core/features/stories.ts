@@ -143,6 +143,19 @@ export interface StoryInput {
   withMemberIds?: unknown;
   showName?: unknown;
   consent?: unknown;
+  /** An uploaded video (videos/...), its poster (a photo upload), and the two video questions. */
+  videoKey?: unknown;
+  posterKey?: unknown;
+  videoConsent?: unknown;
+  childrenInVideo?: unknown;
+}
+
+/** An upload made by this member in the last two days (photos and videos). */
+async function ownUpload(env: Env, member: Member, key: unknown, prefix: string): Promise<string> {
+  if (typeof key !== 'string' || !key.startsWith(prefix)) throw new HttpError(400, 'invalid_upload', prefix === 'videos/' ? 'err-video-upload-gone' : 'err-invalid-photo');
+  const owner = await env.CACHE.get(`upload:${key}`);
+  if (owner !== String(member.id)) throw new HttpError(400, 'invalid_upload', prefix === 'videos/' ? 'err-video-upload-gone' : 'err-invalid-photo');
+  return key;
 }
 
 /** Members who tapped "I'm in" on this member's invites for this action. */
@@ -165,6 +178,10 @@ interface StoryRow {
   photo_key: string | null;
   status: string;
   version: number;
+  video_key: string | null;
+  poster_key: string | null;
+  video_codec: string | null;
+  has_children: number | null;
 }
 
 export async function saveStory(env: Env, deps: Deps, member: Member, body: StoryInput, baseUrl: string) {
@@ -187,7 +204,23 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
     if (owner !== String(member.id)) throw new HttpError(400, 'invalid_photo', 'err-invalid-photo');
     photoKey = body.photoKey;
   }
-  if (!text && !photoKey && !video) throw new HttpError(400, 'empty_story', 'err-empty-story');
+  // An uploaded video: kept from before unless replaced or removed.
+  let videoKey: string | null = existing?.video_key ?? null;
+  let posterKey: string | null = existing?.poster_key ?? null;
+  let codec: string | null = existing?.video_codec ?? null;
+  let children: number | null = existing?.has_children ?? null;
+  if (body.videoKey === null || body.videoKey === '') videoKey = posterKey = codec = children = null;
+  else if (body.videoKey !== undefined && body.videoKey !== existing?.video_key) {
+    videoKey = await ownUpload(env, member, body.videoKey, 'videos/');
+    posterKey = body.posterKey ? await ownUpload(env, member, body.posterKey, 'stories/') : null;
+    codec = ((await env.CACHE.get(`vinfo:${videoKey}`, 'json')) as { codec?: string } | null)?.codec ?? null;
+  }
+  if (videoKey) {
+    if (body.videoKey !== undefined && body.videoConsent !== true) throw new HttpError(400, 'video_consent_required', 'err-video-consent');
+    if (typeof body.childrenInVideo === 'boolean') children = body.childrenInVideo ? 1 : 0;
+    if (children === null) throw new HttpError(400, 'video_children_required', 'err-video-children');
+  }
+  if (!text && !photoKey && !video && !videoKey) throw new HttpError(400, 'empty_story', 'err-empty-story');
   if (body.consent !== true) throw new HttpError(400, 'consent_required', 'err-consent-required');
   const showName = body.showName !== false;
   const name = member.share_name || member.first_name || '';
@@ -214,6 +247,9 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
     video: video && (video.provider === 'youtube' || video.provider === 'vimeo') ? video.url : null,
     'author-photo': authorPhoto ? { url: authorPhoto, alt: '' } : null,
     'author-initial': shown ? shown.trim().charAt(0).toUpperCase() : '',
+    'video-file': videoKey ? `${baseUrl}/media/${videoKey}` : null,
+    'video-poster': posterKey ? { url: `${baseUrl}/media/${posterKey}`, alt: `Video from ${action.title}` } : null,
+    'children-in-video': children === 1,
   };
   const withStmts = (id: number) => [
     env.DB.prepare(`DELETE FROM story_with WHERE story_id = ?1`).bind(id),
@@ -225,8 +261,9 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
     const version = existing.version + 1;
     await env.DB.batch([
       env.DB.prepare(
-        `UPDATE stories SET text = ?2, photo_key = ?3, photo_description = ?4, video_url = ?5, show_name = ?6, status = 'new', version = ?7, updated_at = ?8 WHERE id = ?1`,
-      ).bind(existing.id, text, photoKey, description || null, video?.url ?? null, showName ? 1 : 0, version, now),
+        `UPDATE stories SET text = ?2, photo_key = ?3, photo_description = ?4, video_url = ?5, show_name = ?6, status = 'new', version = ?7, updated_at = ?8,
+           video_key = ?9, poster_key = ?10, video_codec = ?11, has_children = ?12 WHERE id = ?1`,
+      ).bind(existing.id, text, photoKey, description || null, video?.url ?? null, showName ? 1 : 0, version, now, videoKey, posterKey, codec, children),
       ...withStmts(existing.id),
       enqueue(env, deps, `story-edit:${existing.id}:v${version}`, {
         op: 'webflow.update',
@@ -244,6 +281,8 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
       }),
     ]);
     if (existing.photo_key && existing.photo_key !== photoKey) await env.MEDIA.delete(existing.photo_key);
+    if (existing.video_key && existing.video_key !== videoKey) await env.MEDIA.delete(existing.video_key);
+    if (existing.poster_key && existing.poster_key !== posterKey) await env.MEDIA.delete(existing.poster_key);
     return { id: existing.id, status: 'new', edited: true };
   }
 
@@ -251,10 +290,10 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
   let id: number | null = null;
   try {
     const row = await env.DB.prepare(
-      `INSERT INTO stories (member_id, action_id, text, photo_key, photo_description, video_url, show_name, status, created_at, updated_at)
-       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', ?8, ?8) RETURNING id`,
+      `INSERT INTO stories (member_id, action_id, text, photo_key, photo_description, video_url, show_name, status, created_at, updated_at, video_key, poster_key, video_codec, has_children)
+       VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'new', ?8, ?8, ?9, ?10, ?11, ?12) RETURNING id`,
     )
-      .bind(member.id, actionId, text, photoKey, description || null, video?.url ?? null, showName ? 1 : 0, now)
+      .bind(member.id, actionId, text, photoKey, description || null, video?.url ?? null, showName ? 1 : 0, now, videoKey, posterKey, codec, children)
       .first<{ id: number }>();
     id = row!.id;
     await env.DB.batch([
@@ -294,19 +333,20 @@ export function storyRemovalStatements(env: Env, deps: Deps, story: { id: number
 }
 
 export async function deleteStory(env: Env, deps: Deps, member: Member, storyId: number) {
-  const story = await env.DB.prepare(`SELECT id, member_id, cms_item_id, photo_key FROM stories WHERE id = ?1`)
+  const story = await env.DB.prepare(`SELECT id, member_id, cms_item_id, photo_key, video_key, poster_key FROM stories WHERE id = ?1`)
     .bind(storyId)
-    .first<{ id: number; member_id: number; cms_item_id: string | null; photo_key: string | null }>();
+    .first<{ id: number; member_id: number; cms_item_id: string | null; photo_key: string | null; video_key: string | null; poster_key: string | null }>();
   if (!story || story.member_id !== member.id) throw new HttpError(404, 'story_not_found', 'err-story-not-found');
   await env.DB.batch(storyRemovalStatements(env, deps, story));
-  if (story.photo_key) await env.MEDIA.delete(story.photo_key);
+  for (const k of [story.photo_key, story.video_key, story.poster_key]) if (k) await env.MEDIA.delete(k);
   return { deleted: true };
 }
 
 /** The member's own story for an action, for the edit form. */
 export async function myStory(env: Env, member: Member, actionId: string) {
   const s = await env.DB.prepare(
-    `SELECT id, text, photo_key AS photoKey, photo_description AS photoDescription, video_url AS videoUrl, show_name AS showName, status
+    `SELECT id, text, photo_key AS photoKey, photo_description AS photoDescription, video_url AS videoUrl, show_name AS showName, status,
+       video_key AS videoKey, poster_key AS posterKey, has_children AS hasChildren
      FROM stories WHERE member_id = ?1 AND action_id = ?2`,
   )
     .bind(member.id, actionId)
@@ -325,11 +365,12 @@ export async function myStory(env: Env, member: Member, actionId: string) {
 // Showing stories
 // ---------------------------------------------------------------------------
 
-export async function storiesFor(env: Env, opts: { actionId?: string; limit?: number; offset?: number }) {
+export async function storiesFor(env: Env, opts: { actionId?: string; limit?: number; offset?: number; videos?: boolean }) {
   const limit = Math.min(opts.limit ?? 20, 50);
-  const where = opts.actionId ? `AND s.action_id = ?3` : '';
+  const where = (opts.actionId ? `AND s.action_id = ?3 ` : '') + (opts.videos === true ? 'AND s.video_key IS NOT NULL' : opts.videos === false ? 'AND s.video_key IS NULL' : '');
   const stmt = env.DB.prepare(
     `SELECT s.id, s.text, s.photo_key AS photoKey, s.photo_description AS photoDescription, s.video_url AS videoUrl, s.created_at AS createdAt,
+       s.video_key AS videoKey, s.poster_key AS posterKey, s.video_codec AS videoCodec,
        CASE WHEN s.show_name = 1 THEN COALESCE(m.share_name, m.first_name) END AS name,
        COALESCE(a.title, (SELECT action_title FROM done_marks d WHERE d.member_id = s.member_id AND d.action_id = s.action_id LIMIT 1)) AS actionTitle,
        CASE WHEN a.status = 'published' THEN a.slug END AS actionSlug
@@ -351,6 +392,8 @@ export async function storiesFor(env: Env, opts: { actionId?: string; limit?: nu
       text: r.text || '',
       photo: r.photoKey ? { key: r.photoKey, description: r.photoDescription || null } : null, // the site words a missing description
       video: r.videoUrl ? parseVideo(r.videoUrl) : null,
+      // An uploaded vertical video (paths under /join/media).
+      clip: r.videoKey ? { key: r.videoKey, poster: r.posterKey || null, codec: r.videoCodec || null } : null,
       name: r.name || null,
       with: withNames,
       createdAt: r.createdAt,

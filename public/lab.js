@@ -132,7 +132,8 @@
       var box = el('div', { class: 'panel review' }, kids.concat([el('div', { class: 'row' }, [yes, no]), status]));
       function decide(decision) {
         return async function () {
-          if (decision === 'rejected' && !window.confirm(type === 'story' ? 'Reject this story? It will not be shown, and no email is sent.' : 'Reject this suggestion? No email is sent.')) return;
+          var ask = type !== 'story' ? 'Reject this suggestion? No email is sent.' : item.videoKey ? 'Reject this video story? It will not be shown, and the member gets a friendly email saying so.' : 'Reject this story? It will not be shown, and no email is sent.';
+          if (decision === 'rejected' && !window.confirm(ask)) return;
           reviewing = true; yes.disabled = no.disabled = true; status.textContent = 'Saving…';
           var r = await window.HFB.call('/api/lab/review', { method: 'POST', body: { type: type, id: item.id, decision: decision } });
           reviewing = false;
@@ -155,6 +156,13 @@
         if (s.photoKey) kids.push(el('img', { src: window.HFB.base + '/media/' + s.photoKey, alt: s.photoDescription || 'Story photo', class: 'review-photo' }));
         if (s.text) kids.push(el('p', { class: 'review-text', text: s.text }));
         if (s.videoUrl) { var a = el('a', { href: s.videoUrl, text: 'Watch the video', target: '_blank', rel: 'noopener' }); kids.push(el('p', {}, [a])); }
+        if (s.videoKey) {
+          if (s.hasChildren) kids.push(el('p', { class: 'warn', text: 'The member says there are children in this video. Check it with extra care.' }));
+          var v = el('video', { src: window.HFB.base + '/media/' + s.videoKey, controls: '', playsinline: '', preload: 'metadata', class: 'review-photo' });
+          if (s.posterKey) v.setAttribute('poster', window.HFB.base + '/media/' + s.posterKey);
+          kids.push(v);
+          if (s.videoCodec && /^(hvc1|hev1)$/.test(s.videoCodec)) kids.push(el('p', { class: 'sub', text: 'Recorded as HEVC (iPhone high efficiency): plays on iPhones, Macs and most newer Android phones; some older browsers show the still instead.' }));
+        }
         body.appendChild(card('story', s, kids));
       });
       d.suggestions.forEach(function (s) {

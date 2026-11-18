@@ -9,6 +9,7 @@ import type { Deps, Env } from '../env';
 import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
 import { memberEmail } from '../email';
+import { word } from '../wording';
 import { enqueue, registerTask } from '../queue';
 import * as webflow from '../webflow';
 import { suggestionSlug, titleFrom } from './submissions';
@@ -176,6 +177,26 @@ export async function applyStory(env: Env, deps: Deps, id: number, cmsId: string
     }
   } else {
     stmts.push(enqueue(env, deps, `story-takedown:${id}:${now}`, { op: 'webflow.removeFromLive', collectionId: CMS.stories.id, itemId: cmsId }));
+    // A video that won't be shown: a friendly email, never silence.
+    if (status === 'rejected') {
+      const v = await env.DB.prepare(`SELECT video_key FROM stories WHERE id = ?1`).bind(id).first<{ video_key: string | null }>();
+      const member = v?.video_key ? await memberById(env, row.member_id) : null;
+      if (member?.email && !member.deleted_at) {
+        const action = await env.DB.prepare(`SELECT title FROM actions WHERE cms_item_id = ?1`).bind(row.action_id).first<{ title: string }>();
+        const site = baseUrl.replace(/\/join$/, '');
+        stmts.push(
+          enqueue(env, deps, `video-not-used:${id}:v${row.version}`, {
+            op: 'email.send',
+            message: {
+              to: member.email,
+              subject: word('video-not-used-subject'),
+              text: word('video-not-used-body', { name: member.first_name || word('video-not-used-there'), action: action?.title || word('video-not-used-your-action'), url: `${site}/share-your-story` }),
+              tags: [{ name: 'kind', value: 'video_not_used' }],
+            },
+          }, row.member_id),
+        );
+      }
+    }
   }
   await env.DB.batch(stmts);
   return `${id}:${status}`;
@@ -243,7 +264,8 @@ export async function reviewQueue(env: Env) {
   const stories = await env.DB.prepare(
     `SELECT s.id, s.text, s.photo_key AS photoKey, s.photo_description AS photoDescription, s.video_url AS videoUrl, s.show_name AS showName,
        s.created_at AS createdAt, s.version, s.cms_item_id IS NOT NULL AS ready, COALESCE(m.share_name, m.first_name) AS name,
-       a.title AS actionTitle, CASE WHEN a.status = 'published' THEN a.slug END AS actionSlug
+       a.title AS actionTitle, CASE WHEN a.status = 'published' THEN a.slug END AS actionSlug,
+       s.video_key AS videoKey, s.poster_key AS posterKey, s.video_codec AS videoCodec, s.has_children AS hasChildren
      FROM stories s JOIN members m ON m.id = s.member_id LEFT JOIN actions a ON a.cms_item_id = s.action_id
      WHERE s.status = 'new' ORDER BY s.created_at LIMIT 50`,
   ).all();

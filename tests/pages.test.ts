@@ -303,7 +303,15 @@ describe('Invite page', () => {
   });
 });
 
-const STORY_HTML = `<h1>Share your story</h1><p id="hf-story-note"></p><div class="w-form hf-form" data-hf-show="story-form"><form id="hf-story-form"><p id="hf-story-title">Your action</p><p id="hf-story-status"></p><label for="hfp-story-text">Your story</label><textarea id="hfp-story-text"></textarea><input type="file" id="hfp-photo"><div id="hfp-photo-area"></div><input id="hfp-photo-desc"><input id="hfp-video"><div id="hfp-with"></div><label class="w-checkbox"><input type="checkbox" id="hfp-show-name"><span class="w-form-label">Show my first name</span></label><label class="w-checkbox"><input type="checkbox" id="hfp-consent" required><span class="w-form-label">Everyone agreed</span></label><input type="submit" value="Share my story"></form><div class="w-form-done" style="display:none"><p>Thank you for sharing.</p></div><div class="w-form-fail" style="display:none"><p>Did not send.</p></div></div>`;
+const STORY_HTML = `<h1>Share your story</h1><p id="hf-story-note"></p><div data-hf-show="note-link"><a data-hf-link="note" href="/account">x</a></div><p data-hf-show="deleted">Deleted</p>
+<div class="w-form hf-form" data-hf-show="story-form"><form id="hf-story-form"><p id="hf-story-title">Your action</p><p id="hf-story-status"></p><label for="hfp-story-text">Your story</label><textarea id="hfp-story-text"></textarea>
+<input type="file" id="hfp-photo"><div id="hfp-photo-area"><p data-hf-fill="photo-msg"></p><img data-hf-show="photo" data-hf-part="photo-preview" alt=""><a data-hf-show="photo" data-hf-act="remove-photo" href="#">Remove photo</a></div><input id="hfp-photo-desc">
+<div><input type="file" data-hf-field="video-file"><p data-hf-show="file-off">x</p><p data-hf-fill="video-msg"></p><video data-hf-show="video" data-hf-part="video-preview"></video><a data-hf-show="video-retry" data-hf-act="video-retry" href="#">Try again</a><a data-hf-show="video" data-hf-act="video-remove" href="#">Remove video</a>
+<div data-hf-show="video-ask"><label><input type="checkbox" data-hf-field="video-consent"><span>Agreed</span></label><label><input type="radio" name="k" data-hf-field="kids-yes"><span>Yes</span></label><label><input type="radio" name="k" data-hf-field="kids-no"><span>No</span></label></div></div>
+<input id="hfp-video"><p data-hf-show="link-off">x</p>
+<div id="hfp-with"><fieldset data-hf-show="with"><legend>Who did it with you?</legend><div data-hf-slot="with"><label data-hf-template="with" data-hf-show="template"><input type="checkbox" data-hf-part="box"><span data-hf-part="name">x</span></label></div></fieldset></div>
+<label class="w-checkbox"><input type="checkbox" id="hfp-show-name"><span class="w-form-label">Show my first name</span></label><label class="w-checkbox"><input type="checkbox" id="hfp-consent" required><span class="w-form-label">Everyone agreed</span></label><input type="submit" value="Share my story"><p data-hf-fill="story-msg"></p><div data-hf-show="delete"><a data-hf-act="delete" href="#">Delete my story</a></div></form>
+<div class="w-form-done" style="display:none"><p>Thank you for sharing.</p><a data-hf-link="back" href="/actions">Back to the action</a></div><div class="w-form-fail" style="display:none"><p>Did not send.</p></div></div>`;
 
 describe('Share your story', () => {
   it('needs the consent tick, then sends the story to the backend', async () => {
@@ -311,11 +319,30 @@ describe('Share your story', () => {
       if (path.startsWith('/api/stories/mine')) return { data: { done: true, story: null, withCandidates: [{ id: 2, name: 'Ben' }], name: 'Ana' } };
       if (m === 'POST' && path === '/api/stories') return { status: 201, data: { id: 1, status: 'new', body } };
     });
-    expect(p.document.querySelector('[data-hf-show]')!.getAttribute('data-hf-on')).toBe('1');
-    expect(p.document.getElementById('hf-story-title')!.textContent).toBe('cook');
-    const form = p.document.getElementById('hf-story-form')!;
-    (p.document.getElementById('hfp-story-text') as unknown as HTMLTextAreaElement).value = 'We cooked.';
-    (p.document.getElementById('hfp-with-2') as unknown as HTMLInputElement).checked = true;
+    const d = p.document;
+    const isOn = (k: string) => d.querySelector(`[data-hf-show="${k}"]`)!.hasAttribute('data-hf-on');
+    expect(isOn('story-form')).toBe(true);
+    expect(isOn('with')).toBe(true);
+    expect(isOn('delete')).toBe(false);
+    expect(isOn('video')).toBe(false);
+    expect(isOn('photo')).toBe(false);
+    expect(d.querySelector('[data-hf-link="back"]')!.getAttribute('href')).toBe('/action/cook');
+    expect(d.getElementById('hf-story-title')!.textContent).toBe('cook');
+    const form = d.getElementById('hf-story-form')!;
+    (d.getElementById('hfp-story-text') as unknown as HTMLTextAreaElement).value = 'We cooked.';
+    const box = d.querySelector('[data-hf-slot="with"] > label:not([data-hf-template]) input') as unknown as HTMLInputElement;
+    expect(box.value).toBe('2');
+    expect(box.parentElement!.textContent).toBe('Ben');
+    box.checked = true;
+    // A video link greys out the upload, and the other way round.
+    const link = d.getElementById('hfp-video') as unknown as HTMLInputElement;
+    link.value = 'https://youtu.be/x';
+    link.dispatchEvent(new p.window.Event('input') as unknown as Event);
+    expect((d.querySelector('[data-hf-field="video-file"]') as unknown as HTMLInputElement).disabled).toBe(true);
+    expect(isOn('file-off')).toBe(true);
+    link.value = '';
+    link.dispatchEvent(new p.window.Event('input') as unknown as Event);
+    expect(isOn('file-off')).toBe(false);
     form.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
     await p.settle();
     expect(p.document.body.textContent).toContain('Please tick the box');
@@ -329,9 +356,33 @@ describe('Share your story', () => {
     expect((form as unknown as HTMLElement).style.display).toBe('none');
   });
 
+  it('shows a saved video story with its preview, and Delete takes it down', async () => {
+    const p = await page('/share-your-story?action=cook', STORY_HTML, (m, path) => {
+      if (path.startsWith('/api/stories/mine')) return { data: { done: true, story: { id: 7, status: 'new', text: 'Hi', videoKey: 'videos/a.mp4', posterKey: 'p/a.jpg', hasChildren: 0, showName: true }, withCandidates: [], name: 'Ana' } };
+      if (m === 'DELETE') return { data: { deleted: true } };
+    });
+    const d = p.document;
+    const isOn = (k: string) => d.querySelector(`[data-hf-show="${k}"]`)!.hasAttribute('data-hf-on');
+    expect(isOn('video')).toBe(true);
+    expect(isOn('video-ask')).toBe(true);
+    expect(isOn('with')).toBe(false);
+    expect(isOn('link-off')).toBe(true);
+    expect(d.querySelector('[data-hf-part="video-preview"]')!.getAttribute('src')).toContain('videos/a.mp4');
+    expect((d.querySelector('[data-hf-field="kids-no"]') as unknown as HTMLInputElement).checked).toBe(true);
+    (p.window as unknown as { confirm: () => boolean }).confirm = () => true;
+    (d.querySelector('[data-hf-act="delete"]') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(p.calls).toContainEqual(expect.objectContaining({ method: 'DELETE', path: '/api/stories/7' }));
+    expect(isOn('deleted')).toBe(true);
+    expect(isOn('story-form')).toBe(false);
+  });
+
   it('sends a member who has not done the action back to it', async () => {
     const p = await page('/share-your-story?action=cook', STORY_HTML, () => ({ data: { done: false, story: null, withCandidates: [] } }));
     expect(p.document.getElementById('hf-story-note')!.textContent).toContain('Mark it done first.');
+    expect(p.document.querySelector('[data-hf-link="note"]')!.getAttribute('href')).toBe('/action/cook');
+    expect(p.document.querySelector('[data-hf-show="note-link"]')!.hasAttribute('data-hf-on')).toBe(true);
+    expect(p.document.querySelector('[data-hf-show="story-form"]')!.hasAttribute('data-hf-on')).toBe(false);
   });
 });
 

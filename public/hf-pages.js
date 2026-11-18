@@ -1087,8 +1087,11 @@
   }
 
   async function storyPage() {
-    // The form and its fields are built in Webflow (#hf-story-form, hidden until the
-    // member may share); this checks the member, fills it in and sends it to the backend.
+    // Everything on this page is built in Webflow: the form and its fields, the photo
+    // preview, the video upload block (label, picker, preview, Try again, Remove, the
+    // consent tick and the children question), "Who did it with you?", Delete, the
+    // messages and the thank-you with its link back. This checks the member, fills it
+    // in, shows the parts that apply and sends the story to the backend.
     var form = $('hf-story-form');
     var note = $('hf-story-note');
     if (!form || form.getAttribute('data-hfp')) return;
@@ -1098,17 +1101,22 @@
     var shown = form.closest('[data-hf-show]') || wrap;
     var done = wrap.querySelector('.w-form-done');
     var fail = wrap.querySelector('.w-form-fail');
-    if (!note) { note = status(); shown.insertAdjacentElement('beforebegin', note); }
+    var P = partsOf(document.body);
+    var F = function (name) { return form.querySelector('[data-hf-field="' + name + '"]'); };
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (HF.finish) { try { await HF.finish(); } catch (e) {} }
     var slug = new URLSearchParams(location.search).get('action') || '';
     var back = location.pathname + location.search;
+    // A message above the form with one button under it (both in Webflow).
     function sayLink(text, label, href, fn) {
-      note.innerHTML = '';
-      note.appendChild(document.createTextNode(text + ' '));
-      var a = el('a', { class: 'hf-button', href: href, text: label });
-      if (fn) a.addEventListener('click', function (e) { e.preventDefault(); fn(); });
-      note.appendChild(el('span', { class: 'hfp-row' }, [a]));
+      say(note, text);
+      var a = P.one('[data-hf-link="note"]');
+      if (a) {
+        a.textContent = label;
+        a.setAttribute('href', href);
+        a.onclick = fn ? function (e) { e.preventDefault(); fn(); } : null;
+      }
+      P.show('note-link', true);
     }
     if (!slug) return sayLink(copyText('st-no-action'), copyText('st-account'), '/account');
     if (!signedIn()) return sayLink(copyText('st-signin'), copyText('st-signin-button'), '/account', function () { HFB.requireSignIn({ kind: 'return', returnTo: back }); });
@@ -1123,9 +1131,11 @@
       if (t && t.textContent.trim()) title = t.textContent.trim();
     } catch (e) {}
     var s = mine.story || {};
-    var msg = status();
+    var msg = P.one('[data-hf-fill="story-msg"]');
     if ($('hf-story-title')) $('hf-story-title').textContent = title;
     if ($('hf-story-status') && mine.story) $('hf-story-status').textContent = copyText(mine.story.status === 'approved' ? 'st-on-site' : 'st-in-review');
+    var backLink = P.one('[data-hf-link="back"]');
+    if (backLink) backLink.setAttribute('href', '/action/' + slug);
     var text = $('hfp-story-text');
     var photo = $('hfp-photo');
     var desc = $('hfp-photo-desc');
@@ -1145,89 +1155,76 @@
 
     // Photo: upload straight to the backend, show a preview.
     var photoKey = s.photoKey || null;
-    var area = $('hfp-photo-area') || (photo && photo.parentNode);
-    var photoMsg = status('hfp-status hfp-small');
-    var preview = el('img', { class: 'hfp-photo', alt: '', style: photoKey ? '' : 'display:none', src: photoKey ? HFB.base + '/media/' + photoKey : undefined });
-    var removePhoto = el('button', { type: 'button', class: 'hfp-link hfp-small', style: photoKey ? '' : 'display:none', text: copyText('st-remove-photo') });
-    if (area) { area.appendChild(photoMsg); area.appendChild(preview); area.appendChild(removePhoto); }
+    var preview = P.one('[data-hf-part="photo-preview"]');
+    var photoMsg = P.one('[data-hf-fill="photo-msg"]');
+    function showPhoto(src) {
+      if (preview) { if (src) preview.setAttribute('src', src); else preview.removeAttribute('src'); }
+      P.show('photo', !!src);
+    }
+    showPhoto(photoKey ? HFB.base + '/media/' + photoKey : null);
     if (photo) photo.addEventListener('change', async function () {
       var file = photo.files && photo.files[0];
       if (!file) return;
-      if (file.size > 10 * 1024 * 1024) { photoMsg.textContent = copyText('st-too-big'); return; }
-      photoMsg.textContent = copyText('st-preparing');
+      if (file.size > 10 * 1024 * 1024) { say(photoMsg, copyText('st-too-big'), true); return; }
+      say(photoMsg, copyText('st-preparing'));
       var blob;
       try { blob = await resizeToJpeg(file); } catch (e) {
-        photoMsg.textContent = copyText('st-unreadable');
+        say(photoMsg, copyText('st-unreadable'), true);
         return;
       }
       var tok = await HFB.token();
       var res = await fetch(HFB.base + '/api/stories/photo', { method: 'POST', headers: { Authorization: 'Bearer ' + tok, 'Content-Type': 'image/jpeg' }, body: blob });
       var data = null;
       try { data = await res.json(); } catch (e) {}
-      if (!res.ok) { photoMsg.textContent = (data && data.message) || copyText('st-upload-failed'); return; }
+      if (!res.ok) { say(photoMsg, (data && data.message) || copyText('st-upload-failed'), true); return; }
       photoKey = data.photoKey;
-      preview.src = URL.createObjectURL(blob);
-      preview.style.display = '';
-      removePhoto.style.display = '';
-      photoMsg.textContent = copyText('st-photo-added');
+      showPhoto(URL.createObjectURL(blob));
+      say(photoMsg, copyText('st-photo-added'));
     });
-    removePhoto.addEventListener('click', function () { photoKey = null; preview.style.display = 'none'; removePhoto.style.display = 'none'; if (photo) photo.value = ''; photoMsg.textContent = copyText('st-photo-removed'); });
+    P.on('remove-photo', function () { photoKey = null; showPhoto(null); if (photo) photo.value = ''; say(photoMsg, copyText('st-photo-removed')); });
 
     // Video: checked here first (vertical, 15–30 seconds, at most 100 MB), then
     // uploaded in parts; a dropped part is retried, and "Try again" picks up
     // where it stopped. The backend checks the file again.
     var vid = { key: s.videoKey || null, poster: s.posterKey || null, busy: false, isNew: false, up: null };
-    var vInput = el('input', { type: 'file', id: 'hfp-video-file', accept: 'video/mp4,video/quicktime,video/*', class: 'hfp-file' });
-    var vMsg = status('hfp-status hfp-small');
-    var vPrev = el('video', { class: 'hfp-video-preview', controls: true, playsinline: true, muted: true, preload: 'metadata', style: vid.key ? '' : 'display:none', src: vid.key ? HFB.base + '/media/' + vid.key : null, poster: vid.poster ? HFB.base + '/media/' + vid.poster : null });
-    var vRetry = el('button', { type: 'button', class: 'hf-button-light', style: 'display:none', text: copyText('st-video-retry') });
-    var vRemove = el('button', { type: 'button', class: 'hfp-link hfp-small', style: vid.key ? '' : 'display:none', text: copyText('st-video-remove') });
-    var vConsent = el('input', { type: 'checkbox', id: 'hfp-video-consent' });
-    var vKidsYes = el('input', { type: 'radio', name: 'hfp-video-kids', id: 'hfp-video-kids-yes', value: 'yes', checked: s.hasChildren === 1 });
-    var vKidsNo = el('input', { type: 'radio', name: 'hfp-video-kids', id: 'hfp-video-kids-no', value: 'no', checked: s.hasChildren === 0 });
-    var vAsk = el('div', { class: 'hfp-video-ask', style: vid.key ? '' : 'display:none' }, [
-      el('div', { class: 'hfp-check' }, [vConsent, el('label', { for: 'hfp-video-consent', text: copyText('st-video-consent') })]),
-      el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0;margin:12px 0 0' }, [
-        el('legend', { class: 'hf-form-label', text: copyText('st-video-children') }),
-        el('div', { class: 'hfp-check' }, [vKidsYes, el('label', { for: 'hfp-video-kids-yes', text: copyText('st-yes') })]),
-        el('div', { class: 'hfp-check' }, [vKidsNo, el('label', { for: 'hfp-video-kids-no', text: copyText('st-no') })]),
-      ]),
-    ]);
-    var vBox = el('div', { class: 'hfp-field hfp-video-box' }, [
-      el('label', { for: 'hfp-video-file', class: 'hf-form-label', text: copyText('st-video-label') }),
-      el('p', { class: 'hf-form-help hfp-small', text: copyText('st-video-hint') }),
-      vInput, vMsg, vPrev, el('div', { class: 'hfp-row' }, [vRetry, vRemove]), vAsk,
-    ]);
-    // Right before the video link field (with its label and help), so the two video options sit together.
-    var vLabel = video && form.querySelector('label[for="' + video.id + '"]');
-    var vGroup = video && video.parentNode !== form ? video.parentNode : null;
-    if (vGroup && vGroup !== form && vGroup.tagName !== 'FORM' && vGroup.contains(vLabel || video)) vGroup.insertAdjacentElement('beforebegin', vBox);
-    else if (vLabel) vLabel.insertAdjacentElement('beforebegin', vBox);
-    else if (video) video.insertAdjacentElement('afterend', vBox);
-    else form.insertBefore(vBox, form.firstChild);
+    var vInput = F('video-file');
+    var vMsg = P.one('[data-hf-fill="video-msg"]');
+    var vPrev = P.one('[data-hf-part="video-preview"]');
+    var vConsent = F('video-consent');
+    var vKidsYes = F('kids-yes');
+    var vKidsNo = F('kids-no');
+    if (vKidsYes) vKidsYes.checked = s.hasChildren === 1;
+    if (vKidsNo) vKidsNo.checked = s.hasChildren === 0;
+    function showVideo(src, poster) {
+      if (vPrev) {
+        if (src) vPrev.setAttribute('src', src); else vPrev.removeAttribute('src');
+        if (poster) vPrev.setAttribute('poster', poster); else vPrev.removeAttribute('poster');
+      }
+      P.show('video', !!src);
+      P.show('video-ask', !!src);
+    }
+    showVideo(vid.key ? HFB.base + '/media/' + vid.key : null, vid.poster ? HFB.base + '/media/' + vid.poster : null);
     // One video per story: an upload or a link. Whichever is in use greys out the other.
-    var linkNote = el('p', { class: 'hf-form-help hfp-small', style: 'display:none', text: copyText('st-video-link-off') });
-    var fileNote = el('p', { class: 'hf-form-help hfp-small', style: 'display:none', text: copyText('st-video-file-off') });
-    if (video) video.insertAdjacentElement('afterend', linkNote);
-    vInput.insertAdjacentElement('afterend', fileNote);
     function oneVideo() {
       var hasFile = !!(vid.key || vid.up || vid.busy);
       var hasLink = !!(video && video.value.trim());
-      if (video) { video.disabled = hasFile; linkNote.style.display = hasFile ? '' : 'none'; }
-      vInput.disabled = hasLink && !hasFile;
-      fileNote.style.display = hasLink && !hasFile ? '' : 'none';
+      if (video) video.disabled = hasFile;
+      P.show('link-off', hasFile);
+      if (vInput) vInput.disabled = hasLink && !hasFile;
+      P.show('file-off', hasLink && !hasFile);
     }
     if (video) video.addEventListener('input', oneVideo);
-    function vSay(t, bad) { vMsg.textContent = t; if (bad) vMsg.setAttribute('data-kind', 'error'); else vMsg.removeAttribute('data-kind'); }
+    function vSay(t2, bad) { say(vMsg, t2, bad); }
     function meta(file) {
       return new Promise(function (resolve) {
-        var t = el('video', { preload: 'metadata', muted: true, playsinline: true });
+        var t2 = document.createElement('video');
+        t2.preload = 'metadata'; t2.muted = true; t2.playsInline = true;
         var url = URL.createObjectURL(file), finished = false;
         function end(v) { if (finished) return; finished = true; resolve(v); }
-        t.onloadedmetadata = function () { end({ el: t, url: url, seconds: t.duration, w: t.videoWidth, h: t.videoHeight }); };
-        t.onerror = function () { end({ el: null, url: url, seconds: NaN, w: 0, h: 0 }); };
+        t2.onloadedmetadata = function () { end({ el: t2, url: url, seconds: t2.duration, w: t2.videoWidth, h: t2.videoHeight }); };
+        t2.onerror = function () { end({ el: null, url: url, seconds: NaN, w: 0, h: 0 }); };
         setTimeout(function () { end({ el: null, url: url, seconds: NaN, w: 0, h: 0 }); }, 10000);
-        t.src = url;
+        t2.src = url;
       });
     }
     function posterOf(m) {
@@ -1266,31 +1263,30 @@
       return true;
     }
     async function finishUpload() {
-      vid.busy = true; vRetry.style.display = 'none';
+      vid.busy = true; P.show('video-retry', false);
       try {
-        if (!(await sendParts())) { vSay(copyText('st-video-stopped'), true); vRetry.style.display = ''; return; }
+        if (!(await sendParts())) { vSay(copyText('st-video-stopped'), true); P.show('video-retry', true); return; }
         var parts = Object.keys(vid.up.done).map(function (k) { return { partNumber: Number(k), etag: vid.up.done[k] }; });
         var c = await HFB.call('/api/stories/video/complete', { method: 'POST', body: { uploadId: vid.up.uploadId, parts: parts } });
-        if (!c.ok) { vSay(msgOf(c), true); vid.up = null; vInput.value = ''; vPrev.style.display = 'none'; vAsk.style.display = 'none'; oneVideo(); return; }
+        if (!c.ok) { vSay(msgOf(c), true); vid.up = null; if (vInput) vInput.value = ''; showVideo(null); oneVideo(); return; }
         vid.key = c.data.videoKey; vid.isNew = true; vid.up = null;
         vSay(copyText('st-video-added'));
-        vRemove.style.display = '';
         oneVideo();
       } catch (e) {
-        vSay((e && e.message) || copyText('st-video-stopped'), true); vRetry.style.display = '';
+        vSay((e && e.message) || copyText('st-video-stopped'), true); P.show('video-retry', true);
       } finally { vid.busy = false; }
     }
-    vRetry.addEventListener('click', function () { if (vid.up) finishUpload(); });
-    vRemove.addEventListener('click', function () {
+    P.on('video-retry', function () { if (vid.up) finishUpload(); });
+    P.on('video-remove', function () {
       vid.key = null; vid.poster = null; vid.isNew = true; vid.up = null;
-      vPrev.removeAttribute('src'); vPrev.style.display = 'none'; vRemove.style.display = 'none'; vAsk.style.display = 'none'; vInput.value = '';
+      showVideo(null); if (vInput) vInput.value = '';
       vSay(copyText('st-video-removed'));
       oneVideo();
     });
-    vInput.addEventListener('change', async function () {
+    if (vInput) vInput.addEventListener('change', async function () {
       var file = vInput.files && vInput.files[0];
       if (!file) return;
-      vRetry.style.display = 'none';
+      P.show('video-retry', false);
       var type = /\.mov$/i.test(file.name) || file.type === 'video/quicktime' ? 'video/quicktime' : file.type === 'video/mp4' || /\.mp4$/i.test(file.name) ? 'video/mp4' : '';
       if (!type) return vSay(copyText('err-video-type'), true);
       if (file.size > 100 * 1024 * 1024) return vSay(copyText('err-video-too-large'), true);
@@ -1302,8 +1298,10 @@
         if (m.seconds > 30.99) return vSay(copyText('err-video-too-long'), true);
       }
       if (m.w && m.h && m.h <= m.w) return vSay(copyText('err-video-not-vertical'), true);
-      vPrev.src = m.url; vPrev.removeAttribute('poster'); vPrev.style.display = '';
-      vAsk.style.display = ''; vConsent.checked = false; vKidsYes.checked = vKidsNo.checked = false;
+      showVideo(m.url, null);
+      if (vConsent) vConsent.checked = false;
+      if (vKidsYes) vKidsYes.checked = false;
+      if (vKidsNo) vKidsNo.checked = false;
       vid.key = null; vid.poster = null;
       var still = await posterOf(m);
       if (still) {
@@ -1324,27 +1322,22 @@
 
     // People the member did the action with (from their account).
     var withBoxes = [];
-    var withHolder = $('hfp-with');
-    if (withHolder && mine.withCandidates && mine.withCandidates.length) {
-      var fs = el('fieldset', { class: 'hfp-field', style: 'border:0;padding:0' }, [el('legend', { class: 'hf-form-label', text: copyText('st-with') })]);
-      mine.withCandidates.forEach(function (c) {
-        var cb = el('input', { type: 'checkbox', id: 'hfp-with-' + c.id, value: String(c.id), checked: (s.withMemberIds || []).indexOf(c.id) >= 0 });
-        withBoxes.push(cb);
-        fs.appendChild(el('div', { class: 'hfp-check' }, [cb, el('label', { for: 'hfp-with-' + c.id, text: c.name })]));
-      });
-      withHolder.appendChild(fs);
-    }
-    if (submit) submit.insertAdjacentElement('afterend', msg); else form.appendChild(msg);
-    if (mine.story) {
-      var del = el('button', { type: 'button', class: 'hfp-link hfp-small', text: copyText('st-delete') });
-      del.addEventListener('click', async function () {
-        if (!window.confirm(copyText('st-delete-confirm'))) return;
-        var rr = await HFB.call('/api/stories/' + mine.story.id, { method: 'DELETE' });
-        if (rr.ok) { form.style.display = 'none'; shown.insertAdjacentElement('beforebegin', el('p', { role: 'status', text: copyText('st-deleted') })); }
-        else msg.textContent = msgOf(rr);
-      });
-      form.appendChild(el('p', null, [del]));
-    }
+    var withs = mine.withCandidates || [];
+    fillList('with', withs, function (row, c) {
+      var cb = partIn(row, 'box');
+      var nm = partIn(row, 'name');
+      if (nm) nm.textContent = c.name;
+      if (cb) { cb.value = String(c.id); cb.checked = (s.withMemberIds || []).indexOf(c.id) >= 0; withBoxes.push(cb); }
+    });
+    P.show('with', withs.length > 0);
+
+    P.show('delete', !!mine.story);
+    if (mine.story) P.on('delete', async function () {
+      if (!window.confirm(copyText('st-delete-confirm'))) return;
+      var rr = await HFB.call('/api/stories/' + mine.story.id, { method: 'DELETE' });
+      if (rr.ok) { shown.removeAttribute('data-hf-on'); form.style.display = 'none'; P.show('deleted', true); }
+      else say(msg, msgOf(rr), true);
+    });
     var draftKey = 'hfb_story:' + slug;
     if (text) {
       try { var d = JSON.parse(localStorage.getItem(draftKey) || 'null'); if (d && !text.value) text.value = d.text || ''; } catch (e) {}
@@ -1354,16 +1347,17 @@
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
       e.stopImmediatePropagation();
-      msg.removeAttribute('data-kind');
+      say(msg, '');
       if (fail) fail.style.display = 'none';
-      if (!consent || !consent.checked) { msg.textContent = copyText('st-need-consent'); msg.setAttribute('data-kind', 'error'); consent && consent.focus(); return; }
+      if (!consent || !consent.checked) { say(msg, copyText('st-need-consent'), true); if (consent) consent.focus(); return; }
       var words = text ? text.value : '';
       var link = video ? video.value : '';
-      if (vid.busy || vid.up) { msg.textContent = copyText('st-video-wait'); msg.setAttribute('data-kind', 'error'); return; }
-      if (vid.key && vid.isNew && !vConsent.checked) { msg.textContent = copyText('err-video-consent'); msg.setAttribute('data-kind', 'error'); vConsent.focus(); return; }
-      if (vid.key && !vKidsYes.checked && !vKidsNo.checked) { msg.textContent = copyText('err-video-children'); msg.setAttribute('data-kind', 'error'); vKidsYes.focus(); return; }
-      if (vid.key && link.trim()) { msg.textContent = copyText('err-one-video'); msg.setAttribute('data-kind', 'error'); return; }
-      if (!words.trim() && !photoKey && !link.trim() && !vid.key) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text && text.focus(); return; }
+      var kidsYes = !!(vKidsYes && vKidsYes.checked), kidsNo = !!(vKidsNo && vKidsNo.checked);
+      if (vid.busy || vid.up) { say(msg, copyText('st-video-wait'), true); return; }
+      if (vid.key && vid.isNew && !(vConsent && vConsent.checked)) { say(msg, copyText('err-video-consent'), true); if (vConsent) vConsent.focus(); return; }
+      if (vid.key && !kidsYes && !kidsNo) { say(msg, copyText('err-video-children'), true); if (vKidsYes) vKidsYes.focus(); return; }
+      if (vid.key && link.trim()) { say(msg, copyText('err-one-video'), true); return; }
+      if (!words.trim() && !photoKey && !link.trim() && !vid.key) { say(msg, copyText('st-empty'), true); if (text) text.focus(); return; }
       if (submit) { submit.setAttribute('data-hfp-busy', '1'); submit.disabled = true; }
       var body = {
         actionId: slug,
@@ -1373,25 +1367,21 @@
         videoUrl: link,
         showName: showName ? showName.checked : true,
         consent: true,
-        childrenInVideo: vid.key ? vKidsYes.checked : undefined,
+        childrenInVideo: vid.key ? kidsYes : undefined,
         withMemberIds: withBoxes.filter(function (b) { return b.checked; }).map(function (b) { return Number(b.value); }),
       };
-      if (vid.isNew) { body.videoKey = vid.key; body.posterKey = vid.poster; body.videoConsent = vConsent.checked; }
+      if (vid.isNew) { body.videoKey = vid.key; body.posterKey = vid.poster; body.videoConsent = !!(vConsent && vConsent.checked); }
       var rr = await HFB.call('/api/stories', { method: 'POST', body: body });
       if (submit) { submit.removeAttribute('data-hfp-busy'); submit.disabled = false; }
       if (rr.ok) {
         try { localStorage.removeItem(draftKey); } catch (e2) {}
         form.style.display = 'none';
-        if (done) {
-          done.style.display = 'block';
-          done.setAttribute('role', 'status');
-          done.appendChild(el('p', null, [el('a', { class: 'hf-button-light', href: '/action/' + slug, text: copyText('st-back') })]));
-        } else shown.insertAdjacentElement('beforebegin', el('p', { class: 'hfp-card', role: 'status', text: copyText('st-thanks') }));
+        if (done) { done.style.display = 'block'; done.setAttribute('role', 'status'); }
       } else if (rr.status === 401) {
         HFB.requireSignIn({ kind: 'return', returnTo: back });
-      } else { msg.textContent = msgOf(rr); msg.setAttribute('data-kind', 'error'); if (fail) fail.style.display = 'block'; }
+      } else { say(msg, msgOf(rr), true); if (fail) fail.style.display = 'block'; }
     }, true);
-    note.innerHTML = '';
+    say(note, '');
     shown.setAttribute('data-hf-on', '1');
   }
 

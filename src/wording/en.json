@@ -26,6 +26,8 @@
   "ripple": "Your actions have led to {n} more.",
   "story-photo-alt": "Photo from a story",
   "action-count": "{n} people have done this",
+  "dare-count": "{n} people took the dare this week",
+  "dare-first": "Be one of the first to take this week's dare",
   "action-suggested": "Suggested by {name}",
   "action-save": "♡ Save",
   "action-saved": "♥ Saved",

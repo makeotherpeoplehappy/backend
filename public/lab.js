@@ -113,6 +113,7 @@
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))
     ]);
     root.appendChild(details);
+    (h.dareWarnings || []).forEach(function (w) { root.insertBefore(el('p', { class: 'warn', text: w }), root.children[2]); });
     if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
   }
 

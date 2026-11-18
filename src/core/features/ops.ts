@@ -10,6 +10,7 @@ import { forgetDrops } from './drops';
 import { rowFromItem, upsertStatement } from './actions';
 import { draftActionDeleted, notifySuggestionsLive, reviewItem } from './review';
 import { REAL_MEMBER } from './guests';
+import { dareWarnings } from './dare';
 
 // ---------------------------------------------------------------------------
 // Webflow webhooks. The message is only a hint that something changed: the
@@ -246,6 +247,7 @@ export async function labKpis(env: Env, deps: Deps) {
     queueFailed: await n(`SELECT COUNT(*) AS n FROM outbox WHERE status = 'dead'`),
     actionsMirrored: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
     jobs: await many<{ job: string; last_run_at: string }>(`SELECT job, last_run_at FROM job_runs ORDER BY job`),
+    dareWarnings: await dareWarnings(env, deps),
   };
   return { generatedAt: iso(now), environment: env.ENVIRONMENT || null, impact, engagement, daily, topActions, mostLiked, health };
 }

@@ -28,6 +28,13 @@ export const CMS = {
       '6af7ec5177462bb643f480ed': 'stranger',
       '6af7ec5177462bb643f480ef': 'community',
     } as Record<string, string>,
+    // "How many" options: people made happy per "I did this" (approved numbers).
+    howManyPeople: {
+      a08fe76af0a753998a24280bbaa61301: 1, // One person
+      bc2e90809713a6449e2fe39b7cfc4679: 3, // A few people
+      c846cbc88294372dd74bb375803f7e62: 8, // A group
+      '56e007376964f22ad048c19233d89268': 25, // A whole community
+    } as Record<string, number>,
   },
   suggestions: {
     id: '6af8ab957991d4c1991814e9',

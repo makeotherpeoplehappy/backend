@@ -7,6 +7,7 @@ import * as webflow from '../webflow';
 import { recomputeKeeps } from './pledges';
 import { storiesFor } from './stories';
 import { doneWithNames, displayName, groupFor, rippleTotal } from './ripple';
+import { forgetRings, rippleView } from './rings';
 import { assertGuestCanMark, isGuest, touchGuest } from './guests';
 import { forgetDare } from './dare';
 
@@ -77,6 +78,7 @@ function rowFromItem(item: webflow.WebflowItem, now: string) {
     weekly_dare_from: dareDate(f['weekly-dare-from']),
     hidden: f.hidden === true ? 1 : 0,
     location_specific: f['location-specific'] === true ? 1 : 0,
+    people_reached: CMS.actions.howManyPeople[String(f['how-many'] || '')] || 1,
     who: JSON.stringify((Array.isArray(f.who) ? (f.who as string[]) : []).map((id) => CMS.actions.whoSlugs[id]).filter(Boolean)),
     synced_at: now,
   };
@@ -84,13 +86,13 @@ function rowFromItem(item: webflow.WebflowItem, now: string) {
 
 export function upsertStatement(env: Env, r: ReturnType<typeof rowFromItem>): D1PreparedStatement {
   return env.DB.prepare(
-    `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at, suggestion_cms_id, weekly_dare_from, hidden, location_specific, who)
-     VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6, ?7, ?8, ?9, ?10, ?11)
+    `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at, suggestion_cms_id, weekly_dare_from, hidden, location_specific, who, people_reached)
+     VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6, ?7, ?8, ?9, ?10, ?11, ?12)
      ON CONFLICT (cms_item_id) DO UPDATE SET slug = excluded.slug, title = excluded.title, short_answer = excluded.short_answer,
        can_do_with_others = excluded.can_do_with_others, status = 'published', synced_at = excluded.synced_at,
        suggestion_cms_id = excluded.suggestion_cms_id, weekly_dare_from = excluded.weekly_dare_from, hidden = excluded.hidden,
-       location_specific = excluded.location_specific, who = excluded.who`,
-  ).bind(r.cms_item_id, r.slug, r.title, r.short_answer, r.can_do_with_others, r.synced_at, r.suggestion_cms_id, r.weekly_dare_from, r.hidden, r.location_specific, r.who);
+       location_specific = excluded.location_specific, who = excluded.who, people_reached = excluded.people_reached`,
+  ).bind(r.cms_item_id, r.slug, r.title, r.short_answer, r.can_do_with_others, r.synced_at, r.suggestion_cms_id, r.weekly_dare_from, r.hidden, r.location_specific, r.who, r.people_reached);
 }
 
 export { rowFromItem };
@@ -219,6 +221,7 @@ export async function markDone(env: Env, deps: Deps, member: Member, actionId: s
     tally: await memberTally(env, member.id),
     count: await publicCount(env, actionId),
     ripple: await rippleTotal(env, member.id),
+    rippleView: await rippleView(env, member.id, true),
     guest,
     refCode: await refCodeFor(env, member),
     cardWho: cardWho(action),
@@ -239,6 +242,7 @@ export async function undoDone(env: Env, deps: Deps, member: Member, actionId: s
     env.DB.prepare(`DELETE FROM done_marks WHERE id = ?1`).bind(mark.id),
   ]);
   await forgetCounts(env, actionId);
+  await forgetRings(env, member.id);
   await recomputeKeeps(env, member.id);
   const left = await env.DB.prepare(`SELECT COUNT(*) AS n FROM done_marks WHERE member_id = ?1 AND action_id = ?2`).bind(member.id, actionId).first<{ n: number }>();
   return { actionId, done: (left?.n ?? 0) > 0, tally: await memberTally(env, member.id), count: await publicCount(env, actionId) };

@@ -92,6 +92,7 @@ export async function claimGuest(env: Env, deps: Deps, member: Member, guest: Me
     .bind(guest.id, member.id)
     .run();
   const moved = await env.DB.prepare(`UPDATE done_marks SET member_id = ?2 WHERE member_id = ?1`).bind(guest.id, member.id).run();
+  const guestRef = await env.DB.prepare(`SELECT ref_code FROM members WHERE id = ?1`).bind(guest.id).first<{ ref_code: string | null }>();
   await env.DB.batch([
     // Who brought the guest here now brought the member (unless someone already had).
     env.DB.prepare(
@@ -103,6 +104,11 @@ export async function claimGuest(env: Env, deps: Deps, member: Member, guest: Me
     env.DB.prepare(`UPDATE OR IGNORE invite_joins SET member_id = ?2 WHERE member_id = ?1`).bind(guest.id, member.id),
     env.DB.prepare(`DELETE FROM invite_joins WHERE member_id = ?1`).bind(guest.id),
     env.DB.prepare(`UPDATE OR IGNORE invites SET inviter_id = ?2 WHERE inviter_id = ?1`).bind(guest.id, member.id),
+    // Links the guest shared now count for the member (their code moves if the member has none).
+    env.DB.prepare(`UPDATE done_marks SET parent_member_id = ?2 WHERE parent_member_id = ?1 AND member_id != ?2`).bind(guest.id, member.id),
+    env.DB.prepare(`UPDATE done_marks SET parent_member_id = NULL WHERE parent_member_id = ?1`).bind(guest.id),
+    env.DB.prepare(`UPDATE members SET ref_code = NULL WHERE id = ?1`).bind(guest.id),
+    env.DB.prepare(`UPDATE members SET ref_code = ?2 WHERE id = ?1 AND ref_code IS NULL AND ?2 IS NOT NULL`).bind(member.id, guestRef?.ref_code ?? null),
     env.DB.prepare(`UPDATE members SET account_id = 'merged:' || id, inviter_id = NULL, deleted_at = ?2, updated_at = ?2 WHERE id = ?1`).bind(guest.id, now),
   ]);
   for (const a of actions.results) await env.CACHE.delete(`count:${a.action_id}`);

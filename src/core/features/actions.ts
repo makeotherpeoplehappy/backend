@@ -18,6 +18,17 @@ export interface ActionRow {
   can_do_with_others: number;
   status: string;
   suggestion_cms_id: string | null;
+  who?: string | null;
+}
+
+/** The share card's "who": the one person type the action is for, or null (several or none: "someone"). */
+export function cardWho(action: Pick<ActionRow, 'who'>): string | null {
+  try {
+    const list = JSON.parse(action.who || '[]') as string[];
+    return list.length === 1 ? list[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 const ID_PATTERN = /^[a-f0-9]{24}$/;
@@ -66,19 +77,20 @@ function rowFromItem(item: webflow.WebflowItem, now: string) {
     weekly_dare_from: dareDate(f['weekly-dare-from']),
     hidden: f.hidden === true ? 1 : 0,
     location_specific: f['location-specific'] === true ? 1 : 0,
+    who: JSON.stringify((Array.isArray(f.who) ? (f.who as string[]) : []).map((id) => CMS.actions.whoSlugs[id]).filter(Boolean)),
     synced_at: now,
   };
 }
 
 export function upsertStatement(env: Env, r: ReturnType<typeof rowFromItem>): D1PreparedStatement {
   return env.DB.prepare(
-    `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at, suggestion_cms_id, weekly_dare_from, hidden, location_specific)
-     VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6, ?7, ?8, ?9, ?10)
+    `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at, suggestion_cms_id, weekly_dare_from, hidden, location_specific, who)
+     VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6, ?7, ?8, ?9, ?10, ?11)
      ON CONFLICT (cms_item_id) DO UPDATE SET slug = excluded.slug, title = excluded.title, short_answer = excluded.short_answer,
        can_do_with_others = excluded.can_do_with_others, status = 'published', synced_at = excluded.synced_at,
        suggestion_cms_id = excluded.suggestion_cms_id, weekly_dare_from = excluded.weekly_dare_from, hidden = excluded.hidden,
-       location_specific = excluded.location_specific`,
-  ).bind(r.cms_item_id, r.slug, r.title, r.short_answer, r.can_do_with_others, r.synced_at, r.suggestion_cms_id, r.weekly_dare_from, r.hidden, r.location_specific);
+       location_specific = excluded.location_specific, who = excluded.who`,
+  ).bind(r.cms_item_id, r.slug, r.title, r.short_answer, r.can_do_with_others, r.synced_at, r.suggestion_cms_id, r.weekly_dare_from, r.hidden, r.location_specific, r.who);
 }
 
 export { rowFromItem };
@@ -151,6 +163,7 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
     canDoWithOthers: action.can_do_with_others === 1,
     suggestedBy: suggester ? suggester.share_name || suggester.first_name || null : null,
     stories: await storiesFor(env, { actionId, limit: 20 }),
+    cardWho: cardWho(action),
   };
   if (member) {
     const last = await env.DB.prepare(`SELECT MAX(done_at) AS last, COUNT(*) AS n FROM done_marks WHERE member_id = ?1 AND action_id = ?2`)
@@ -173,6 +186,7 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
       doneWith: last?.last ? await doneWithNames(env, member.id, actionId) : [],
       name: displayName(member),
       guest: isGuest(member),
+      refCode: last?.last ? await refCodeFor(env, member) : null,
       group: action.can_do_with_others === 1 ? await groupFor(env, member.id, actionId) : null,
     };
   }
@@ -183,7 +197,7 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
  * Records "I did this". There is no limit: an action can be done as often as
  * the member does it. One click still makes one record (one-time keys).
  */
-export async function markDone(env: Env, deps: Deps, member: Member, actionId: string) {
+export async function markDone(env: Env, deps: Deps, member: Member, actionId: string, ref: string | null = null) {
   const action = await getAction(env, deps, actionId);
   if (!action || action.status !== 'published') throw new HttpError(404, 'action_not_found', 'err-action-not-found');
   const guest = isGuest(member);
@@ -191,10 +205,11 @@ export async function markDone(env: Env, deps: Deps, member: Member, actionId: s
     await assertGuestCanMark(env, deps, member, actionId);
     await touchGuest(env, deps, member);
   }
+  const parent = await memberByRef(env, ref);
   const mark = await env.DB.prepare(
-    `INSERT INTO done_marks (member_id, action_id, done_at, action_title, source) VALUES (?1, ?2, ?3, ?4, 'site') RETURNING id, done_at`,
+    `INSERT INTO done_marks (member_id, action_id, done_at, action_title, source, parent_member_id) VALUES (?1, ?2, ?3, ?4, 'site', ?5) RETURNING id, done_at`,
   )
-    .bind(member.id, actionId, iso(deps.now()), action.title)
+    .bind(member.id, actionId, iso(deps.now()), action.title, parent && parent !== member.id ? parent : null)
     .first<{ id: number; done_at: string }>();
   await forgetCounts(env, actionId);
   await recomputeKeeps(env, member.id);
@@ -205,6 +220,8 @@ export async function markDone(env: Env, deps: Deps, member: Member, actionId: s
     count: await publicCount(env, actionId),
     ripple: await rippleTotal(env, member.id),
     guest,
+    refCode: await refCodeFor(env, member),
+    cardWho: cardWho(action),
   };
 }
 
@@ -298,4 +315,30 @@ export async function setLike(env: Env, deps: Deps, member: Member, actionId: st
     await env.DB.prepare(`DELETE FROM likes WHERE member_id = ?1 AND action_id = ?2 AND value = 1`).bind(member.id, actionId).run();
   }
   return { actionId, liked };
+}
+
+// --- Referral codes (shared links: /action/<slug>?r=<code>) ---------------------
+
+const REF = /^[A-Za-z0-9]{8}$/;
+const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+
+/** The member's referral code, made the first time it is needed. Guests have one too; it moves on sign-in. */
+export async function refCodeFor(env: Env, member: Member): Promise<string> {
+  const row = await env.DB.prepare(`SELECT ref_code FROM members WHERE id = ?1`).bind(member.id).first<{ ref_code: string | null }>();
+  if (row?.ref_code) return row.ref_code;
+  for (let i = 0; i < 5; i++) {
+    const code = Array.from(crypto.getRandomValues(new Uint8Array(8)), (b) => REF_ALPHABET[b % REF_ALPHABET.length]).join('');
+    const r = await env.DB.prepare(`UPDATE OR IGNORE members SET ref_code = ?2 WHERE id = ?1 AND ref_code IS NULL`).bind(member.id, code).run();
+    if (r.meta.changes) return code;
+    const again = await env.DB.prepare(`SELECT ref_code FROM members WHERE id = ?1`).bind(member.id).first<{ ref_code: string | null }>();
+    if (again?.ref_code) return again.ref_code;
+  }
+  throw new Error('could not make a referral code');
+}
+
+/** The member a referral code belongs to (null for none, unknown or malformed). */
+export async function memberByRef(env: Env, ref: string | null): Promise<number | null> {
+  if (!ref || !REF.test(ref)) return null;
+  const r = await env.DB.prepare(`SELECT id FROM members WHERE ref_code = ?1 AND deleted_at IS NULL`).bind(ref).first<{ id: number }>();
+  return r?.id ?? null;
 }

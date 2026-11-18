@@ -102,7 +102,7 @@ route('GET', '/api/actions/:id/state', true, async ({ req, env, deps, params }) 
 });
 
 // "I did this" and undo also work without an account (try before sign-up).
-route('POST', '/api/actions/:id/done', true, doerWrite('done', true, async ({ env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id)), 201));
+route('POST', '/api/actions/:id/done', true, doerWrite('done', true, async ({ req, env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id), req.headers.get('X-HF-Ref')), 201));
 
 route('DELETE', '/api/actions/:id/done', true, doerWrite('undo', false, async ({ env, deps, params }, m) => undoDone(env, deps, m, await resolveActionRef(env, deps, params.id))));
 
@@ -493,7 +493,7 @@ function corsHeaders(req: Request, env: Env): Record<string, string> {
   return {
     'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Credentials': 'false',
-    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, CF-Turnstile-Response, X-HF-Guest',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type, Idempotency-Key, CF-Turnstile-Response, X-HF-Guest, X-HF-Ref',
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Max-Age': '600',
     Vary: 'Origin',

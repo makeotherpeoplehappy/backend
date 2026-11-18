@@ -137,6 +137,8 @@ export async function deleteMemberData(env: Env, deps: Deps, memberId: number): 
     env.DB.prepare(`UPDATE outbox SET status = 'cancelled', updated_at = ?2 WHERE member_id = ?1 AND target = 'email' AND status = 'pending'`).bind(memberId, now),
     env.DB.prepare(`DELETE FROM request_keys WHERE scope = ?1`).bind(`m:${memberId}`),
     env.DB.prepare(`DELETE FROM daily_usage WHERE member_id = ?1`).bind(memberId),
+    env.DB.prepare(`DELETE FROM drop_notify WHERE member_id = ?1`).bind(memberId),
+    env.DB.prepare(`UPDATE checkouts SET member_id = NULL WHERE member_id = ?1`).bind(memberId),
     env.DB.prepare(
       `UPDATE members SET account_id = 'deleted:' || id, first_name = NULL, email = NULL, share_name = NULL, home_area = NULL,
          notify_invite_summary = 0, notify_story_approved = 0, notify_suggestion_live = 0, notify_pledge_reminder = 0,

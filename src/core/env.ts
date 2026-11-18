@@ -19,6 +19,8 @@ export interface Env {
   /** Client secret of that app: gets Admin API tokens and verifies webhooks. */
   SHOPIFY_CLIENT_SECRET: string;
   SHOPIFY_ADMIN_API_VERSION?: string;
+  /** Private Storefront API token of the Headless channel: creates checkouts. Without it, Buy says the shop is not ready. */
+  SHOPIFY_STOREFRONT_TOKEN?: string;
 
   /** Webflow site API token with CMS read and write. */
   WEBFLOW_API_TOKEN: string;

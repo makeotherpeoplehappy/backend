@@ -7,7 +7,14 @@ import type { Deps, Env } from '../env';
 import { HttpError, iso, sha256Hex } from '../http';
 import { adminGraphql } from '../shopify';
 import { word } from '../wording';
+import { EARLY_ACCESS_HOURS } from '../config';
+import type { Member } from '../identity';
 import { dropPledges } from './pledges';
+
+/** When Active members can buy a drop: EARLY_ACCESS_HOURS before its date. */
+export function earlyAccessAt(dropDate: string): string {
+  return new Date(Date.parse(dropDate) - EARLY_ACCESS_HOURS * 3600_000).toISOString();
+}
 
 /**
  * A drop is a Shopify collection with a drop date (collection field
@@ -235,6 +242,7 @@ export async function dropState(env: Env, deps: Deps, slug: string | null) {
     name: drop.name,
     status,
     dropDate: drop.dropDate,
+    earlyAt: drop.dropDate ? earlyAccessAt(drop.dropDate) : null,
     quantity,
     left,
     detailsLine: detailsLineFor({ quantity, dropDate: drop.dropDate }, status) || drop.detailsLine,
@@ -268,8 +276,10 @@ async function scheduleReleases(env: Env, deps: Deps) {
   const scheduled: string[] = [];
   for (const d of drops) {
     const at = d.dropDate ? Date.parse(d.dropDate) : NaN;
-    if (!Number.isFinite(at) || at <= now) continue;
-    const releaseAt = new Date(at).toISOString();
+    if (!Number.isFinite(at) || Date.parse(earlyAccessAt(d.dropDate!)) <= now) continue;
+    // Early access: Active members can buy from earlyAccessAt (the backend
+    // checks who); the shop page shows "upcoming" to everyone else until the date.
+    const releaseAt = earlyAccessAt(d.dropDate!);
     for (const productId of d.productIds) {
       const done = await env.DB.prepare(`SELECT release_at FROM drop_releases WHERE product_id = ?1`).bind(productId).first<{ release_at: string }>();
       if (done?.release_at === releaseAt) continue;
@@ -310,31 +320,41 @@ async function scheduleReleases(env: Env, deps: Deps) {
 }
 
 /**
- * Every drop for the shop page: the current one first, then past (sold out)
- * drops, newest first. Each drop's products are the Shopify collection with
- * the drop's address as its handle (for example "drop-01").
+ * Every drop for the shop page, keyed by its address, plus the current one
+ * first and past (sold out) ones newest first. Phase is the shop's view:
+ * upcoming, early (Active members can buy), live, sold_out. For a signed-in
+ * member, whether they asked to be told.
  */
-export async function shopDrops(env: Env, deps: Deps) {
+export async function shopDrops(env: Env, deps: Deps, member: Member | null = null) {
   const drops = await listDrops(env, deps);
+  const now = deps.now().getTime();
+  const asked = member
+    ? new Set((await env.DB.prepare(`SELECT drop_slug FROM drop_notify WHERE member_id = ?1`).bind(member.id).all<{ drop_slug: string }>()).results.map((r) => r.drop_slug))
+    : new Set<string>();
   const out = [];
   for (const d of drops) {
     const { quantity, left } = await dropStock(env, deps, d).catch(() => NO_STOCK(d));
     const status = await effectiveStatus(env, deps, d, left);
+    const earlyAt = d.dropDate ? earlyAccessAt(d.dropDate) : null;
+    const phase = status === 'sold_out' ? 'sold_out' : earlyAt && now < Date.parse(earlyAt) ? 'upcoming' : status === 'upcoming' ? 'early' : status;
     out.push({
       drop: d.slug,
       name: d.name,
       statement: d.statement,
       status,
+      phase,
       dropDate: d.dropDate,
+      earlyAt,
       quantity,
       left,
       detailsLine: detailsLineFor({ quantity, dropDate: d.dropDate }, status) || d.detailsLine,
       collection: d.slug,
       pledges: await dropPledges(env, d.slug),
+      notified: asked.has(d.slug),
     });
   }
   const cur = await findDrop(env, deps, null);
   const current = (cur && out.find((d) => d.drop === cur.slug)) || null;
   const past = out.filter((d) => d !== current && d.status === 'sold_out').sort((a, b) => String(b.dropDate).localeCompare(String(a.dropDate)));
-  return { current, past };
+  return { current, past, drops: out, signedIn: !!member };
 }

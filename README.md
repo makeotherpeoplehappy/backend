@@ -17,7 +17,7 @@ Each kind of text has one home. Don't move text between them.
 | Kind of text | Home | How it reaches the site |
 | --- | --- | --- |
 | Page content: headlines and intros on the foundation site | **Webflow** (Designer and CMS) | Native Webflow elements. Scripts only show the right one (`data-hf-show`) and fill in data (`data-hf-fill`). |
-| The shop: products, drops, edition sizes and all shop text | **Shopify** (admin and theme) | The shop is Shopify's own; the backend only reads it. |
+| Product facts: names, descriptions, prices, images, edition sizes, drop dates | **Shopify** | Copied into the Webflow Drops and Shop products collections by the backend (`shop.ts`). Shop and product page text and design are Webflow's. |
 | Member emails | **Resend** templates (`hf-invite-joined-*`, `hf-story-live*`, `hf-suggestion-live*`, `hf-pledge-reminder`, and `hf-pledge-claim` by its ID) | The backend sends the template alias (or ID) and its variables. |
 | Form labels, help lines and thank-you messages | **Webflow** (the native forms) | The scripts read the fields by id. |
 | Interface text: buttons, labels, messages, errors | **`src/wording/en.json`** | The backend imports it; the page scripts get it as `/join/hf-wording.js`. |
@@ -80,24 +80,36 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `POST /api/admin/shopify-webhooks` | `ADMIN_SECRET` | Register the Shopify webhooks (orders, refunds, products, customer deletion) for this address |
 | `POST /api/webhooks/shopify` | Shopify (HMAC) | `customers/delete`, `customers/redact`, orders and refunds (pledges), `products/*` (refreshes drops) |
 
-## Drops (in Shopify)
+## The shop and drops
 
-A drop is a Shopify collection with a **Drop date** (collection field
-`custom.drop_date`, date and time). Everything else is worked out:
+The shop runs on this site (Shop page `/shop`, product pages `/product/<handle>`,
+designed natively in Webflow). Shopify keeps products, stock, checkout and
+fulfilment; Memberstack keeps members (there are no Shopify customer logins).
 
-- **Pieces:** the collection's products. Each piece's size is its **Edition size**
-  (product field `custom.edition_size`); the drop's total is the sizes added up.
-- **Status:** upcoming before the drop date, live after it, sold out once every
-  piece is gone.
-- **Current drop** (home page, `/api/drops/state` without a name): the newest drop
-  on sale, else the next one coming up, else the most recent one.
-- **Early buying is impossible:** each upcoming drop's products are scheduled in
-  Shopify to publish at the drop date (needs the app scopes `read_publications`
-  and `write_publications`).
-- **Pledges:** every purchase in the shop makes one pledge; a drop's
-  "pledges made, kept" counts the orders that hold one of its pieces.
-- **Notify me:** Shopify customers tagged `notify-drop-<handle>`; send the "it's
-  live" email with Shopify Email.
+- **Shopify → Webflow:** every drop and active product is copied into the Webflow
+  **Drops** and **Shop products** collections (name, address, description, images,
+  price, edition size, drop, drop date and early access). Product and collection
+  webhooks queue a copy at once; the hourly `sync-shop` job is the safety net.
+  Archived or deleted products leave the site (kept as drafts).
+- **A drop** is a Shopify collection with a **Drop date** (collection field
+  `custom.drop_date`). Its pieces are its products; each piece's size is its
+  **Edition size** (`custom.edition_size`).
+- **Early access:** Active members can buy `EARLY_ACCESS_HOURS` (24) before the drop
+  date, one of each piece; everyone else from the drop date. Each upcoming drop's
+  products are scheduled in Shopify to publish when early access opens (needs the
+  app scopes `read_publications` and `write_publications`); the backend decides who
+  may buy then.
+- **Checkout:** `POST /api/shop/checkout {variant}` makes the Shopify cart with the
+  Storefront API (`SHOPIFY_STOREFRONT_TOKEN`, the Headless channel's private token),
+  fills in a signed-in member's email and puts the member on the order (hidden
+  attribute `_hf_member`, signed), so the order's pledge joins them whatever email
+  they type. `GET /api/shop/products/<handle>` gives a product page sizes, stock and
+  whether this visitor can buy now.
+- **Notify me** (`POST /api/shop/notify {drop, on}`) is kept with the member. Active
+  members who asked are emailed when early access opens, everyone else when the
+  drop opens (Resend template `hf-drop-open`, variables `DROP`, `URL`, `EARLY`).
+- **Pledges:** every purchase makes one pledge; a drop's "pledges made, kept" counts
+  the orders that hold one of its pieces.
 
 ## The Make Someone Happy pledge
 

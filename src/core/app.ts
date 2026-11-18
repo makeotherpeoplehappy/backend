@@ -17,6 +17,7 @@ import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
 import { ensureShopifyWebhooks } from './features/products';
 import { dropState, forgetDrops, scheduleDropReleases, shopDrops } from './features/drops';
+import { dropNotifications, productState, queueShopSync, setNotify, startCheckout, syncShop } from './features/shop';
 import { ingestOrder, orderFromWebhook, pledgeReminders, refundOrder, syncRecentOrders } from './features/pledges';
 import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
@@ -208,7 +209,16 @@ route('GET', '/api/drops/state', true, async ({ req, env, deps }) => {
   return json(await dropState(env, deps, slug && /^[a-z0-9-]{1,100}$/.test(slug) ? slug : null), 200, { 'Cache-Control': 'public, max-age=30' });
 });
 
-route('GET', '/api/drops', true, async ({ env, deps }) => json(await shopDrops(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
+route('GET', '/api/drops', true, async ({ req, env, deps }) => json(await shopDrops(env, deps, await optionalMember(req, env, deps)), 200, { 'Cache-Control': 'private, max-age=30' }));
+
+// The shop: a product's live state (sizes, stock, can I buy now), checkout and "Notify me".
+route('GET', '/api/shop/products/:handle', true, async ({ req, env, deps, params }) => {
+  if (!/^[a-z0-9-]{1,120}$/.test(params.handle)) throw new HttpError(404, 'product_not_found', 'err-product-not-found');
+  return json(await productState(env, deps, params.handle, await optionalMember(req, env, deps)), 200, { 'Cache-Control': 'private, max-age=15' });
+});
+route('POST', '/api/shop/checkout', true, async ({ req, env, deps }) =>
+  json(await startCheckout(env, deps, await optionalMember(req, env, deps), await readJson(req), req.headers.get('CF-Connecting-IP'))));
+route('POST', '/api/shop/notify', true, memberWrite('drop-notify', async ({ req, env, deps }, m) => setNotify(env, deps, m, await readJson(req))));
 
 // Ripple: invites and "I'm in".
 route('POST', '/api/invites', true, memberWrite('invite', async ({ req, env, deps, baseUrl }, m) => {
@@ -358,6 +368,9 @@ route('POST', '/api/jobs/tick', false, async ({ req, env, deps, baseUrl }) => {
     ['pledge-reminders', 'pledgeReminders', HOUR, () => pledgeReminders(env, deps, baseUrl)],
     // Buyers from our shop get their "Keep your pledge" link.
     ['claim-emails', 'claimEmails', 0, () => claimEmails(env, deps, baseUrl)],
+    // The shop: Shopify → Webflow (webhooks do it at once; this is the safety net), and "Notify me" emails.
+    ['sync-shop', 'syncShop', HOUR, () => syncShop(env, deps)],
+    ['drop-notify', 'dropNotify', 0, () => dropNotifications(env, deps, baseUrl)],
     // Phase 4: one summary email a day per inviter.
     ['invite-summaries', 'inviteSummaries', 24 * HOUR, () => inviteSummaries(env, deps, baseUrl)],
     // Try before sign-up: guests not seen for 30 days can no longer be claimed.
@@ -478,10 +491,11 @@ route('POST', '/api/webhooks/shopify', false, async ({ req, env, deps }) => {
       const deleted = id ? await deleteMemberByCustomerId(env, deps, customerGid(String(id))) : false;
       return json({ ok: true, deleted });
     }
-    if (topic === 'products/create' || topic === 'products/update' || topic === 'products/delete') {
-      // A drop's pieces or sizes may have changed: work drops out again.
+    if (/^(products|collections)\/(create|update|delete)$/.test(topic)) {
+      // A product or drop changed: work drops out again, and copy the shop to Webflow shortly.
       await forgetDrops(env);
-      return json({ ok: true, refreshed: 'drops' });
+      await queueShopSync(env, deps).run();
+      return json({ ok: true, refreshed: 'shop' });
     }
     if (topic === 'orders/create' || topic === 'orders/updated' || topic === 'orders/cancelled' || topic === 'orders/paid') {
       const order = orderFromWebhook(body);

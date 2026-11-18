@@ -901,3 +901,81 @@ describe('Active membership card', () => {
     expect(d.querySelectorAll('[data-hf-part="dot"].is-now').length).toBe(1);
   });
 });
+
+describe('Shop', () => {
+  const PRODUCT_HTML = `<section><div data-hf-row="product" data-hf-product="drop-01-tee">
+    <p data-hf-fill="product-left"></p>
+    <div data-hf-show="product-upcoming">Early access <span data-hf-fill="product-early-at"></span> · <span data-hf-fill="product-countdown"></span></div>
+    <div data-hf-show="product-early">Early access is open</div>
+    <div data-hf-show="product-locked"><p data-hf-fill="product-locked-why"></p></div>
+    <div data-hf-show="product-sold-out">Sold out</div>
+    <div data-hf-show="product-sizes"><label for="size">Size</label><select id="size" data-hf-field="variant"></select></div>
+    <div data-hf-show="product-buy"><a href="#" data-hf-act="buy">Buy</a></div>
+    <div data-hf-show="product-notify"><a href="#" data-hf-act="notify">Notify me</a></div>
+    <p data-hf-fill="product-msg"></p>
+  </div></section>`;
+  const base = { product: 'drop-01-tee', edition: 100, left: 38, notified: false, drop: { slug: 'drop-01', name: 'Drop 01', dropDate: '2030-12-05T17:00:00.000Z', earlyAt: '2030-12-04T17:00:00.000Z' } };
+  const ONE = [{ id: 'gid://shopify/ProductVariant/1', title: 'One size', available: true }];
+  const SIZES = [{ id: 'gid://shopify/ProductVariant/1', title: 'S', available: false }, { id: 'gid://shopify/ProductVariant/2', title: 'M', available: true }];
+
+  it('before early access: when it opens, Notify me (kept on the account), no Buy', async () => {
+    let notified = false;
+    const p = await page('/product/drop-01-tee', PRODUCT_HTML, (m, path) => {
+      if (path === '/api/shop/products/drop-01-tee') return { data: { ...base, status: 'upcoming', canBuy: false, reason: 'upcoming', notified, variants: ONE } };
+      if (m === 'POST' && path === '/api/shop/notify') { notified = true; return { data: { drop: 'drop-01', notified: true } }; }
+    });
+    const d = p.document;
+    expect(shown(d.querySelector('[data-hf-show="product-upcoming"]'))).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="product-buy"]'))).toBe(false);
+    expect(shown(d.querySelector('[data-hf-show="product-sizes"]'))).toBe(false);
+    expect(d.querySelector('[data-hf-fill="product-left"]')!.textContent).toBe('38 of 100 left');
+    expect(d.querySelector('[data-hf-fill="product-countdown"]')!.textContent).toMatch(/^Opens in \d+ days$/);
+    (act(d, 'notify') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(p.calls).toContainEqual({ method: 'POST', path: '/api/shop/notify', body: { drop: 'drop-01', on: true } });
+    expect(act(d, 'notify').textContent).toBe(WORDING['shop-notified']);
+  });
+
+  it('early access, not Active: says why, no Buy', async () => {
+    const p = await page('/product/drop-01-tee', PRODUCT_HTML, (_m, path) => (path === '/api/shop/products/drop-01-tee' ? { data: { ...base, status: 'early', canBuy: false, reason: 'early_not_active', variants: ONE } } : undefined));
+    const d = p.document;
+    expect(shown(d.querySelector('[data-hf-show="product-early"]'))).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="product-locked"]'))).toBe(true);
+    expect(d.querySelector('[data-hf-fill="product-locked-why"]')!.textContent).toBe(WORDING['err-buy-early-not-active']);
+    expect(shown(d.querySelector('[data-hf-show="product-buy"]'))).toBe(false);
+  });
+
+  it('on sale with sizes: sold-out sizes cannot be picked, Buy asks for a size, then goes to checkout', async () => {
+    const p = await page('/product/drop-01-tee', PRODUCT_HTML, (m, path) => {
+      if (path === '/api/shop/products/drop-01-tee') return { data: { ...base, status: 'live', canBuy: true, reason: null, variants: SIZES } };
+      if (m === 'POST' && path === '/api/shop/checkout') return { data: { checkoutUrl: 'https://shop.test/checkout/abc' } };
+    });
+    const d = p.document;
+    const sel = d.querySelector('select') as unknown as { options: { value: string; textContent: string; disabled: boolean }[]; value: string };
+    expect([...(sel.options as unknown as Iterable<{ textContent: string; disabled: boolean }>)].map((o) => [o.textContent, o.disabled])).toEqual([[WORDING['shop-size-pick'], false], ['S – sold out', true], ['M', false]]);
+    (act(d, 'buy') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(d.querySelector('[data-hf-fill="product-msg"]')!.textContent).toBe(WORDING['err-invalid-variant']);
+    expect(p.calls.some((c) => c.path === '/api/shop/checkout')).toBe(false);
+    sel.value = 'gid://shopify/ProductVariant/2';
+    (act(d, 'buy') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(p.calls).toContainEqual({ method: 'POST', path: '/api/shop/checkout', body: { variant: 'gid://shopify/ProductVariant/2' } });
+  });
+
+  it('the shop page shows each drop in its phase', async () => {
+    const html = `<div data-hf-drop="drop-01"><div data-hf-show="drop-upcoming">Soon <span data-hf-fill="drop-countdown"></span></div><div data-hf-show="drop-live">On sale <span data-hf-fill="drop-left"></span></div><div data-hf-show="drop-notify"><a href="#" data-hf-act="notify">Notify me</a></div></div>
+      <div data-hf-drop="drop-00"><div data-hf-show="drop-upcoming">Soon</div><div data-hf-show="drop-sold-out">Sold out</div></div>`;
+    const p = await page('/shop', html, (_m, path) => (path === '/api/drops' ? { data: { drops: [
+      { drop: 'drop-01', phase: 'live', earlyAt: '2026-01-01T00:00:00Z', dropDate: '2026-01-02T00:00:00Z', left: 12, quantity: 100, notified: false },
+      { drop: 'drop-00', phase: 'sold_out', earlyAt: null, dropDate: '2025-01-01T00:00:00Z', left: 0, quantity: 50, notified: false },
+    ] } } : undefined));
+    const d = p.document;
+    const [one, zero] = [...d.querySelectorAll('[data-hf-drop]')];
+    expect(shown(one.querySelector('[data-hf-show="drop-live"]'))).toBe(true);
+    expect(shown(one.querySelector('[data-hf-show="drop-upcoming"]'))).toBe(false);
+    expect(shown(one.querySelector('[data-hf-show="drop-notify"]'))).toBe(false);
+    expect(one.querySelector('[data-hf-fill="drop-left"]')!.textContent).toBe('12 of 100 left');
+    expect(shown(zero.querySelector('[data-hf-show="drop-sold-out"]'))).toBe(true);
+  });
+});

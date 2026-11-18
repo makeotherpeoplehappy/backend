@@ -51,6 +51,7 @@
   "acct-there": "there",
   "acct-ripple-none": "When someone you invite takes an action, it shows here.",
   "acct-pledges-none": "No pledges yet. Every purchase in the shop comes with one.",
+  "acct-fold-to-keep": "{n} to keep",
   "acct-pledged": "Pledged {date}",
   "acct-pledge-kept": "Kept with {action} on {date}",
   "acct-pledge-an-action": "an action",

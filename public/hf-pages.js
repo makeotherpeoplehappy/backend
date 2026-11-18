@@ -93,25 +93,9 @@
   function msgOf(r, fallback) { return (r && r.data && r.data.message) || fallback || copyText('error-something'); }
 
   // A few styles for the parts this script adds; everything else uses the site's classes.
-  var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
-    '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-clip-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,220px),1fr));gap:20px;margin:16px 0 32px}.hfp-clip{position:relative;aspect-ratio:9/16;border-radius:20px;overflow:hidden;background:#111418}.hfp-clip-video{display:block;width:100%;height:100%;object-fit:cover;cursor:pointer}.hfp-clip-sound{position:absolute;left:12px;bottom:12px;border:0;border-radius:999px;padding:8px 14px;background:rgba(17,20,24,.7);color:#fff;font:inherit;font-size:14px;font-weight:600;cursor:pointer}.hfp-clip-sorry{display:none;position:absolute;inset:auto 12px 12px;margin:0;padding:10px 12px;border-radius:12px;background:rgba(17,20,24,.75);color:#fff;font-size:14px}.hfp-clip.is-broken .hfp-clip-sorry{display:block}.hfp-clip.is-broken .hfp-clip-sound{display:none}.hf-story.is-clip{max-width:420px}.hfp-video-box{margin:20px 0}.hfp-video-preview{display:block;width:min(100%,240px);aspect-ratio:9/16;object-fit:cover;border-radius:16px;margin:12px 0;background:#111418}.hfp-ripple{margin:16px 0 0}.hfp-ripple-h{margin:0 0 8px}.hfp-ripple-svg{display:block;height:auto;margin:0 auto}.hfp-ripple-dot{cursor:pointer;outline:none}.hfp-ripple-dot:focus-visible{stroke:var(--colour--ink,#111418);stroke-width:2}.hfp-ripple-caption{min-height:1.5em;text-align:center;font-weight:600;margin:8px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
-    '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
-    '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
-    '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
-    '.hfp-photo{display:block;width:100%;max-width:640px;border-radius:16px;margin:0 0 12px}' +
-    '.hfp-list{list-style:none;padding:0;margin:8px 0 16px}.hfp-list li{padding:12px 0;border-bottom:1px solid #E3E8EF}' +
-    '.hfp-field{margin:0 0 16px}.hfp-check{display:flex;gap:12px;align-items:flex-start;margin:0 0 12px}.hfp-check input{margin-top:4px;width:22px;height:22px;flex:none;accent-color:#2E5E8E}' +
-    '.hfp-check label{font-size:17px;font-weight:400;line-height:1.5;margin:0;cursor:pointer}' +
-    '.hfp-pill{display:inline-block;font-size:14px;font-weight:600;padding:2px 12px;border-radius:999px;background:#EEF4FA;color:#2E5E8E;margin-left:8px}' +
-    // Account lists: one tidy, tappable item per row, built for phones.
-    '.hfp-list li.hfp-item{display:flex;flex-direction:column;align-items:flex-start;gap:6px;padding:16px 0}.hfp-list li.hfp-item:last-child{border-bottom:0;padding-bottom:4px}' +
-    '.hfp-item-top{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.hfp-item .hfp-pill{margin-left:0}.hfp-item .hfp-pill.is-open{background:#2E5E8E;color:#fff}' +
-    '.hfp-item-title{font-size:18px;font-weight:600;line-height:1.35;color:#111418}a.hfp-item-title{color:#2E5E8E;text-decoration:none}a.hfp-item-title:hover{text-decoration:underline}' +
-    '.hfp-item-acts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:2px}' +
-    '.hfp-chip-link{display:inline-flex;align-items:center;min-height:44px;padding:0 16px;border:2px solid #CFE0F2;border-radius:999px;background:#fff;color:#2E5E8E;font-size:16px;font-weight:600;text-decoration:none;cursor:pointer;font-family:inherit}.hfp-chip-link:hover{background:#2E5E8E;border-color:#2E5E8E;color:#fff}' +
-    '[aria-disabled=true].hf-button,[aria-disabled=true].hf-button-light,button[disabled]{opacity:.55;cursor:default}';
-  document.head.appendChild(el('style', { text: css }));
+  // No styles live in this script: every look is a Webflow class (states such as
+  // is-disabled, is-error and is-open are Webflow combo classes), and the few
+  // rules Webflow cannot express are in site.css.
 
   // ---------------------------------------------------------------------------
   // Native parts. Everything visible is built in Webflow; this script only
@@ -882,6 +866,12 @@
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
     var P = partsOf(inn);
+    // The line under the tally (in Webflow): its own words until someone they invited takes an action.
+    var rippleLine = $('hfp-ripple');
+    if (rippleLine) {
+      if (!rippleLine.hasAttribute('data-hf-none')) rippleLine.setAttribute('data-hf-none', rippleLine.textContent);
+      rippleLine.textContent = me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : rippleLine.getAttribute('data-hf-none');
+    }
     // Your ripple: its card is built in Webflow, right under the impact numbers.
     P.show('ripple', !!me.rippleView);
     if (me.rippleView) drawRipple(partsOf($('acct-ripple') || inn), me.rippleView);
@@ -1453,6 +1443,7 @@
         titleEl.textContent = copyText('inv-mine-h');
         inBtn.textContent = copyText('inv-share');
         inBtn.removeAttribute('aria-disabled');
+        inBtn.classList.remove('is-disabled');
         inBtn.onclick = function (e) {
           e.preventDefault();
           share({ title: document.title, text: copyText(v.kind === 'with_me' ? 'inv-share-with' : 'inv-share-pass', { name: who, title: v.action.title }), url: location.origin + HFB.base + '/' + code }, noteEl);
@@ -1465,6 +1456,7 @@
       if (v.me && v.me.joined) {
         inBtn.textContent = copyText('inv-in');
         inBtn.setAttribute('aria-disabled', 'true');
+        inBtn.classList.add('is-disabled');
         inBtn.onclick = function (e) { e.preventDefault(); };
         P.fill('joined', copyText('inv-joined', { name: who }) + ' ');
         P.show('joined', true);
@@ -1473,6 +1465,7 @@
       }
       inBtn.textContent = copyText('inv-join');
       inBtn.removeAttribute('aria-disabled');
+      inBtn.classList.remove('is-disabled');
       inBtn.onclick = function (e) {
         e.preventDefault();
         if (signedIn()) return join();

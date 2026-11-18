@@ -87,9 +87,21 @@ function doerWrite(name: string, create: boolean, fn: (c: Call, member: Member) 
 // --- Site calls -------------------------------------------------------------
 
 // The interface text for the page scripts (src/wording/en.json), loaded before them.
-route('GET', '/hf-wording.js', false, async () =>
-  new Response(WORDING_SCRIPT, { headers: { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300' } }),
-);
+// It only changes with a deploy, so it carries an ETag: a returning visitor gets a
+// tiny 304 instead of the whole text (Webflow Cloud makes every response no-cache).
+const WORDING_ETAG = `"w${fnv1a(WORDING_SCRIPT)}"`;
+route('GET', '/hf-wording.js', false, async ({ req }) => {
+  const headers = { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'public, max-age=300', ETag: WORDING_ETAG };
+  const seen = req.headers.get('If-None-Match') || '';
+  if (seen.split(',').some((t) => t.trim().replace(/^W\//, '') === WORDING_ETAG)) return new Response(null, { status: 304, headers });
+  return new Response(WORDING_SCRIPT, { headers });
+});
+/** A short, stable fingerprint of a text (FNV-1a, 32 bit). */
+function fnv1a(text: string): string {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(36);
+}
 
 route('GET', '/api/health', false, async ({ env }) => {
   const missing = missingEnv(env);

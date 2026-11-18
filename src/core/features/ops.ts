@@ -257,7 +257,17 @@ export async function labKpis(env: Env, deps: Deps) {
     shopCheckoutReady: !!env.SHOPIFY_STOREFRONT_TOKEN,
     notifySignups: await n(`SELECT COUNT(*) AS n FROM drop_notify WHERE notified_at IS NULL`),
     checkouts7d: await n(`SELECT COUNT(*) AS n FROM checkouts WHERE created_at >= '${iso(new Date(now.getTime() - 7 * 86_400_000))}'`),
-    jobs: await many<{ job: string; last_run_at: string }>(`SELECT job, last_run_at FROM job_runs ORDER BY job`),
+    jobs: await Promise.all(
+      (await many<{ job: string; last_run_at: string }>(`SELECT job, last_run_at FROM job_runs ORDER BY job`)).map(async (j) => ({
+        ...j,
+        last: ((await env.CACHE.get(`job-result:${j.job}`)) || '').slice(0, 600),
+      })),
+    ),
+    // Writes being retried, with why (a failing one shows here long before it gives up).
+    retryingWrites: await many<{ what: string; target: string; attempts: number; error: string }>(
+      `SELECT dedupe_key AS what, target, attempts, substr(COALESCE(last_error, ''), 1, 300) AS error FROM outbox
+       WHERE status IN ('pending', 'running') AND attempts > 0 ORDER BY updated_at DESC LIMIT 10`,
+    ),
     dareWarnings: await dareWarnings(env, deps),
   };
   return { generatedAt: iso(now), environment: env.ENVIRONMENT || null, impact, engagement, daily, topActions, mostLiked, health };

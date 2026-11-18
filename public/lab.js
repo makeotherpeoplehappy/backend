@@ -113,8 +113,12 @@
         ['Shop checkout', h.shopCheckoutReady ? 'Ready' : 'Needs the Storefront token (SHOPIFY_STOREFRONT_TOKEN)'],
         ['Notify me sign-ups waiting', h.notifySignups],
         ['Checkouts started, 7 days', h.checkouts7d]
-      ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))
+      ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString() + (j.last ? ' · ' + j.last : '')]; })))
     ]);
+    if ((h.retryingWrites || []).length) {
+      details.appendChild(el('h2', { text: 'Writes being retried' }));
+      details.appendChild(table(['Where', 'What', 'Tries', 'Error'], h.retryingWrites.map(function (f) { return [f.target, f.what, f.attempts, f.error]; })));
+    }
     if ((h.failedWrites || []).length) {
       details.appendChild(el('h2', { text: 'Writes that failed' }));
       var ft = table(['When', 'Where', 'What', 'Tries', 'Error', ''], h.failedWrites.map(function (f) {

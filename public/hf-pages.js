@@ -614,6 +614,7 @@
       HFB.requireSignIn({ kind: kind, actionId: id });
     }
 
+    function doneLabel() { return copyText(st.me && st.me.done ? 'action-did-again' : 'action-did'); }
     var busy = false;
     P.on('done', async function (b) {
       if (busy || !id) return;
@@ -630,7 +631,7 @@
         rememberActive(r.data.active);
         window.dispatchEvent(new Event('hf-done'));
         await load();
-        doneMoment(b, copyText('action-did-again'));
+        doneMoment(b, doneLabel);
       } else if (r.status === 401) ask('done');
       else say(msg, msgOf(r), true);
     });
@@ -645,6 +646,7 @@
       won = false;
       P.show('win', false);
       await load();
+      P.acts('done').forEach(function (d) { endMoment(d, doneLabel); });
       // The message tells the new total (none left: just "Undone.").
       var n = r.data && r.data.tally;
       var left = n ? copyText(n === 1 ? 'action-tally-one' : 'action-tally-many', { n: n }) : '';
@@ -1943,11 +1945,20 @@
   // goes back to "I did this again". No confetti.
   // ---------------------------------------------------------------------------
   function buzz() { try { if (navigator.vibrate) navigator.vibrate([18, 40, 18]); } catch (e) {} }
-  function doneMoment(b, after) {
+  // "✓ Done – nice one" for a moment, then the button's label as it is by then
+  // (an Undo in the meantime ends the moment early).
+  function doneMoment(b, label) {
     if (!b) return;
+    clearTimeout(b._hfMoment);
     b.classList.add('is-done');
     b.textContent = copyText('action-done-nice');
-    setTimeout(function () { b.classList.remove('is-done'); b.textContent = after; }, 2400);
+    b._hfMoment = setTimeout(function () { endMoment(b, label); }, 2400);
+  }
+  function endMoment(b, label) {
+    if (!b || !b.classList.contains('is-done')) return;
+    clearTimeout(b._hfMoment);
+    b.classList.remove('is-done');
+    b.textContent = label();
   }
 
   // ---------------------------------------------------------------------------

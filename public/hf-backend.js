@@ -252,8 +252,16 @@
    * Remembers a signed-out action and sends the visitor to sign in.
    * intent: { kind: 'done'|'like'|'join'|'suggestion'|'story', actionId?, inviteCode?, data? }
    */
+  // The sign-in window opens straight away; the click is saved while they sign in,
+  // and resume() waits for that save so the click is never lost or done twice.
+  var savingIntent = null;
   async function requireSignIn(intent) {
     intent.returnTo = intent.returnTo || location.pathname + location.search;
+    if (window.HF && window.HF.signin) window.HF.signin();
+    savingIntent = saveIntent(intent);
+    try { return await savingIntent; } finally { savingIntent = null; }
+  }
+  async function saveIntent(intent) {
     var r = await call('/api/intents', { method: 'POST', body: intent, auth: false, turnstile: true });
     if (r.ok && r.data && r.data.id) {
       store(INTENT_KEY, r.data.id);
@@ -263,7 +271,6 @@
       // keep it in this browser and finish it after sign-in instead.
       store(LOCAL_KEY, JSON.stringify({ kind: intent.kind, actionId: intent.actionId, inviteCode: intent.inviteCode, returnTo: intent.returnTo, key: newKey() }));
     }
-    if (window.HF && window.HF.signin) window.HF.signin();
     return r;
   }
 
@@ -298,6 +305,7 @@
 
   /** After sign-in: finishes the remembered action once and returns to it. */
   async function resume() {
+    if (savingIntent) { try { await savingIntent; } catch (e) {} }
     var id = read(INTENT_KEY);
     if (!id && !read(LOCAL_KEY)) return null;
     await waitFor(signInReady, 10000);

@@ -140,6 +140,16 @@ describe('Site helper: resume after sign-in', () => {
     expect(b.location.href).toBe('/action/tip');
   });
 
+  it('opens the sign-in window before the click has been saved', async () => {
+    const b = fakeBrowser({ intentStatus: 201, signedIn: false });
+    const HFB = b.window.HFB as { requireSignIn: (i: unknown) => Promise<unknown> };
+    const saving = HFB.requireSignIn({ kind: 'like', actionId: '6af7ee1968b3c49af2c45be3' });
+    expect(b.signins()).toBe(1);
+    expect(b.storage.get('hfb_intent')).toBeUndefined();
+    await saving;
+    expect(b.storage.get('hfb_intent')).toBe('abcdefghijklmnopqrstuv');
+  });
+
   it('uses the server-saved click when there is one', async () => {
     const b = fakeBrowser({ intentStatus: 201, signedIn: false });
     const HFB = b.window.HFB as { requireSignIn: (i: unknown) => Promise<unknown> };

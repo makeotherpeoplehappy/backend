@@ -138,6 +138,16 @@ describe('Action page', () => {
     await p.settle();
     expect(act(d, 'done').textContent).toBe('I did this');
     expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(false);
+    // Undo straight after "I did this" ends the Done moment with the right label.
+    act(d, 'done').click();
+    await p.settle();
+    expect(act(d, 'done').textContent).toBe('✓ Done – nice one');
+    act(d, 'undo').click();
+    await p.settle();
+    expect(act(d, 'done').textContent).toBe('I did this');
+    expect(act(d, 'done').classList.contains('is-done')).toBe(false);
+    await new Promise((r) => setTimeout(r, 2500));
+    expect(act(d, 'done').textContent).toBe('I did this');
     expect(d.getElementById('hf-did-msg')!.textContent).toBe('Undone.');
     // Nothing visible is made by the script: no buttons, forms or cards of its own.
     expect(d.querySelectorAll('button').length).toBe(0);

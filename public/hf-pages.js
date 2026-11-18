@@ -607,6 +607,7 @@
       busy = false;
       setBusy(b, false);
       if (r.ok) {
+        celebrate(b);
         say(msg, copyText(r.data.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: r.data.tally }));
         showWin(r.data);
         window.dispatchEvent(new Event('hf-done'));
@@ -1863,6 +1864,108 @@
   }
   window.HFP.auth = openAuth;
 
+  /** "Ends in 3 days" / "Ends in 5 hours" / "Ends in 20 minutes". */
+  function endsIn(ms) {
+    var min = Math.floor(ms / 60000), h = Math.floor(min / 60), d = Math.floor(h / 24);
+    if (d >= 2) return copyText('dare-ends-days', { n: d });
+    if (h >= 2) return copyText('dare-ends-hours', { n: h });
+    if (h === 1) return copyText('dare-ends-hour');
+    if (min >= 1) return copyText('dare-ends-minutes', { n: min });
+    return copyText('dare-ends-soon');
+  }
+
+  // ---------------------------------------------------------------------------
+  // A small celebration on "I did this": a burst of confetti in the site's
+  // colours from the button, and a short buzz on phones that can. Drawn on a
+  // canvas that removes itself; nothing moves when the device asks for less motion.
+  // ---------------------------------------------------------------------------
+  function celebrate(from) {
+    try { if (navigator.vibrate) navigator.vibrate([18, 40, 18]); } catch (e) {}
+    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var c = document.createElement('canvas');
+    var ctx = c.getContext && c.getContext('2d');
+    if (!ctx) return;
+    var dpr = Math.min(window.devicePixelRatio || 1, 2), W = window.innerWidth, H = window.innerHeight;
+    c.width = W * dpr; c.height = H * dpr;
+    c.setAttribute('aria-hidden', 'true');
+    c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2147483000';
+    document.body.appendChild(c);
+    ctx.scale(dpr, dpr);
+    var r = from && from.getBoundingClientRect ? from.getBoundingClientRect() : { left: W / 2, top: H / 2, width: 0, height: 0 };
+    var x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+    var colours = ['--colour--sun', '--colour--coral', '--colour--lime', '--colour--brand-blue'].map(function (v, i) {
+      return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || ['#FFC93C', '#FF6F5E', '#B6F06E', '#6699CC'][i];
+    });
+    var bits = [];
+    for (var i = 0; i < 90; i++) {
+      var a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.1, sp = 6 + Math.random() * 9;
+      bits.push({ x: x0, y: y0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, w: 6 + Math.random() * 6, h: 4 + Math.random() * 6, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4, col: colours[i % colours.length], round: i % 3 === 0 });
+    }
+    var t0 = performance.now();
+    (function frame(t) {
+      var k = (t - t0) / 1400;
+      ctx.clearRect(0, 0, W, H);
+      bits.forEach(function (b) {
+        b.vy += 0.32; b.vx *= 0.985; b.x += b.vx; b.y += b.vy; b.rot += b.vr;
+        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k * k); ctx.translate(b.x, b.y); ctx.rotate(b.rot); ctx.fillStyle = b.col;
+        if (b.round) { ctx.beginPath(); ctx.arc(0, 0, b.h / 2, 0, Math.PI * 2); ctx.fill(); } else ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        ctx.restore();
+      });
+      if (k < 1) requestAnimationFrame(frame); else c.remove();
+    })(t0);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Live line on the home page (built in Webflow, [data-hf-show="live"]): the
+  // last few times someone made another person happy, one at a time. No names:
+  // only the kind of person and, when known, the place.
+  // ---------------------------------------------------------------------------
+  function agoText(iso2) {
+    var s2 = Math.max(0, (Date.now() - Date.parse(iso2)) / 1000), m = Math.floor(s2 / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+    if (m < 1) return copyText('live-ago-now');
+    if (h < 1) return copyText('live-ago-min', { n: m });
+    if (d < 1) return copyText('live-ago-hours', { n: h });
+    if (d === 1) return copyText('live-ago-yesterday');
+    return copyText('live-ago-days', { n: d });
+  }
+  function placeName(slug2) {
+    if (!slug2) return '';
+    var o = document.querySelector('#hf-loc option[value="' + slug2.replace(/"/g, '') + '"]');
+    return o ? o.textContent.trim() : '';
+  }
+  function liveLine(item) {
+    var place = placeName(item.place);
+    var key = 'live-did-' + (item.who || 'any');
+    var did = copyText(key) || copyText('live-did-any');
+    var who = place ? copyText('live-someone-in', { place: place }) : copyText('live-someone');
+    return copyText('live-line', { someone: who, did: did, ago: agoText(item.at) });
+  }
+  async function liveActivity() {
+    var box = document.querySelector('[data-hf-show="live"]');
+    if (!box) return;
+    var text = box.querySelector('[data-hf-fill="live-line"]');
+    await wait(function () { return window.HFB; }, 10000);
+    var items = [], at = 0;
+    var still = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    async function load2() {
+      var r = await HFB.call('/api/activity', { auth: false });
+      items = r.ok && r.data && r.data.items ? r.data.items : [];
+      if (!items.length) { box.removeAttribute('data-hf-on'); return; }
+      at = 0;
+      if (text) text.textContent = liveLine(items[0]);
+      box.setAttribute('data-hf-on', '1');
+    }
+    function next() {
+      if (document.hidden || items.length < 2 || !text) return;
+      at = (at + 1) % items.length;
+      text.classList.add('is-fading');
+      setTimeout(function () { text.textContent = liveLine(items[at]); text.classList.remove('is-fading'); }, 260);
+    }
+    await load2();
+    if (!still) setInterval(next, 6000);
+    setInterval(function () { if (!document.hidden) load2(); }, 60000);
+  }
+
   // ---------------------------------------------------------------------------
   // Weekly dare: the home page block (#hf-dare) and the line on the dare's own
   // action page (#hf-dare-tag), both built in Webflow and hidden until filled.
@@ -1876,6 +1979,16 @@
     await wait(function () { return window.HFB; }, 10000);
     // Set in place (not removed when empty), so later refreshes can fill it again.
     function put(root, key, t) { var e = slot(root, key); if (e) e.textContent = t; }
+    // "Ends in 3 days": the dare week ends Sunday 23:59:59 UTC (the line is built in Webflow).
+    var dareEnds = null;
+    function tickEnds() {
+      var line = home && home.querySelector('[data-hf-show="dare-ends"]');
+      if (!line) return;
+      var left = dareEnds ? dareEnds - Date.now() : -1;
+      if (left <= 0) { line.removeAttribute('data-hf-on'); return; }
+      line.textContent = endsIn(left);
+      line.setAttribute('data-hf-on', '1');
+    }
     async function refresh() {
       var r = await HFB.call('/api/dare');
       if (!r.ok || !r.data) return;
@@ -1889,6 +2002,8 @@
           put(home, 'dare-count', line);
           var link = $('hf-dare-link');
           if (link) link.setAttribute('href', '/action/' + d.slug);
+          dareEnds = d.weekEnd ? Date.parse(d.weekEnd) + 1000 : null;
+          tickEnds();
           turnOn(home);
         }
       }
@@ -1899,6 +2014,7 @@
     }
     await refresh();
     setInterval(function () { if (!document.hidden) refresh(); }, 45000);
+    setInterval(function () { if (!document.hidden) tickEnds(); }, 20000);
     document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
     window.addEventListener('hf-done', refresh);
   }
@@ -1907,7 +2023,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, cmsClips];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

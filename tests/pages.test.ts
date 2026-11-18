@@ -811,3 +811,29 @@ describe('Keep your pledge', () => {
     expect(on(p.document as unknown as Document, 'claim-out')).toBe(false);
   });
 });
+
+describe('Gen Z touches', () => {
+  it('the dare block shows how long is left', async () => {
+    const end = new Date(Date.now() + 3 * 24 * 3600e3 + 3600e3).toISOString();
+    const html = `<section id="hf-dare" data-hf-show="dare"><p data-hf-fill="dare-title">x</p><p data-hf-fill="dare-short">x</p><p data-hf-fill="dare-count">x</p><p data-hf-show="dare-ends" data-hf-fill="dare-ends">x</p><a id="hf-dare-link" href="/actions">Take the dare</a></section>`;
+    const p = await page('/', html, (_m, path) => (path === '/api/dare' ? { data: { dare: { slug: 'x', title: 'X', shortAnswer: '', count: null, weekEnd: end } } } : undefined));
+    const ends = p.document.querySelector('[data-hf-show="dare-ends"]')!;
+    expect(ends.hasAttribute('data-hf-on')).toBe(true);
+    expect(ends.textContent).toBe('Ends in 3 days');
+  });
+
+  it('the live line names no one: only who was made happy, where and when', async () => {
+    const html = `<select id="hf-loc"><option value="">Everywhere</option><option value="copenhagen">Copenhagen</option></select><div data-hf-show="live"><span></span><p data-hf-fill="live-line">x</p></div>`;
+    const at = new Date(Date.now() - 5 * 60e3).toISOString();
+    const p = await page('/', html, (_m, path) => (path === '/api/activity' ? { data: { items: [{ at, who: 'stranger', place: 'copenhagen' }, { at, who: null, place: null }] } } : undefined));
+    const box = p.document.querySelector('[data-hf-show="live"]')!;
+    expect(box.hasAttribute('data-hf-on')).toBe(true);
+    expect(box.textContent).toContain('Someone in Copenhagen made a stranger happy · 5 min ago');
+  });
+
+  it('the live line stays hidden when nothing happened lately', async () => {
+    const html = `<div data-hf-show="live"><p data-hf-fill="live-line">x</p></div>`;
+    const p = await page('/', html, (_m, path) => (path === '/api/activity' ? { data: { items: [] } } : undefined));
+    expect(p.document.querySelector('[data-hf-show="live"]')!.hasAttribute('data-hf-on')).toBe(false);
+  });
+});

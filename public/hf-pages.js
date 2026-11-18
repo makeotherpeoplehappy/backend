@@ -95,7 +95,7 @@
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
     '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
     '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
@@ -234,6 +234,141 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Shareable proof: a 1080 × 1920 card (Instagram Stories, TikTok), drawn in the
+  // browser with the site's own fonts and colours, so a new look only means
+  // changing CARD below (or the site's colour variables). No names unless the
+  // person adds their first name.
+  // ---------------------------------------------------------------------------
+  var CARD = {
+    w: 1080, h: 1920, pad: 96,
+    bg: '--colour--deep-blue', ink: '--colour--white', soft: '--colour--pale-blue', accent: '--colour--brand-blue',
+    display: '--font--display', body: '--font--body',
+  };
+  function cssVar(name, fallback) {
+    try { var v = getComputedStyle(document.documentElement).getPropertyValue(name).trim(); return v || fallback; } catch (e) { return fallback; }
+  }
+  // Lines of about equal length (no long line over a short last word), never wider than `max`.
+  function balanceLines(ctx, text, max) {
+    var words = text.split(/\s+/);
+    function wrap(width) {
+      var lines = [], cur = '';
+      words.forEach(function (w) {
+        var t = cur ? cur + ' ' + w : w;
+        if (cur && ctx.measureText(t).width > width) { lines.push(cur); cur = w; } else cur = t;
+      });
+      if (cur) lines.push(cur);
+      return lines;
+    }
+    var lines = wrap(max), n = lines.length, lo = max / 3, hi = max;
+    for (var i = 0; i < 12; i++) { var mid = (lo + hi) / 2; if (wrap(mid).length > n) lo = mid; else hi = mid; }
+    return wrap(hi);
+  }
+  function drawCard(o) {
+    var c = document.createElement('canvas');
+    c.width = CARD.w; c.height = CARD.h;
+    var x = c.getContext && c.getContext('2d');
+    if (!x) return null; // no canvas (very old browser): no card
+    var display = cssVar(CARD.display, 'sans-serif'), body = cssVar(CARD.body, 'sans-serif');
+    var ink = cssVar(CARD.ink, '#fff'), soft = cssVar(CARD.soft, '#cfe0f2');
+    x.fillStyle = cssVar(CARD.bg, '#2e5e8e');
+    x.fillRect(0, 0, CARD.w, CARD.h);
+    // The mark: a ring open at the bottom with a dot, as in the logo.
+    var cx = CARD.pad + 56, cy = CARD.pad + 72;
+    x.strokeStyle = soft; x.lineWidth = 22; x.lineCap = 'butt';
+    x.beginPath(); x.arc(cx, cy, 46, Math.PI * 0.56, Math.PI * 2.44); x.stroke();
+    x.fillStyle = soft; x.beginPath(); x.arc(cx, cy + 10, 16, 0, Math.PI * 2); x.fill();
+    x.fillRect(cx - 4, cy + 22, 8, 36);
+    x.font = '600 40px ' + body; x.textBaseline = 'middle'; x.fillText('Happiness Foundation', cx + 84, cy);
+    // The line: as large as fits, balanced.
+    var max = CARD.w - CARD.pad * 2, size = 132, lines;
+    x.fillStyle = ink; x.textBaseline = 'alphabetic';
+    do { x.font = '800 ' + size + 'px ' + display; lines = balanceLines(x, o.line, max); size -= 6; } while ((lines.length > 6 || lines.some(function (l) { return x.measureText(l).width > max; })) && size > 48);
+    size += 6;
+    var lh = Math.round(size * 1.06), top = 760 - (lines.length * lh) / 2 + size;
+    lines.forEach(function (l, i) { x.fillText(l, CARD.pad, top + i * lh); });
+    // What they did, smaller.
+    if (o.title) {
+      x.font = '500 46px ' + body; x.fillStyle = soft;
+      var t = balanceLines(x, o.title, max).slice(0, 3);
+      var ty = top + lines.length * lh + 40;
+      t.forEach(function (l, i) { x.fillText(l, CARD.pad, ty + i * 60); });
+    }
+    // Motto and address at the foot.
+    x.fillStyle = ink; x.font = '700 54px ' + display;
+    balanceLines(x, copyText('card-motto'), max).forEach(function (l, i, all) { x.fillText(l, CARD.pad, CARD.h - CARD.pad - 120 - (all.length - 1 - i) * 64); });
+    x.font = '600 44px ' + body; x.fillStyle = soft;
+    x.fillText(copyText('card-address'), CARD.pad, CARD.h - CARD.pad - 20);
+    return c;
+  }
+  /** The card's line for an action's "who" (card-who-<slug>), with or without a first name. */
+  function cardLine(who, name) {
+    var slug = who || 'any';
+    var key = name ? 'card-named-' + slug : 'card-who-' + slug;
+    var t = copyText(key, { name: name });
+    if (t) return t;
+    return name ? copyText('card-named-any', { name: name }) : copyText('card-who-any');
+  }
+  window.HFP = window.HFP || {};
+  window.HFP.drawCard = drawCard;
+  window.HFP.cardLine = cardLine;
+
+  /** The share panel under the win: preview, "add my first name", share or download. */
+  function sharePanel(where, o) {
+    var old = $('hfp-proof'); if (old) old.remove();
+    var box = el('div', { id: 'hfp-proof', class: 'hfp-proof' });
+    var img = el('img', { class: 'hfp-proof-img', alt: '' });
+    var nameBox = null;
+    var msg = status();
+    var blob = null;
+    async function paint() {
+      try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+      var line = cardLine(o.who, nameBox && nameBox.checked ? o.name : null);
+      var c = drawCard({ line: line, title: o.title });
+      if (!c) { box.style.display = 'none'; return line; }
+      img.alt = line;
+      img.src = c.toDataURL('image/png');
+      blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      return line;
+    }
+    var url = location.origin + '/action/' + o.slug + (o.ref ? '?r=' + o.ref : '');
+    var go = el('button', { type: 'button', class: 'hf-button', text: copyText('card-share') });
+    var save = el('a', { class: 'hf-button-light', href: '#', text: copyText('card-download'), download: 'happiness-' + o.slug + '.png' });
+    go.addEventListener('click', async function () {
+      var line = await paint();
+      var file = blob && window.File ? new File([blob], 'happiness-' + o.slug + '.png', { type: 'image/png' }) : null;
+      var data = { files: file ? [file] : [], text: copyText('card-share-text', { line: line, url: url }), url: url };
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share(data); } catch (e) {}
+      } else {
+        save.click();
+      }
+    });
+    save.addEventListener('click', async function (e) {
+      if (save.getAttribute('data-ready')) return;
+      e.preventDefault();
+      await paint();
+      save.href = URL.createObjectURL(blob);
+      save.setAttribute('data-ready', '1');
+      save.click();
+      setTimeout(function () { save.removeAttribute('data-ready'); }, 1000);
+      msg.textContent = copyText('card-hint');
+    });
+    box.appendChild(img);
+    if (o.name) {
+      nameBox = el('input', { type: 'checkbox', id: 'hfp-proof-name' });
+      nameBox.addEventListener('change', paint);
+      box.appendChild(el('label', { class: 'hfp-proof-name', for: 'hfp-proof-name' }, [nameBox, ' ' + copyText('card-add-name')]));
+    }
+    var canFiles = false;
+    try { canFiles = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] })); } catch (e) {}
+    box.appendChild(el('div', { class: 'hfp-row' }, canFiles ? [go, save] : [save]));
+    if (!canFiles) msg.textContent = copyText('card-hint');
+    box.appendChild(msg);
+    where.appendChild(box);
+    paint().catch(function () { box.style.display = 'none'; });
+  }
+
+  // ---------------------------------------------------------------------------
   // Action page
   // ---------------------------------------------------------------------------
   async function actionPage() {
@@ -331,11 +466,14 @@
       }
     }
 
-    function showCard(ripple, guest) {
+    function showCard(ripple, guest, data) {
+      data = data || {};
       card.innerHTML = '';
       card.appendChild(el('p', { class: 'hf-drop-label', text: copyText('action-card-label') }));
       card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: copyText('action-card-headline') }));
       if (ripple > 0) card.appendChild(el('p', { text: copyText('ripple', { n: ripple }) }));
+      // Shareable proof, anonymous unless they add their first name.
+      sharePanel(card, { who: st.cardWho || data.cardWho || null, title: st.title, slug: st.slug, ref: data.refCode, name: st.me && st.me.name });
       if (guest) {
         // The win first; then a soft ask to keep it. Never a wall.
         keep.style.display = 'none';
@@ -387,11 +525,11 @@
       busy = true;
       btn.setAttribute('aria-busy', 'true');
       // Signed out, this is saved on this device (try before sign-up).
-      var r = await HFB.call('/api/actions/' + id + '/done', { method: 'POST', guest: true });
+      var r = await HFB.call('/api/actions/' + id + '/done', { method: 'POST', guest: true, headers: { 'X-HF-Ref': HFB.ref ? HFB.ref() : null } });
       busy = false;
       btn.removeAttribute('aria-busy');
       if (r.ok) {
-        showCard(r.data.ripple || 0, r.data.guest);
+        showCard(r.data.ripple || 0, r.data.guest, r.data);
         window.dispatchEvent(new Event('hf-done'));
         await load();
       } else if (r.status === 401) ask('done');

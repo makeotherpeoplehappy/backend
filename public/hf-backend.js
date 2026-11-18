@@ -173,6 +173,7 @@
     }
     if (method !== 'GET') headers['Idempotency-Key'] = opts.key || newKey();
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
+    if (opts.headers) Object.keys(opts.headers).forEach(function (h) { if (opts.headers[h]) headers[h] = opts.headers[h]; });
     if (opts.turnstile) {
       var tt = await turnstileToken();
       if (tt) headers['CF-Turnstile-Response'] = tt;
@@ -370,6 +371,22 @@
   pages.src = BASE + '/hf-pages.js';
   pages.async = false;
   if (parent && !(window.HFB_NO_PAGES)) parent.appendChild(pages);
+
+  // A shared link (?r=<code>): whoever shared it is linked to what this visitor
+  // does here for 30 days (the ripple). The newest link wins.
+  var REF = 'hf_ref';
+  try {
+    var r0 = new URLSearchParams(location.search).get('r');
+    if (r0 && /^[A-Za-z0-9]{8}$/.test(r0)) store(REF, JSON.stringify({ c: r0, t: Date.now() }));
+  } catch (e) {}
+  function refCode() {
+    try {
+      var v = JSON.parse(read(REF) || 'null');
+      if (v && v.c && Date.now() - v.t < GUEST_DAYS * 86400000) return v.c;
+    } catch (e) {}
+    return null;
+  }
+  window.HFB.ref = refCode;
 
   // Signed in with marks from before on this device: move them now.
   function claimOnLoad() { waitFor(signInReady, 10000).then(function () { var t = token(); if (t && guestKey(false)) claimGuest(t); }); }

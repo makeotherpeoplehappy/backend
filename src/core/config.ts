@@ -11,6 +11,23 @@ export const CMS = {
     // Companions item "On my own" (slug on-my-own). Any other companion in `do-it-with`
     // means the action can be done with others.
     onMyOwnCompanionId: '6af7edb79fddcb1ec5b3d86a',
+    // "Who" items (who an action makes happy), by CMS item ID. The share card's
+    // line is chosen by slug (wording keys card-who-<slug>).
+    whoSlugs: {
+      '6af7ec5177462bb643f480d7': 'partner',
+      '6af7ec5177462bb643f480d9': 'child',
+      '6af7ec5177462bb643f480db': 'parent',
+      '6af7ec5177462bb643f480dd': 'grandparent',
+      '6af7ec5177462bb643f480df': 'family',
+      '6af7ec5177462bb643f480e1': 'friend',
+      '6af7ec5177462bb643f480e3': 'colleague',
+      '6af7ec5177462bb643f480e5': 'neighbor',
+      '6af7ec5177462bb643f480e7': 'teacher',
+      '6af7ec5177462bb643f480e9': 'someone-who-serves-you',
+      '6af7ec5177462bb643f480eb': 'someone-having-a-hard-time',
+      '6af7ec5177462bb643f480ed': 'stranger',
+      '6af7ec5177462bb643f480ef': 'community',
+    } as Record<string, string>,
   },
   suggestions: {
     id: '6af8ab957991d4c1991814e9',

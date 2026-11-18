@@ -2116,10 +2116,6 @@
   }
 
   async function shopPage() {
-    // The "sold out" line under the home hero only shows when no drop leads the hero.
-    if (document.querySelector('[data-hf-hero="drop"]')) {
-      document.querySelectorAll('[data-hf-hero="sold-out"]').forEach(function (e) { e.style.display = 'none'; });
-    }
     var blocks = [].slice.call(document.querySelectorAll('[data-hf-drop]'));
     if (!blocks.length || blocks[0].getAttribute('data-hfp')) return;
     await wait(function () { return window.HFB; }, 10000);

@@ -145,11 +145,15 @@
       // Invisible widgets still need a box that is part of the page.
       box.style.cssText = 'position:fixed;left:-10000px;top:0;width:1px;height:1px;overflow:hidden';
       document.body.appendChild(box);
+      // No answer within 10 s counts as no token, so a call never waits forever.
+      var settled = false;
+      function finish(t) { if (settled) return; settled = true; resolve(t); setTimeout(function () { box.remove(); }, 0); }
+      setTimeout(function () { finish(null); }, 10000);
       window.turnstile.render(box, {
         sitekey: SITEKEY,
         execution: 'execute',
-        callback: function (t) { resolve(t); setTimeout(function () { box.remove(); }, 0); },
-        'error-callback': function () { resolve(null); box.remove(); },
+        callback: function (t) { finish(t); },
+        'error-callback': function () { finish(null); },
       });
       window.turnstile.execute(box);
     });

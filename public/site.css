@@ -101,3 +101,6 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 .hf-clip[data-src=""]{display:none}
 /* "Most done" (/actions): the whole section stays out of sight until an action has a public count */
 [data-hf-most-done]:has(.w-dyn-empty){display:none}
+/* Sign-in window (built in Webflow, Footer component): the backdrop is a pseudo-element Webflow cannot style */
+#hfp-auth::backdrop{background:rgba(17,20,24,.55)}
+#hfp-auth button[disabled]{opacity:.55;cursor:default}

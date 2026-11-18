@@ -298,7 +298,7 @@
   // ---------------------------------------------------------------------------
   var CARD = {
     w: 1080, h: 1920, pad: 96,
-    bg: '--colour--deep-blue', ink: '--colour--white', soft: '--colour--pale-blue', accent: '--colour--brand-blue',
+    bg: '--colour--ink', ink: '--colour--white', soft: '--colour--logo-blue-on-dark', accent: '--colour--logo-blue',
     display: '--font--display', body: '--font--body',
   };
   function cssVar(name, fallback) {
@@ -320,6 +320,21 @@
     for (var i = 0; i < 12; i++) { var mid = (lo + hi) / 2; if (wrap(mid).length > n) lo = mid; else hi = mid; }
     return wrap(hi);
   }
+  function roundRect(x, l, t, w, h, r) {
+    x.beginPath(); x.moveTo(l + r, t); x.arcTo(l + w, t, l + w, t + h, r); x.arcTo(l + w, t + h, l, t + h, r); x.arcTo(l, t + h, l, t, r); x.arcTo(l, t, l + w, t, r); x.closePath(); x.fill();
+  }
+  // The logo file, served from the backend so the card can be saved as an image.
+  var logoImg = null;
+  function loadLogo() {
+    if (logoImg) return logoImg;
+    logoImg = new Promise(function (resolve) {
+      var im = new Image();
+      im.onload = function () { resolve(im); };
+      im.onerror = function () { resolve(null); };
+      im.src = ((window.HFB && HFB.base) || '/join') + '/hf-logo.png';
+    });
+    return logoImg;
+  }
   function drawCard(o) {
     var c = document.createElement('canvas');
     c.width = CARD.w; c.height = CARD.h;
@@ -329,13 +344,15 @@
     var ink = cssVar(CARD.ink, '#fff'), soft = cssVar(CARD.soft, '#cfe0f2');
     x.fillStyle = cssVar(CARD.bg, '#2e5e8e');
     x.fillRect(0, 0, CARD.w, CARD.h);
-    // The mark: a ring open at the bottom with a dot, as in the logo.
-    var cx = CARD.pad + 56, cy = CARD.pad + 72;
-    x.strokeStyle = soft; x.lineWidth = 22; x.lineCap = 'butt';
-    x.beginPath(); x.arc(cx, cy, 46, Math.PI * 0.56, Math.PI * 2.44); x.stroke();
-    x.fillStyle = soft; x.beginPath(); x.arc(cx, cy + 10, 16, 0, Math.PI * 2); x.fill();
-    x.fillRect(cx - 4, cy + 22, 8, 36);
-    x.font = '600 40px ' + body; x.textBaseline = 'middle'; x.fillText('Happiness Foundation', cx + 84, cy);
+    // The logo: the foundation's own file, unchanged, on a white label (never redrawn or recoloured).
+    if (o.logo && o.logo.naturalWidth) {
+      var lh0 = 64, lw0 = Math.round((o.logo.naturalWidth / o.logo.naturalHeight) * lh0), padIn = 28;
+      x.fillStyle = '#ffffff';
+      roundRect(x, CARD.pad, CARD.pad, lw0 + padIn * 2, lh0 + padIn * 2, 28);
+      x.drawImage(o.logo, CARD.pad + padIn, CARD.pad + padIn, lw0, lh0);
+    } else {
+      x.fillStyle = ink; x.font = '600 40px ' + body; x.textBaseline = 'middle'; x.fillText('Happiness Foundation', CARD.pad, CARD.pad + 60);
+    }
     // The line: as large as fits, balanced.
     var max = CARD.w - CARD.pad * 2, size = 132, lines;
     x.fillStyle = ink; x.textBaseline = 'alphabetic';
@@ -515,7 +532,7 @@
       if (!proof) return null;
       try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
       var line = cardLine(proof.who, proofName && proofName.checked ? proof.name : null);
-      var c = drawCard({ line: line, title: proof.title });
+      var c = drawCard({ line: line, title: proof.title, logo: await loadLogo() });
       P.show('proof-name', !!proof.name);
       P.show('card-share', canFiles);
       P.show('card-hint', !canFiles);
@@ -607,11 +624,13 @@
       busy = false;
       setBusy(b, false);
       if (r.ok) {
-        celebrate(b);
+        buzz();
         say(msg, copyText(r.data.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: r.data.tally }));
         showWin(r.data);
+        rememberActive(r.data.active);
         window.dispatchEvent(new Event('hf-done'));
         await load();
+        doneMoment(b, copyText('action-did-again'));
       } else if (r.status === 401) ask('done');
       else say(msg, msgOf(r), true);
     });
@@ -622,6 +641,7 @@
       var r = await HFB.call('/api/actions/' + id + '/done', { method: 'DELETE' });
       setBusy(b, false);
       if (!r.ok) return say(msg, msgOf(r), true);
+      rememberActive(r.data.active);
       won = false;
       P.show('win', false);
       await load();
@@ -860,6 +880,14 @@
     if (!me.homeArea && local && window.HFB) { sel.value = local; saveHomeArea(local); }
   }
 
+  function weekLabel(d) { try { return new Date(d + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }); } catch (e) { return d; } }
+  function activeLine(A) {
+    if (A.active && A.toGo === 0) return copyText('active-yes', { n: A.weeksDone });
+    if (A.active) return copyText('active-keep');
+    if (A.weeksDone === 0) return copyText('active-start');
+    if (A.toGo === 1) return copyText('active-to-go-one', { n: A.weeksDone });
+    return copyText('active-to-go-many', { n: A.weeksDone, left: A.toGo });
+  }
   function renderAccount(me) {
     photoRow();
     homeAreaRow(me);
@@ -872,6 +900,22 @@
     if (rippleLine) {
       if (!rippleLine.hasAttribute('data-hf-none')) rippleLine.setAttribute('data-hf-none', rippleLine.textContent);
       rippleLine.textContent = me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : rippleLine.getAttribute('data-hf-none');
+    }
+    // Active membership card (built in Webflow): status, the last five weeks, and how it works.
+    if (me.active) {
+      var A = me.active;
+      rememberActive(A);
+      P.show('active-card', true);
+      P.show('active-badge', A.active);
+      P.fill('active-status', activeLine(A));
+      fillList('active-weeks', A.weeks, function (li, w, i) {
+        var dot = partIn(li, 'dot');
+        var last = A.weeks.indexOf(w) === A.weeks.length - 1;
+        if (dot) { dot.classList.toggle('is-done', w.done); dot.classList.toggle('is-now', last && !w.done); }
+        var label = partIn(li, 'label');
+        if (label) label.textContent = last ? copyText('active-this-week') : weekLabel(w.start);
+        li.setAttribute('aria-label', (last ? copyText('active-this-week') : weekLabel(w.start)) + ': ' + copyText(w.done ? 'active-week-done' : 'active-week-open'));
+      }, 'week');
     }
     // Your ripple: its card is built in Webflow, right under the impact numbers.
     P.show('ripple', !!me.rippleView);
@@ -1516,11 +1560,24 @@
   }
   window.addEventListener('hf-member', function (e) { avatarFill(e.detail); });
 
+  // Active membership: the last known status, so the header avatar can show its ring on every page.
+  function rememberActive(a) {
+    if (!a || typeof a.active !== 'boolean') return;
+    try { localStorage.setItem('hf_active', a.active ? '1' : '0'); } catch (e) {}
+    activeRing();
+  }
+  function activeRing() {
+    var on = false;
+    try { on = localStorage.getItem('hf_active') === '1'; } catch (e) {}
+    on = on && document.documentElement.classList.contains('hf-in');
+    document.querySelectorAll('.hf-nav-avatar').forEach(function (a) { a.classList.toggle('is-active', on); });
+  }
   function headerAccount() {
     var root = document.documentElement;
     if (root.getAttribute('data-hfp-header')) return;
     root.setAttribute('data-hfp-header', '1');
     if (root.classList.contains('hf-in')) avatarFill(memberSaved());
+    activeRing();
     document.querySelectorAll('.hf-nav-signin').forEach(function (si) {
       si.addEventListener('click', function (e) {
         if (!window.HFP || !window.HFP.auth || signedIn()) return;
@@ -1875,44 +1932,16 @@
   }
 
   // ---------------------------------------------------------------------------
-  // A small celebration on "I did this": a burst of confetti in the site's
-  // colours from the button, and a short buzz on phones that can. Drawn on a
-  // canvas that removes itself; nothing moves when the device asks for less motion.
+  // "I did this": a short buzz on phones that can, and the button reads
+  // "Done – nice one" for a moment (a Webflow combo class, is-done) before it
+  // goes back to "I did this again". No confetti.
   // ---------------------------------------------------------------------------
-  function celebrate(from) {
-    try { if (navigator.vibrate) navigator.vibrate([18, 40, 18]); } catch (e) {}
-    if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-    var c = document.createElement('canvas');
-    var ctx = c.getContext && c.getContext('2d');
-    if (!ctx) return;
-    var dpr = Math.min(window.devicePixelRatio || 1, 2), W = window.innerWidth, H = window.innerHeight;
-    c.width = W * dpr; c.height = H * dpr;
-    c.setAttribute('aria-hidden', 'true');
-    c.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:2147483000';
-    document.body.appendChild(c);
-    ctx.scale(dpr, dpr);
-    var r = from && from.getBoundingClientRect ? from.getBoundingClientRect() : { left: W / 2, top: H / 2, width: 0, height: 0 };
-    var x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
-    var colours = ['--colour--sun', '--colour--coral', '--colour--lime', '--colour--brand-blue'].map(function (v, i) {
-      return getComputedStyle(document.documentElement).getPropertyValue(v).trim() || ['#FFC93C', '#FF6F5E', '#B6F06E', '#6699CC'][i];
-    });
-    var bits = [];
-    for (var i = 0; i < 90; i++) {
-      var a = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.1, sp = 6 + Math.random() * 9;
-      bits.push({ x: x0, y: y0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, w: 6 + Math.random() * 6, h: 4 + Math.random() * 6, rot: Math.random() * 6, vr: (Math.random() - 0.5) * 0.4, col: colours[i % colours.length], round: i % 3 === 0 });
-    }
-    var t0 = performance.now();
-    (function frame(t) {
-      var k = (t - t0) / 1400;
-      ctx.clearRect(0, 0, W, H);
-      bits.forEach(function (b) {
-        b.vy += 0.32; b.vx *= 0.985; b.x += b.vx; b.y += b.vy; b.rot += b.vr;
-        ctx.save(); ctx.globalAlpha = Math.max(0, 1 - k * k); ctx.translate(b.x, b.y); ctx.rotate(b.rot); ctx.fillStyle = b.col;
-        if (b.round) { ctx.beginPath(); ctx.arc(0, 0, b.h / 2, 0, Math.PI * 2); ctx.fill(); } else ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
-        ctx.restore();
-      });
-      if (k < 1) requestAnimationFrame(frame); else c.remove();
-    })(t0);
+  function buzz() { try { if (navigator.vibrate) navigator.vibrate([18, 40, 18]); } catch (e) {} }
+  function doneMoment(b, after) {
+    if (!b) return;
+    b.classList.add('is-done');
+    b.textContent = copyText('action-done-nice');
+    setTimeout(function () { b.classList.remove('is-done'); b.textContent = after; }, 2400);
   }
 
   // ---------------------------------------------------------------------------
@@ -1982,12 +2011,16 @@
     // "Ends in 3 days": the dare week ends Sunday 23:59:59 UTC (the line is built in Webflow).
     var dareEnds = null;
     function tickEnds() {
-      var line = home && home.querySelector('[data-hf-show="dare-ends"]');
-      if (!line) return;
+      if (!home) return;
+      var shows = home.querySelectorAll('[data-hf-show="dare-ends"]');
       var left = dareEnds ? dareEnds - Date.now() : -1;
-      if (left <= 0) { line.removeAttribute('data-hf-on'); return; }
-      line.textContent = endsIn(left);
-      line.setAttribute('data-hf-on', '1');
+      shows.forEach(function (e) { if (left > 0) e.setAttribute('data-hf-on', '1'); else e.removeAttribute('data-hf-on'); });
+      if (left <= 0) return;
+      var line = home.querySelector('[data-hf-fill="dare-ends"]');
+      if (line) line.textContent = endsIn(left);
+      // The bar shows how much of the week has gone.
+      var bar = home.querySelector('[data-hf-part="dare-bar"]');
+      if (bar) bar.style.width = Math.max(2, Math.min(100, 100 - (left / (7 * 24 * 3600e3)) * 100)).toFixed(1) + '%';
     }
     async function refresh() {
       var r = await HFB.call('/api/dare');

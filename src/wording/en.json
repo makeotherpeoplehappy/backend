@@ -266,5 +266,14 @@
   "photo-saved": "Your photo is saved.",
   "photo-removed": "Your photo is removed.",
   "photo-failed": "That did not work. Please try again.",
-  "acct-no-home-area": "No home area"
+  "acct-no-home-area": "No home area",
+  "action-done-nice": "✓ Done – nice one",
+  "active-yes": "You're an Active member – you've made someone happy in {n} of the last 5 weeks.",
+  "active-keep": "You're an Active member. One action this week keeps it that way.",
+  "active-start": "Make someone happy this week to start your first week.",
+  "active-to-go-one": "{n} of 4 weeks done. One more week with an action makes you an Active member.",
+  "active-to-go-many": "{n} of 4 weeks done. Make someone happy in {left} more weeks to become an Active member.",
+  "active-this-week": "This week",
+  "active-week-done": "someone made happy",
+  "active-week-open": "nothing yet"
 }

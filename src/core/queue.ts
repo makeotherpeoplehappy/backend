@@ -9,7 +9,7 @@ import { UpstreamError, iso } from './http';
 import * as webflow from './webflow';
 import { writeDropSignupToShopify } from './features/drops';
 
-export type Target = 'webflow' | 'shopify' | 'email';
+export type Target = 'webflow' | 'shopify' | 'email' | 'memberstack';
 
 export type QueuedOp =
   | {
@@ -53,7 +53,7 @@ const targetOf = (op: QueuedOp): Target => (op.op === 'task' ? op.target : TARGE
 
 // Writes per drain run, per service. Webflow's CMS API allows 60 requests a
 // minute on most plans; a create can take two requests.
-const PER_RUN_BUDGET: Record<Target, number> = { webflow: 25, shopify: 20, email: 20 };
+const PER_RUN_BUDGET: Record<Target, number> = { webflow: 25, shopify: 20, email: 20, memberstack: 20 };
 const MAX_ATTEMPTS = 25;
 const LOCK_SECONDS = 120;
 

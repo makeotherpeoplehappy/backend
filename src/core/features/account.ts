@@ -8,9 +8,10 @@ import { storyRemovalStatements, suggestionSlug } from './submissions';
 import { memberPledges } from './pledges';
 import { displayName, memberRipple } from './ripple';
 import { rippleView } from './rings';
+import { activeView } from './active';
 import { hasLabAccess } from './ops';
 
-export async function getAccount(env: Env, member: Member) {
+export async function getAccount(env: Env, deps: Deps, member: Member) {
   const done = await env.DB.prepare(
     `SELECT d.action_id AS actionId, d.action_title AS title, d.done_at AS doneAt, a.slug AS slug, a.status AS actionStatus
      FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id
@@ -43,6 +44,7 @@ export async function getAccount(env: Env, member: Member) {
     pledges: await memberPledges(env, member.id),
     ...(await memberRipple(env, member.id)),
     rippleView: await rippleView(env, member.id),
+    active: await activeView(env, deps, member.id),
     done: done.results,
     saved: saved.results,
     stories: stories.results,

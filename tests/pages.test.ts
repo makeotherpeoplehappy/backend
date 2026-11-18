@@ -120,6 +120,10 @@ describe('Action page', () => {
     expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(false);
     act(d, 'done').click();
     await p.settle();
+    // A calm "Done" moment first, then back to "I did this again".
+    expect(act(d, 'done').textContent).toBe('✓ Done – nice one');
+    expect(act(d, 'done').classList.contains('is-done')).toBe(true);
+    await new Promise((r) => setTimeout(r, 2500));
     expect(act(d, 'done').textContent).toBe('I did this again');
     expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(true);
     expect(d.querySelector('[data-hf-fill="ripple-h"]')!.textContent).toBe('Your actions have reached 1 person');
@@ -835,5 +839,38 @@ describe('Gen Z touches', () => {
     const html = `<div data-hf-show="live"><p data-hf-fill="live-line">x</p></div>`;
     const p = await page('/', html, (_m, path) => (path === '/api/activity' ? { data: { items: [] } } : undefined));
     expect(p.document.querySelector('[data-hf-show="live"]')!.hasAttribute('data-hf-on')).toBe(false);
+  });
+});
+
+describe('Active membership card', () => {
+  const HTML = `<a class="hf-nav-avatar"></a><div id="hf-acct-in" data-hf-show="signed-in"><p id="hf-tally"></p>
+    <div class="hf-acct-card" id="acct-active" data-hf-show="active-card"><span data-hf-show="active-badge">Active member</span><p data-hf-fill="active-status">x</p>
+    <ul data-hf-slot="active-weeks"><li data-hf-template="week" data-hf-show="template"><span data-hf-part="dot">✓</span><span data-hf-part="label">x</span></li></ul></div></div>`;
+  const weeks = (done: boolean[]) => done.map((d, i) => ({ start: `2026-10-${12 + i * 7}`, done: d }));
+  const ME = (active: Record<string, unknown>) => ({ data: { name: 'Tess', tally: 3, ripple: 0, pledges: [], done: [], stories: [], saved: [], joinedMyInvites: [], invitesIJoined: [], settings: {}, active } });
+
+  it('shows the badge, five weeks and the ring on the avatar for an Active member', async () => {
+    const p = await page('/account', HTML, (_m, path) => (path === '/api/me' ? ME({ active: true, weeks: weeks([true, true, false, true, true]), weeksDone: 4, needed: 4, thisWeekDone: true, toGo: 0 }) : undefined));
+    (p.window as unknown as Record<string, unknown>).$memberstackDom = { getCurrentMember: async () => ({ data: {} }) };
+    await p.settle();
+    const d = p.document;
+    expect(d.querySelector('[data-hf-show="active-badge"]')!.hasAttribute('data-hf-on')).toBe(true);
+    expect(d.querySelector('[data-hf-fill="active-status"]')!.textContent).toContain('4 of the last 5 weeks');
+    const lis = [...d.querySelectorAll('[data-hf-slot="active-weeks"] > li:not([data-hf-template])')];
+    expect(lis.length).toBe(5);
+    expect(lis.filter((l) => l.querySelector('[data-hf-part="dot"]')!.classList.contains('is-done')).length).toBe(4);
+    expect(lis[4].textContent).toContain('This week');
+  });
+
+  it('says what one more week does, and never says "Inactive"', async () => {
+    const p = await page('/account', HTML, (_m, path) => (path === '/api/me' ? ME({ active: false, weeks: weeks([false, true, true, true, false]), weeksDone: 3, needed: 4, thisWeekDone: false, toGo: 1 }) : undefined));
+    (p.window as unknown as Record<string, unknown>).$memberstackDom = { getCurrentMember: async () => ({ data: {} }) };
+    await p.settle();
+    const d = p.document;
+    expect(d.querySelector('[data-hf-show="active-badge"]')!.hasAttribute('data-hf-on')).toBe(false);
+    const line = d.querySelector('[data-hf-fill="active-status"]')!.textContent!;
+    expect(line).toBe('3 of 4 weeks done. One more week with an action makes you an Active member.');
+    expect(d.body.textContent).not.toMatch(/inactive/i);
+    expect(d.querySelectorAll('[data-hf-part="dot"].is-now').length).toBe(1);
   });
 });

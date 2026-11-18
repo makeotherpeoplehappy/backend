@@ -515,3 +515,36 @@ describe('Impact numbers', () => {
     expect((p.document.getElementById('st') as unknown as { hidden: boolean }).hidden).toBe(true);
   });
 });
+
+const DARE_HTML = `<section id="hf-dare" data-hf-show="dare"><p data-hf-fill="dare-title">x</p><p data-hf-fill="dare-short">x</p><p data-hf-fill="dare-count">x</p><a id="hf-dare-link" href="/actions">Take the dare</a></section>`;
+
+describe('Weekly dare', () => {
+  it('fills and shows the home block, with encouraging words below 10', async () => {
+    const p = await page('/', DARE_HTML, (_m, path) => (path === '/api/dare' ? { data: { dare: { slug: 'call-a-grandparent', title: 'Call a grandparent', shortAnswer: 'Ring them today.', count: null } } } : undefined));
+    const box = p.document.getElementById('hf-dare')!;
+    expect(box.hasAttribute('data-hf-on')).toBe(true);
+    expect(box.textContent).toContain('Call a grandparent');
+    expect(box.textContent).toContain("Be one of the first to take this week's dare");
+    expect(p.document.getElementById('hf-dare-link')!.getAttribute('href')).toBe('/action/call-a-grandparent');
+  });
+
+  it('shows the count from 10 up', async () => {
+    const p = await page('/', DARE_HTML, (_m, path) => (path === '/api/dare' ? { data: { dare: { slug: 'x', title: 'X', shortAnswer: '', count: 142 } } } : undefined));
+    expect(p.document.getElementById('hf-dare')!.textContent).toContain('142 people took the dare this week');
+  });
+
+  it('stays hidden when no dare is set', async () => {
+    const p = await page('/', DARE_HTML, (_m, path) => (path === '/api/dare' ? { data: { dare: null } } : undefined));
+    expect(p.document.getElementById('hf-dare')!.hasAttribute('data-hf-on')).toBe(false);
+  });
+
+  it("shows the dare line only on the dare's own action page", async () => {
+    const tag = `<div id="hf-dare-tag" data-hf-show="dare"><p>This week's dare</p><p data-hf-fill="dare-count">x</p></div>`;
+    const handler = (_m: string, path: string) => (path === '/api/dare' ? { data: { dare: { slug: 'cook-a-meal', title: 'Cook', shortAnswer: '', count: 12 } } } : undefined);
+    const on = await page('/action/cook-a-meal', tag, handler);
+    expect(on.document.getElementById('hf-dare-tag')!.hasAttribute('data-hf-on')).toBe(true);
+    expect(on.document.getElementById('hf-dare-tag')!.textContent).toContain('12 people took the dare this week');
+    const off = await page('/action/something-else', tag, handler);
+    expect(off.document.getElementById('hf-dare-tag')!.hasAttribute('data-hf-on')).toBe(false);
+  });
+});

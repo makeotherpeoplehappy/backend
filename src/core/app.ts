@@ -5,6 +5,7 @@ import { WORDING, WORDING_SCRIPT, word } from './wording';
 import { EMAIL_KINDS } from './config';
 import { HttpError, UpstreamError, base64url, errorResponse, hmac, iso, json, readJson, requireSecret, timingSafeEqual } from './http';
 import { optionalMember, requireMember, type Member } from './identity';
+import { currentDare } from './features/dare';
 import { claimGuest, expireGuests, guestFromRequest, memberOrGuest } from './features/guests';
 import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
@@ -112,6 +113,8 @@ route('POST', '/api/me/claim-guest', true, async ({ req, env, deps }) => {
 });
 
 route('GET', '/api/impact', true, async ({ env }) => json(await publicImpact(env), 200, { 'Cache-Control': 'public, max-age=300' }));
+// Weekly dare: this week's action and how many people took it (from 10 up).
+route('GET', '/api/dare', true, async ({ env, deps }) => json(await currentDare(env, deps), 200, { 'Cache-Control': 'public, max-age=30' }));
 route('GET', '/api/most-done', true, async ({ env }) => json(await mostDone(env), 200, { 'Cache-Control': 'public, max-age=60' }));
 
 route(

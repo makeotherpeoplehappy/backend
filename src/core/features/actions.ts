@@ -8,6 +8,7 @@ import { recomputeKeeps } from './pledges';
 import { storiesFor } from './stories';
 import { doneWithNames, displayName, rippleTotal } from './ripple';
 import { assertGuestCanMark, isGuest, touchGuest } from './guests';
+import { forgetDare } from './dare';
 
 export interface ActionRow {
   cms_item_id: string;
@@ -46,6 +47,12 @@ export async function resolveActionRef(env: Env, deps: Deps, ref: string): Promi
   return row.cms_item_id;
 }
 
+function dareDate(v: unknown): string | null {
+  if (typeof v !== 'string' || !v) return null;
+  const t = Date.parse(v);
+  return Number.isNaN(t) ? null : new Date(t).toISOString();
+}
+
 function rowFromItem(item: webflow.WebflowItem, now: string) {
   const f = item.fieldData || {};
   const withIds = Array.isArray(f['do-it-with']) ? (f['do-it-with'] as string[]) : [];
@@ -56,18 +63,22 @@ function rowFromItem(item: webflow.WebflowItem, now: string) {
     short_answer: typeof f['short-answer'] === 'string' ? (f['short-answer'] as string) : null,
     can_do_with_others: withIds.some((id) => id !== CMS.actions.onMyOwnCompanionId) ? 1 : 0,
     suggestion_cms_id: typeof f.suggestion === 'string' && f.suggestion ? (f.suggestion as string) : null,
+    weekly_dare_from: dareDate(f['weekly-dare-from']),
+    hidden: f.hidden === true ? 1 : 0,
+    location_specific: f['location-specific'] === true ? 1 : 0,
     synced_at: now,
   };
 }
 
 export function upsertStatement(env: Env, r: ReturnType<typeof rowFromItem>): D1PreparedStatement {
   return env.DB.prepare(
-    `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at, suggestion_cms_id)
-     VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6, ?7)
+    `INSERT INTO actions (cms_item_id, slug, title, short_answer, can_do_with_others, status, synced_at, suggestion_cms_id, weekly_dare_from, hidden, location_specific)
+     VALUES (?1, ?2, ?3, ?4, ?5, 'published', ?6, ?7, ?8, ?9, ?10)
      ON CONFLICT (cms_item_id) DO UPDATE SET slug = excluded.slug, title = excluded.title, short_answer = excluded.short_answer,
        can_do_with_others = excluded.can_do_with_others, status = 'published', synced_at = excluded.synced_at,
-       suggestion_cms_id = excluded.suggestion_cms_id`,
-  ).bind(r.cms_item_id, r.slug, r.title, r.short_answer, r.can_do_with_others, r.synced_at, r.suggestion_cms_id);
+       suggestion_cms_id = excluded.suggestion_cms_id, weekly_dare_from = excluded.weekly_dare_from, hidden = excluded.hidden,
+       location_specific = excluded.location_specific`,
+  ).bind(r.cms_item_id, r.slug, r.title, r.short_answer, r.can_do_with_others, r.synced_at, r.suggestion_cms_id, r.weekly_dare_from, r.hidden, r.location_specific);
 }
 
 export { rowFromItem };
@@ -84,6 +95,7 @@ export async function syncActions(env: Env, deps: Deps): Promise<{ published: nu
     .run();
   await env.CACHE.delete('actions:can-do-with');
   await env.CACHE.delete('most-done');
+  await forgetDare(env);
   return { published: rows.length, removed: removed.meta.changes };
 }
 
@@ -216,6 +228,7 @@ export async function undoDone(env: Env, deps: Deps, member: Member, actionId: s
 
 async function forgetCounts(env: Env, actionId: string): Promise<void> {
   await env.CACHE.delete(`count:${actionId}`);
+  await forgetDare(env);
   await env.CACHE.delete('most-done');
 }
 

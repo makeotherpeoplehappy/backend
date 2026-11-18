@@ -373,6 +373,7 @@
       btn.removeAttribute('aria-busy');
       if (r.ok) {
         showCard(r.data.ripple || 0, r.data.guest);
+        window.dispatchEvent(new Event('hf-done'));
         await load();
       } else if (r.status === 401) ask('done');
       else msg.textContent = msgOf(r);
@@ -1520,11 +1521,51 @@
   }
   window.HFP.auth = openAuth;
 
+  // ---------------------------------------------------------------------------
+  // Weekly dare: the home page block (#hf-dare) and the line on the dare's own
+  // action page (#hf-dare-tag), both built in Webflow and hidden until filled.
+  // The count refreshes every 45 seconds while the page is in view, and when
+  // the visitor comes back to it or marks "I did this".
+  // ---------------------------------------------------------------------------
+  async function weeklyDare() {
+    var home = $('hf-dare');
+    var tag = $('hf-dare-tag');
+    if (!home && !tag) return;
+    await wait(function () { return window.HFB; }, 10000);
+    // Set in place (not removed when empty), so later refreshes can fill it again.
+    function put(root, key, t) { var e = slot(root, key); if (e) e.textContent = t; }
+    async function refresh() {
+      var r = await HFB.call('/api/dare');
+      if (!r.ok || !r.data) return;
+      var d = r.data.dare;
+      var line = d ? (d.count ? copyText('dare-count', { n: d.count.toLocaleString() }) : copyText('dare-first')) : '';
+      if (home) {
+        if (!d) home.removeAttribute('data-hf-on');
+        else {
+          put(home, 'dare-title', d.title);
+          put(home, 'dare-short', d.shortAnswer || '');
+          put(home, 'dare-count', line);
+          var link = $('hf-dare-link');
+          if (link) link.setAttribute('href', '/action/' + d.slug);
+          turnOn(home);
+        }
+      }
+      if (tag) {
+        if (d && d.slug === slugFromPath()) { put(tag, 'dare-count', line); turnOn(tag); }
+        else tag.removeAttribute('data-hf-on');
+      }
+    }
+    await refresh();
+    setInterval(function () { if (!document.hidden) refresh(); }, 45000);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) refresh(); });
+    window.addEventListener('hf-done', refresh);
+  }
+
   function start() {
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, storiesPage, mostDone];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, storiesPage, mostDone, weeklyDare];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

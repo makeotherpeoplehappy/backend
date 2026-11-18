@@ -100,3 +100,5 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 #hf-dare-tag .hf-dare-count{margin-top:0}
 /* Phone menu: the location options are listed inline; the pin lines up with the first one */
 @media (max-width:991px){.hf-nav-right .hf-loc-form>.w-embed{margin-top:15px}}
+/* Story cards rendered from the CMS: no uploaded video, no video box */
+.hf-clip[data-src=""]{display:none}

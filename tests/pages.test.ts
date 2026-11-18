@@ -59,68 +59,132 @@ async function page(path: string, html: string, handler: Handler, opts: { signed
   return { window, document, calls, signIns, settle };
 }
 
-const ACTION_HTML = `<h1>Cook a meal</h1><p class="hf-lead">Cook for someone.</p>
-<section><div><a id="hf-did-this" href="#" class="hf-button">I did this</a><p id="hf-did-msg"></p><div id="hf-signup-prompt"></div></div></section><footer></footer>`;
+// The action template as built in Webflow. Webflow leaves out the buttons whose
+// switch is off: a group action has "Do this with me" first and a second "I did this";
+// an on-my-own action has the main "I did this" only.
+function actionHtml(group: boolean) {
+  const buttons = group
+    ? `<a data-hf-act="with-me" href="#" class="hf-button">Do this with me</a><a data-hf-act="done" href="#" class="hf-button-light">I did this</a>`
+    : `<a id="hf-did-this" data-hf-act="done" href="#" class="hf-button">I did this</a>`;
+  return `<h1>Cook a meal</h1><p class="hf-lead">Cook for someone.</p><p data-hf-show="suggested" data-hf-fill="suggested">Suggested by</p>
+<section data-hf-pages="1"><div>
+<p data-hf-show="count" data-hf-fill="count">12 people</p>
+<div class="hf-button-row" data-hf-row="action">${buttons}<a data-hf-act="save" data-hf-show="save" href="#">♡ Save</a><a data-hf-act="story" data-hf-show="story" href="/share-your-story">Share your story</a></div>
+${group ? '<p class="hf-note">Invite someone to do it with you, not the person you are doing it for.</p>' : ''}
+<p data-hf-show="group" data-hf-fill="group">x</p>
+<p id="hf-did-msg" class="hf-status"></p>
+<a data-hf-act="undo" data-hf-show="undo" href="#">Undo</a>
+<p data-hf-show="together" data-hf-fill="together">x</p>
+<p data-hf-fill="share-note"></p>
+<div data-hf-show="compose"><form data-hf-form="compose"><label for="note">Add a short note (optional)</label><textarea id="note" data-hf-field="note"></textarea><p data-hf-fill="note-left">280 characters left</p><div><input type="submit" value="Share invite"><a data-hf-act="compose-cancel" href="#">Cancel</a></div></form></div>
+<div data-hf-show="ask-name"><form data-hf-form="ask-name"><input id="first-name" data-hf-field="first-name"><input type="submit" value="Save and share"></form></div>
+<div data-hf-show="win"><p>Shared moment</p><p>I made someone happy today</p>
+<div data-hf-show="ripple"><p data-hf-fill="ripple-h">x</p><div data-hf-slot="ripple"></div><p data-hf-fill="ripple-caption">x</p><p data-hf-show="ripple-more" data-hf-fill="ripple-more">x</p><p data-hf-show="ripple-hint">Share your action to see it spread.</p></div>
+<div data-hf-show="proof"><div data-hf-slot="proof"></div><div data-hf-show="proof-name"><form data-hf-form="proof-name"><input type="checkbox" data-hf-field="proof-name"> Add my first name</form></div><a data-hf-act="card-share" data-hf-show="card-share" href="#">Share to your Story</a><a data-hf-act="card-download" href="#">Download the card</a><p data-hf-show="card-hint">Save it, then post it to your Story.</p></div>
+<div data-hf-show="pass"><a data-hf-act="pass" href="#">Pass it on</a></div>
+<div data-hf-show="keep"><h3>Keep this – create a free account</h3><a data-hf-act="signup" href="/account">Create a free account</a><a data-hf-act="signin" href="/account">I have an account</a></div>
+</div>
+<div data-hf-show="keep-line"><p>It's saved on this device for 30 days.</p><a data-hf-act="signup" href="/account">Create a free account</a></div>
+</div></section>
+<section data-hf-show="stories"><h2>Stories</h2><div data-hf-slot="clips"></div><div data-hf-slot="stories"></div></section>
+<div data-hf-show="templates"><article class="hf-story" data-hf-template="story"><div class="hf-clip" data-hf-part="clip"><a data-hf-part="sound" href="#">Tap for sound</a><p data-hf-part="sorry" hidden>This video can't play in this browser.</p></div><div class="hf-video-frame" data-hf-part="embed"></div><div data-hf-part="photo"></div><p data-hf-part="text">x</p><p data-hf-part="meta">x</p><p data-hf-part="action"><a data-hf-part="action-link" href="/actions">x</a></p><div><a data-hf-act="report" href="#">Report this story</a><p data-hf-part="report-note"></p></div></article></div>
+<footer></footer>`;
+}
+/** Shown on the page: not inside a [data-hf-show] that is still off. */
+function shown(e: Element | null): boolean {
+  for (let n: Element | null = e; n; n = n.parentElement) if (n.hasAttribute('data-hf-show') && !n.hasAttribute('data-hf-on')) return false;
+  return !!e;
+}
+const act = (doc: { querySelector(s: string): Element | null }, name: string) => doc.querySelector(`[data-hf-act="${name}"]`) as unknown as HTMLElement;
 
 describe('Action page', () => {
-  it('marks done, offers the share card, then "I did this again" and undo', async () => {
+  it('marks done, shows the win, then "I did this again" and undo', async () => {
     let me = { done: false, doneToday: false, canUndo: false, liked: false, tally: 0, doneWith: [] as string[], story: null };
-    const state = () => ({ data: { actionId: 'a1', slug: 'cook-a-meal', count: null, canDoWithOthers: true, suggestedBy: 'Ana', stories: [], me } });
-    const p = await page('/action/cook-a-meal', ACTION_HTML, (m, path) => {
+    const state = () => ({ data: { actionId: 'a1', slug: 'cook-a-meal', title: 'Cook a meal', count: 12, canDoWithOthers: false, suggestedBy: 'Ana', stories: [], me } });
+    const p = await page('/action/cook-a-meal', actionHtml(false), (m, path) => {
       if (path.endsWith('/state')) return state();
       if (m === 'POST' && path === '/api/actions/a1/done') {
         me = { ...me, done: true, doneToday: true, canUndo: true, tally: 1 };
-        return { status: 201, data: { tally: 1, count: null, ripple: 0 } };
+        return { status: 201, data: { tally: 1, count: null, ripple: 0, rippleView: { reached: 1, rings: [{ marks: 1, people: 1, dots: ['Cook a meal'] }] } } };
       }
       if (m === 'DELETE' && path === '/api/actions/a1/done') {
         me = { ...me, done: false, doneToday: false, canUndo: false, tally: 0 };
         return { data: { done: false, tally: 0 } };
       }
     });
-    const btn = p.document.getElementById('hf-did-this')!;
-    expect(p.document.body.textContent).toContain('Suggested by Ana');
-    expect(p.document.body.textContent).toContain('Do this with me');
-    expect(p.document.body.textContent).toContain('Invite someone to do it with you, not the person you are doing it for.');
-    btn.click();
+    const d = p.document;
+    expect(d.querySelector('[data-hf-fill="suggested"]')!.textContent).toBe('Suggested by Ana');
+    expect(shown(d.querySelector('[data-hf-fill="count"]'))).toBe(true);
+    expect(d.querySelector('[data-hf-fill="count"]')!.textContent).toBe('12 people have done this');
+    expect(shown(act(d, 'save'))).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(false);
+    act(d, 'done').click();
     await p.settle();
-    expect(btn.textContent).toBe('I did this again');
-    expect(btn.getAttribute('aria-disabled')).toBe('false');
-    expect(p.document.body.textContent).toContain('I made someone happy today');
-    expect(p.document.getElementById('hf-did-msg')!.textContent).toBe('You have made 1 person happy.');
-    btn.click();
+    expect(act(d, 'done').textContent).toBe('I did this again');
+    expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(true);
+    expect(d.querySelector('[data-hf-fill="ripple-h"]')!.textContent).toBe('Your actions have reached 1 person');
+    expect(d.querySelector('[data-hf-slot="ripple"] svg')).toBeTruthy();
+    expect(shown(d.querySelector('[data-hf-show="pass"]'))).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="keep"]'))).toBe(false);
+    expect(d.getElementById('hf-did-msg')!.textContent).toBe('You have made 1 person happy.');
+    expect(shown(act(d, 'undo'))).toBe(true);
+    expect(shown(act(d, 'story'))).toBe(true);
+    expect(act(d, 'story').getAttribute('href')).toBe('/share-your-story?action=cook-a-meal');
+    act(d, 'undo').click();
     await p.settle();
-    expect(p.calls.filter((c) => c.method === 'POST' && c.path.endsWith('/done'))).toHaveLength(2);
-    const undo = [...p.document.querySelectorAll('button')].find((b) => b.textContent === 'Undo')!;
-    undo.click();
-    await p.settle();
-    expect(btn.textContent).toBe('I did this');
+    expect(act(d, 'done').textContent).toBe('I did this');
+    expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(false);
+    expect(d.getElementById('hf-did-msg')!.textContent).toBe('Undone.');
+    // Nothing visible is made by the script: no buttons, forms or cards of its own.
+    expect(d.querySelectorAll('button').length).toBe(0);
   });
 
-  it('"Do this with me" asks for a short note, then shares it', async () => {
-    const p = await page('/action/cook-a-meal', ACTION_HTML, (m, path, body) => {
+  it('"Do this with me" opens the note form, then shares the invite', async () => {
+    const p = await page('/action/cook-a-meal', actionHtml(true), (m, path, body) => {
       if (path.endsWith('/state')) return { data: { actionId: 'a1', canDoWithOthers: true, stories: [], me: { done: false } } };
       if (m === 'POST' && path === '/api/invites') return { status: 201, data: { code: 'AbCdEfGh23', url: 'https://site.test/join/AbCdEfGh23', text: (body as { note: string }).note } };
     });
     const shared: unknown[] = [];
     Object.defineProperty(p.window.navigator, 'share', { value: async (d: unknown) => void shared.push(d), configurable: true });
-    const withMe = [...p.document.querySelectorAll('button')].find((b) => b.textContent === 'Do this with me')!;
-    withMe.click();
+    const d = p.document;
+    act(d, 'with-me').click();
     await p.settle();
-    const ta = p.document.getElementById('hfp-note') as unknown as HTMLTextAreaElement;
-    expect(ta).toBeTruthy();
+    expect(shown(d.querySelector('[data-hf-show="compose"]'))).toBe(true);
+    const ta = d.querySelector('[data-hf-field="note"]') as unknown as HTMLTextAreaElement;
+    expect(ta.getAttribute('placeholder')).toContain('Want to do this with me');
     ta.value = 'Saturday?';
-    p.document.getElementById('hfp-compose')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
+    d.querySelector('[data-hf-form="compose"]')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
     await p.settle();
     expect(p.calls.find((c) => c.path === '/api/invites')!.body).toEqual({ actionId: 'a1', kind: 'with_me', note: 'Saturday?' });
     expect(shared).toEqual([expect.objectContaining({ text: 'Saturday?', url: 'https://site.test/join/AbCdEfGh23' })]);
+    expect(shown(d.querySelector('[data-hf-show="compose"]'))).toBe(false);
+  });
+
+  it('asks for a first name before the first invite, then sends it', async () => {
+    let named = false;
+    const p = await page('/action/cook-a-meal', actionHtml(true), (m, path) => {
+      if (path.endsWith('/state')) return { data: { actionId: 'a1', canDoWithOthers: true, stories: [], me: { done: false } } };
+      if (m === 'PATCH' && path === '/api/me/settings') { named = true; return { data: {} }; }
+      if (m === 'POST' && path === '/api/invites') return named ? { status: 201, data: { code: 'AbCdEfGh23', url: 'https://site.test/join/AbCdEfGh23', text: 'x' } } : { status: 409, data: { error: 'need_first_name' } };
+    });
+    Object.defineProperty(p.window.navigator, 'share', { value: async () => undefined, configurable: true });
+    const d = p.document;
+    act(d, 'with-me').click();
     await p.settle();
-    expect(p.document.querySelectorAll('#hfp-compose').length, p.document.body.innerHTML.slice(-600)).toBe(0);
+    d.querySelector('[data-hf-form="compose"]')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
+    await p.settle();
+    expect(shown(d.querySelector('[data-hf-show="ask-name"]'))).toBe(true);
+    (d.querySelector('[data-hf-field="first-name"]') as unknown as HTMLInputElement).value = 'Mickey';
+    d.querySelector('[data-hf-form="ask-name"]')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }) as unknown as Event);
+    await p.settle();
+    expect(p.calls).toContainEqual({ method: 'PATCH', path: '/api/me/settings', body: { firstName: 'Mickey' } });
+    expect(p.calls.filter((c) => c.path === '/api/invites')).toHaveLength(2);
+    expect(shown(d.querySelector('[data-hf-show="ask-name"]'))).toBe(false);
   });
 
   it('sends a signed-out visitor to sign in for Save, and remembers the click', async () => {
-    const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [] } } : undefined), { signedIn: false });
-    const save = [...p.document.querySelectorAll('button')].find((b) => b.textContent === '♡ Save')!;
-    save.click();
+    const p = await page('/action/cook-a-meal', actionHtml(false), (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [] } } : undefined), { signedIn: false });
+    act(p.document, 'save').click();
     await p.settle();
     expect(p.signIns).toEqual([{ kind: 'like', actionId: 'a1' }]);
     expect(p.document.getElementById('hf-did-msg')!.textContent).toContain('Taking you to sign in');
@@ -130,42 +194,37 @@ describe('Action page', () => {
     let done = false;
     const p = await page(
       '/action/cook-a-meal',
-      ACTION_HTML,
+      actionHtml(false),
       (m, path) => {
         if (path.endsWith('/state')) return { data: { actionId: 'a1', stories: [], me: done ? { done: true, guest: true, tally: 1, canUndo: true, doneWith: [] } : { done: false, guest: true, tally: 0 } } };
         if (m === 'POST' && path === '/api/actions/a1/done') { done = true; return { status: 201, data: { guest: true, ripple: 0, tally: 1 } }; }
       },
       { signedIn: false },
     );
-    p.document.getElementById('hf-did-this')!.click();
+    const d = p.document;
+    act(d, 'done').click();
     await p.settle();
     expect(p.signIns).toEqual([]);
     expect(p.calls).toContainEqual({ method: 'POST', path: '/api/actions/a1/done', body: undefined });
-    const text = p.document.body.textContent || '';
-    expect(text).toContain('I made someone happy today');
-    expect(text).toContain('You have made 1 person happy.');
-    expect(text).toContain('Keep this – create a free account');
-    expect([...p.document.querySelectorAll('button')].some((b) => b.textContent === 'Create a free account')).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="win"]'))).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="keep"]'))).toBe(true);
+    expect(shown(d.querySelector('[data-hf-show="pass"]'))).toBe(false);
+    expect(d.getElementById('hf-did-msg')!.textContent).toBe('You have made 1 person happy.');
     // Sharing a story needs an account, so it waits.
-    expect([...p.document.querySelectorAll('a')].find((a) => a.textContent === 'Share your story')?.getAttribute('style')).toContain('none');
+    expect(shown(act(d, 'story'))).toBe(false);
   });
 
-  it('after undo, says the new total, not the old one', async () => {
-    const p = await page('/action/cook-a-meal', ACTION_HTML, (m, path) => {
-      if (path.endsWith('/state')) return { data: { actionId: 'a1', stories: [], me: m === 'GET' ? { done: true, tally: 1, canUndo: true, doneWith: [] } : null } };
-      if (m === 'DELETE') return { data: { done: false, tally: 0 } };
-    });
-    [...p.document.querySelectorAll('button')].find((b) => b.textContent === 'Undo')!.click();
-    await p.settle();
-    expect(p.document.getElementById('hf-did-msg')!.textContent).toBe('Undone.');
-  });
-
-  it('shows approved stories with a vertical player and a report link', async () => {
-    const story = { id: 7, text: 'They cried.', name: 'Ana', with: ['Ben'], createdAt: '2026-11-16T09:00:00Z', photo: null, video: { embed: 'https://www.tiktok.com/embed/v2/1?muted=1', vertical: true }, action: { title: 'Cook', slug: 'cook' } };
-    const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [story] } } : undefined));
-    expect(p.document.querySelector('.hfp-video.is-vertical iframe')!.getAttribute('src')).toContain('muted=1');
-    expect(p.document.body.textContent).toContain('Ana, with Ben');
-    expect(p.document.body.textContent).toContain('Report this story');
+  it('shows approved stories from the Webflow story card, videos and report link included', async () => {
+    const story = { id: 7, text: 'They cried.', name: 'Ana', with: ['Ben'], createdAt: '2026-11-16T09:00:00Z', photo: null, video: { embed: 'https://www.tiktok.com/embed/v2/1?muted=1', vertical: true }, clip: null, action: { title: 'Cook', slug: 'cook' } };
+    const clip = { ...story, id: 8, video: null, clip: { key: 'videos/abcdefghijklmnopqrstuvwx.mp4', poster: null, codec: 'avc1' } };
+    const p = await page('/action/cook-a-meal', actionHtml(false), (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [story, clip] } } : undefined));
+    const d = p.document;
+    expect(shown(d.querySelector('[data-hf-show="stories"]'))).toBe(true);
+    const list = d.querySelector('[data-hf-slot="stories"]')!;
+    expect(list.querySelector('.hf-video-frame.is-vertical iframe')!.getAttribute('src')).toContain('muted=1');
+    expect(list.textContent).toContain('Ana, with Ben');
+    expect(list.querySelector('[data-hf-act="report"]')!.getAttribute('data-story-id')).toBe('7');
+    expect(d.querySelector('[data-hf-slot="clips"] video')!.getAttribute('src')).toBe('/join/media/videos/abcdefghijklmnopqrstuvwx.mp4');
   });
 });
 

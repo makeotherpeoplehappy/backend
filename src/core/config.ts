@@ -3,8 +3,9 @@
 
 /** The foundation site's Memberstack app (public ID; tokens from other apps are refused). */
 export const MEMBERSTACK_APP_ID = 'app_cmwkphy3a00030ste4jkeglrs';
-/** The free "Active" plan in Memberstack (pln_…); empty until it is created there. Not a secret. */
-export const MEMBERSTACK_ACTIVE_PLAN_ID = '';
+/** The free "Active" and "Inactive" plans in Memberstack (test mode). Not secrets. */
+export const MEMBERSTACK_ACTIVE_PLAN_ID = 'pln_active-er8r0xp0';
+export const MEMBERSTACK_INACTIVE_PLAN_ID = 'pln_inactive-un8s0xdg';
 
 export const CMS = {
   siteId: '6af7e827a9216ac8b164c1cb',

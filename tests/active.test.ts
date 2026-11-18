@@ -6,7 +6,13 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CMS } from '../src/core/config';
 import { syncActions } from '../src/core/features/actions';
 import { refreshAllActive } from '../src/core/features/active';
+import { drain } from '../src/core/queue';
 import { createHarness, type Harness } from './harness';
+
+const planCalls = () =>
+  h.fake.calls
+    .filter((c) => /admin\.memberstack\.com\/members\/[^/]+\/(add|remove)-plan$/.test(c.url))
+    .map((c) => `${c.url.split('/').pop()} ${(c.body as { planId: string }).planId}`);
 
 let h: Harness;
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -70,5 +76,26 @@ describe('People made happy', () => {
     expect((await me()).tally).toBe(3);
     const impact = await (await h.request('GET', '/api/impact')).json();
     expect(impact.peopleMadeHappy).toBe(3);
+  });
+
+  it('keeps the Memberstack plan in step: Inactive for everyone first, Active once earned, back on drop-out', async () => {
+    const a = h.fake.addAction('call-a-friend', 'Call a friend');
+    await syncActions(h.env, h.app.deps);
+    await me();
+    // Backfill: a signed-up member with no plan yet gets Inactive.
+    expect((await refreshAllActive(h.env, h.app.deps)).synced).toBe(1);
+    await h.settle(); await drain(h.env, h.app.deps);
+    expect(planCalls()).toEqual(['add-plan pln_inactive-un8s0xdg', 'remove-plan pln_active-er8r0xp0']);
+    // Nothing to do on the next run.
+    expect((await refreshAllActive(h.env, h.app.deps)).synced).toBe(0);
+    h.fake.calls.length = 0;
+    for (let w = 0; w < 3; w++) { await done(a); h.clock.advance(WEEK); }
+    await done(a);
+    await h.settle(); await drain(h.env, h.app.deps);
+    expect(planCalls()).toEqual(['add-plan pln_active-er8r0xp0', 'remove-plan pln_inactive-un8s0xdg']);
+    h.fake.calls.length = 0;
+    await h.request('DELETE', `/api/actions/${a}/done`, { token: 'shcat_ana' });
+    await h.settle(); await drain(h.env, h.app.deps);
+    expect(planCalls()).toEqual(['add-plan pln_inactive-un8s0xdg', 'remove-plan pln_active-er8r0xp0']);
   });
 });

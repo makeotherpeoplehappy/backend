@@ -86,3 +86,11 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 
 /* Calm motion: off when the device asks */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}.hf-action-card:hover{transform:none}}
+/* Account: sections open and close */
+.hfp-fold{all:unset;box-sizing:border-box;display:flex;align-items:center;gap:12px;width:100%;min-height:44px;cursor:pointer;font:inherit;color:inherit}
+.hfp-fold:focus-visible{outline:2px solid var(--colour--brand-blue);outline-offset:4px;border-radius:8px}
+.hfp-fold-count{margin-left:auto;font-size:15px;font-weight:500;color:var(--colour--grey);white-space:nowrap}
+.hfp-fold::after{content:"";flex:none;width:12px;height:12px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:translateY(-3px) rotate(45deg);transition:transform .2s}
+.hf-acct-card[data-hf-closed] .hfp-fold::after{transform:translateY(2px) rotate(-135deg)}
+.hf-acct-card[data-hf-closed]>:not(.hf-acct-card-title){display:none!important}
+.hf-acct-card[data-hf-closed] .hf-acct-card-title{margin-bottom:0}

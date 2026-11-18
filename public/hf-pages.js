@@ -386,7 +386,60 @@
   // Account
   // ---------------------------------------------------------------------------
   // An extra account section, drawn as the same card as the Webflow ones.
-  function section(title, kids) { return el('div', { class: 'hf-acct-card' }, [el('h2', { class: 'hf-acct-card-title', text: title })].concat(kids)); }
+  function section(title, kids, id) { return el('div', { class: 'hf-acct-card', id: id || null }, [el('h2', { class: 'hf-acct-card-title', text: title })].concat(kids)); }
+
+  // Account sections open and close (the title is the switch). The impact card
+  // stays open. Defaults put what needs doing first; a section someone opens or
+  // closes stays that way on this device. The jump links open what they point to.
+  var FOLD_KEY = 'hfp_acct_open';
+  function foldPrefs() { try { return JSON.parse(localStorage.getItem(FOLD_KEY) || '{}') || {}; } catch (e) { return {}; } }
+  function setFold(card, open, remember) {
+    if (open) card.removeAttribute('data-hf-closed'); else card.setAttribute('data-hf-closed', '');
+    var b = card.querySelector('.hfp-fold');
+    if (b) b.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (remember && card.id) { var p = foldPrefs(); p[card.id] = open; try { localStorage.setItem(FOLD_KEY, JSON.stringify(p)); } catch (e) {} }
+  }
+  function foldSections(me) {
+    var root = $('hf-acct-in');
+    if (!root) return;
+    var openPledges = (me.pledges || []).filter(function (p) { return p.status !== 'kept'; }).length;
+    var acted = {};
+    (me.done || []).forEach(function (d) { acted[d.actionId] = 1; });
+    var counts = {
+      'acct-pledges': openPledges ? copyText('acct-fold-to-keep', { n: openPledges }) : '',
+      'acct-saved': me.saved && me.saved.length ? String(me.saved.length) : '',
+      'acct-actions': Object.keys(acted).length ? String(Object.keys(acted).length) : '',
+      'acct-joined': me.joinedMyInvites && me.joinedMyInvites.length ? String(me.joinedMyInvites.length) : '',
+      'acct-invited': me.invitesIJoined && me.invitesIJoined.length ? String(me.invitesIJoined.length) : '',
+    };
+    var opens = { 'acct-pledges': openPledges > 0, 'acct-saved': true, 'acct-actions': true, 'acct-joined': true, 'acct-invited': false, 'hfp-settings': false, 'acct-data': false };
+    var prefs = foldPrefs();
+    root.querySelectorAll('.hf-acct-card').forEach(function (card) {
+      var h = card.querySelector('.hf-acct-card-title');
+      if (!h || !card.id) return;
+      var count = card.querySelector('.hfp-fold-count');
+      if (!card.getAttribute('data-hfp-fold')) {
+        card.setAttribute('data-hfp-fold', '1');
+        var b = el('button', { type: 'button', class: 'hfp-fold', 'aria-expanded': 'true' });
+        while (h.firstChild) b.appendChild(h.firstChild);
+        count = el('span', { class: 'hfp-fold-count' });
+        b.appendChild(count);
+        h.appendChild(b);
+        b.addEventListener('click', function () { setFold(card, card.hasAttribute('data-hf-closed'), true); });
+        setFold(card, card.id in prefs ? !!prefs[card.id] : card.id in opens ? opens[card.id] : true, false);
+      }
+      count.textContent = counts[card.id] || '';
+    });
+  }
+  // A jump link (or an address ending in #section) opens the section it points to.
+  function openFromLink(hash) {
+    var card = hash && hash.length > 1 ? document.getElementById(hash.slice(1)) : null;
+    if (card && card.classList.contains('hf-acct-card')) setFold(card, true, true);
+  }
+  document.addEventListener('click', function (e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[href^="#"]') : null;
+    if (a) openFromLink(a.getAttribute('href'));
+  });
 
   // The account page shows at once: the site head marks a signed-in visitor (html.hf-in) so the
   // signed-in layout is there from the first paint; the last account data seen on this device
@@ -417,7 +470,7 @@
       inn.setAttribute('data-hf-on', '1');
     }
     var early = cachedMe();
-    if (early) { showIn(); renderAccount(early); }
+    if (early) { showIn(); renderAccount(early); foldSections(early); openFromLink(location.hash); }
     await wait(function () { return window.HF && window.HFB; }, 10000);
     if (si) si.addEventListener('click', function (e) { e.preventDefault(); HF.signin(); });
     var jn = $('hf-join');
@@ -439,6 +492,8 @@
     cacheMe(r.data);
     showIn();
     renderAccount(r.data);
+    foldSections(r.data);
+    openFromLink(location.hash);
   }
 
   // Profile photo (Account > Settings): kept on the member in Memberstack, shown in the header avatar.
@@ -580,7 +635,7 @@
       if (me.saved && me.saved.length) {
         var sv = el('ul', { class: 'hfp-list', id: 'hfp-saved' });
         me.saved.forEach(function (d) { sv.appendChild(el('li', { class: 'hfp-item' }, [el('a', { class: 'hfp-item-title', href: '/action/' + d.slug, text: d.title })])); });
-        holder.insertBefore(section(copyText('acct-saved-h'), [sv]), card === ah ? ah.previousElementSibling : card);
+        holder.insertBefore(section(copyText('acct-saved-h'), [sv], 'acct-saved'), card === ah ? ah.previousElementSibling : card);
       }
       // Invites
       {
@@ -588,7 +643,7 @@
         if (me.joinedMyInvites.length) {
           var j = el('ul', { class: 'hfp-list' });
           me.joinedMyInvites.forEach(function (x) { j.appendChild(el('li', { class: 'hfp-item', text: copyText('acct-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '', date: day(x.joinedAt) }) })); });
-          inv.appendChild(section(copyText('acct-joined-h'), [j]));
+          inv.appendChild(section(copyText('acct-joined-h'), [j], 'acct-joined'));
         }
         if (me.invitesIJoined.length) {
           var k = el('ul', { class: 'hfp-list' });
@@ -605,7 +660,7 @@
             });
             k.appendChild(li);
           });
-          inv.appendChild(section(copyText('acct-invited-h'), [k]));
+          inv.appendChild(section(copyText('acct-invited-h'), [k], 'acct-invited'));
         }
         if (card !== ah) holder.insertBefore(inv, card.nextElementSibling);
         else ah.nextElementSibling ? holder.insertBefore(inv, ah.nextElementSibling.nextElementSibling) : holder.appendChild(inv);

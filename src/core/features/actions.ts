@@ -7,6 +7,7 @@ import * as webflow from '../webflow';
 import { recomputeKeeps } from './pledges';
 import { storiesFor } from './stories';
 import { doneWithNames, displayName, rippleTotal } from './ripple';
+import { assertGuestCanMark, isGuest, touchGuest } from './guests';
 
 export interface ActionRow {
   cms_item_id: string;
@@ -159,6 +160,7 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
       story: story || null,
       doneWith: last?.last ? await doneWithNames(env, member.id, actionId) : [],
       name: displayName(member),
+      guest: isGuest(member),
     };
   }
   return state;
@@ -171,6 +173,11 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
 export async function markDone(env: Env, deps: Deps, member: Member, actionId: string) {
   const action = await getAction(env, deps, actionId);
   if (!action || action.status !== 'published') throw new HttpError(404, 'action_not_found', 'err-action-not-found');
+  const guest = isGuest(member);
+  if (guest) {
+    await assertGuestCanMark(env, deps, member, actionId);
+    await touchGuest(env, deps, member);
+  }
   const mark = await env.DB.prepare(
     `INSERT INTO done_marks (member_id, action_id, done_at, action_title, source) VALUES (?1, ?2, ?3, ?4, 'site') RETURNING id, done_at`,
   )
@@ -184,6 +191,7 @@ export async function markDone(env: Env, deps: Deps, member: Member, actionId: s
     tally: await memberTally(env, member.id),
     count: await publicCount(env, actionId),
     ripple: await rippleTotal(env, member.id),
+    guest,
   };
 }
 

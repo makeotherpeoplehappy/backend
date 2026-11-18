@@ -10,6 +10,11 @@
  *   HFB.requireSignIn(intent)   remember a signed-out click, then go to sign-in
  *   HFB.resume()                after sign-in, finish the remembered click once
  *   HFB.keepDraft(form)         keep typed text if sign-in expires mid-form
+ *   HFB.guest()                 true when this device has marks made before signing in
+ *
+ * Try before sign-up: signed out, "I did this" is saved against a random guest
+ * key kept on this device (localStorage and a cookie). After sign-in the first
+ * call moves those marks to the account, then the key is forgotten.
  */
 (function () {
   'use strict';
@@ -59,6 +64,50 @@
 
   function store(k, v) { try { v === null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
   function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+  // --- Guest key (try before sign-up) ---------------------------------------
+  var GUEST = 'hf_guest';
+  var GUEST_DAYS = 30;
+  var GUEST_RE = /^[A-Za-z0-9-]{20,64}$/;
+  function cookieGuest() {
+    var m = null;
+    try { m = String(document.cookie || '').match(/(?:^|;\s*)hf_guest=([^;]+)/); } catch (e) {}
+    return m && GUEST_RE.test(m[1]) ? m[1] : null;
+  }
+  function keepGuest(k) {
+    store(GUEST, k);
+    var secure = location.protocol === 'https:' ? '; Secure' : '';
+    try { document.cookie = GUEST + '=' + (k || '') + '; Path=/; SameSite=Lax' + secure + '; Max-Age=' + (k ? GUEST_DAYS * 86400 : 0); } catch (e) {}
+  }
+  /** This device's guest key; with `create`, makes one. */
+  function guestKey(create) {
+    var k = read(GUEST);
+    if (!k || !GUEST_RE.test(k)) k = cookieGuest();
+    if (!k && create) k = newKey();
+    if (k) keepGuest(k); // refreshes the cookie's 30 days
+    return k;
+  }
+  var claiming = null;
+  /** Signed in with a guest key on this device: move its marks to the account, once. */
+  function claimGuest(t) {
+    var k = guestKey(false);
+    if (!k) return Promise.resolve(null);
+    if (!claiming) {
+      claiming = (async function () {
+        try {
+          var res = await fetch(BASE + '/api/me/claim-guest', { method: 'POST', headers: { Accept: 'application/json', Authorization: 'Bearer ' + t, 'X-HF-Guest': k, 'Idempotency-Key': 'claim-' + k } });
+          // Kept for another try only when the server could not be reached or was down.
+          if (res.status < 500) keepGuest(null);
+          return res.ok ? res.json() : null;
+        } catch (e) {
+          return null;
+        } finally {
+          claiming = null;
+        }
+      })();
+    }
+    return claiming;
+  }
 
   function newKey() {
     if (crypto.randomUUID) return crypto.randomUUID();
@@ -115,7 +164,13 @@
     var method = opts.method || 'GET';
     var headers = { Accept: 'application/json' };
     var t = opts.auth === false ? null : await freshToken();
-    if (t) headers.Authorization = 'Bearer ' + t;
+    if (t) {
+      headers.Authorization = 'Bearer ' + t;
+      if (guestKey(false)) await claimGuest(t);
+    } else if (opts.auth !== false) {
+      var g = guestKey(!!opts.guest);
+      if (g) headers['X-HF-Guest'] = g;
+    }
     if (method !== 'GET') headers['Idempotency-Key'] = opts.key || newKey();
     if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
     if (opts.turnstile) {
@@ -299,7 +354,7 @@
     if (ok) window.HF.sync = sync;
   });
 
-  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, copy: copy, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor };
+  window.HFB = { base: BASE, call: call, sync: sync, button: button, say: say, requireSignIn: requireSignIn, resume: resume, keepDraft: keepDraft, newKey: newKey, copy: copy, token: freshToken, turnstileToken: turnstileToken, waitFor: waitFor, guest: function () { return !!guestKey(false); } };
 
   // Page features (action page, account, stories, invites) live in one
   // script served by the backend, so they ship with the backend and are tested.
@@ -316,6 +371,8 @@
   pages.async = false;
   if (parent && !(window.HFB_NO_PAGES)) parent.appendChild(pages);
 
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', resume);
-  else resume();
+  // Signed in with marks from before on this device: move them now.
+  function claimOnLoad() { waitFor(signInReady, 10000).then(function () { var t = token(); if (t && guestKey(false)) claimGuest(t); }); }
+  if (document.readyState === 'loading') { document.addEventListener('DOMContentLoaded', resume); document.addEventListener('DOMContentLoaded', claimOnLoad); }
+  else { resume(); claimOnLoad(); }
 })();

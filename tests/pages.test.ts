@@ -117,18 +117,37 @@ describe('Action page', () => {
     expect(p.document.querySelectorAll('#hfp-compose').length, p.document.body.innerHTML.slice(-600)).toBe(0);
   });
 
-  it('sends a signed-out visitor straight to sign in and remembers the click', async () => {
+  it('sends a signed-out visitor to sign in for Save, and remembers the click', async () => {
     const p = await page('/action/cook-a-meal', ACTION_HTML, (_m, path) => (path.endsWith('/state') ? { data: { actionId: 'a1', stories: [] } } : undefined), { signedIn: false });
     const save = [...p.document.querySelectorAll('button')].find((b) => b.textContent === '♡ Save')!;
     save.click();
     await p.settle();
+    expect(p.signIns).toEqual([{ kind: 'like', actionId: 'a1' }]);
+    expect(p.document.getElementById('hf-did-msg')!.textContent).toContain('Taking you to sign in');
+  });
+
+  it('lets a signed-out visitor mark it done, shows the win, then a soft ask to keep it', async () => {
+    let done = false;
+    const p = await page(
+      '/action/cook-a-meal',
+      ACTION_HTML,
+      (m, path) => {
+        if (path.endsWith('/state')) return { data: { actionId: 'a1', stories: [], me: done ? { done: true, guest: true, tally: 1, canUndo: true, doneWith: [] } : { done: false, guest: true, tally: 0 } } };
+        if (m === 'POST' && path === '/api/actions/a1/done') { done = true; return { status: 201, data: { guest: true, ripple: 0, tally: 1 } }; }
+      },
+      { signedIn: false },
+    );
     p.document.getElementById('hf-did-this')!.click();
     await p.settle();
-    expect(p.signIns).toEqual([
-      { kind: 'like', actionId: 'a1' },
-      { kind: 'done', actionId: 'a1' },
-    ]);
-    expect(p.document.getElementById('hf-did-msg')!.textContent).toContain('Taking you to sign in');
+    expect(p.signIns).toEqual([]);
+    expect(p.calls).toContainEqual({ method: 'POST', path: '/api/actions/a1/done', body: undefined });
+    const text = p.document.body.textContent || '';
+    expect(text).toContain('I made someone happy today');
+    expect(text).toContain('You have made 1 person happy.');
+    expect(text).toContain('Keep this – create a free account');
+    expect([...p.document.querySelectorAll('button')].some((b) => b.textContent === 'Create a free account')).toBe(true);
+    // Sharing a story needs an account, so it waits.
+    expect([...p.document.querySelectorAll('a')].find((a) => a.textContent === 'Share your story')?.getAttribute('style')).toContain('none');
   });
 
   it('shows approved stories with a vertical player and a report link', async () => {

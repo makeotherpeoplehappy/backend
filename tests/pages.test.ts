@@ -630,3 +630,74 @@ describe('Weekly dare', () => {
     expect(off.document.getElementById('hf-dare-tag')!.hasAttribute('data-hf-on')).toBe(false);
   });
 });
+
+describe('Account lists (built in Webflow)', () => {
+  const T = (name: string, inner: string) => `<li data-hf-template="${name}" data-hf-show="template">${inner}</li>`;
+  const HTML = `<div id="hf-acct-in" data-hf-show="signed-in"><p id="hf-tally"></p>
+    <div class="hf-acct-card" id="acct-ripple" data-hf-show="ripple"><p data-hf-fill="ripple-h"></p><div data-hf-slot="ripple"></div><p data-hf-fill="ripple-caption"></p><p data-hf-show="ripple-more" data-hf-fill="ripple-more"></p><p data-hf-show="ripple-hint">Share</p></div>
+    <div class="hf-acct-card" id="acct-pledges"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-pledges"><span>Your pledges</span><span data-hf-fill="fold-count"></span></a></h2>
+      <div id="hf-pledges"><p data-hf-part="empty">No pledges yet.</p><ul data-hf-slot="pledges">${T('pledge', '<div><span data-hf-part="state">Open</span><span data-hf-part="date">x</span></div><p data-hf-part="kept">x</p><a data-hf-part="keep" href="/actions"><span>Find an action</span></a>')}</ul></div></div>
+    <div class="hf-acct-card" id="acct-saved" data-hf-show="saved"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-saved"><span>Saved</span><span data-hf-fill="fold-count"></span></a></h2><ul data-hf-slot="saved">${T('saved', '<a data-hf-part="title" href="/actions">x</a>')}</ul></div>
+    <div class="hf-acct-card" id="acct-actions"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-actions"><span>Actions</span><span data-hf-fill="fold-count"></span></a></h2>
+      <div id="hf-actions"><p data-hf-part="empty">Nothing here yet.</p><ul data-hf-slot="done">${T('done', '<a data-hf-part="title" href="/actions">x</a><span data-hf-part="meta">x</span><div><a data-hf-part="story" href="/share-your-story"><span data-hf-part="story-label">x</span></a><span data-hf-part="story-state">x</span></div>')}</ul></div></div>
+    <div class="hf-acct-card" id="acct-invited" data-hf-show="invited"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-invited"><span>Invites</span><span data-hf-fill="fold-count"></span></a></h2><ul data-hf-slot="invited">${T('invited', '<a data-hf-part="title" href="/actions">x</a><p data-hf-part="by">x</p><a data-hf-act="leave" href="#">Leave</a>')}</ul></div>
+    <div class="hf-acct-card" id="acct-joined" data-hf-show="joined"><ul data-hf-slot="joined">${T('joined', '<p data-hf-part="text">x</p>')}</ul></div>
+  </div>`;
+  const ME = { data: {
+    name: 'Tess', tally: 3, ripple: 0, settings: {},
+    rippleView: { reached: 4, rings: [{ marks: 2, dots: ['Call a grandparent', 'Cook a meal'] }] },
+    pledges: [{ status: 'open', orderedAt: '2026-11-01T00:00:00Z' }, { status: 'kept', orderedAt: '2026-10-01T00:00:00Z', keptBySlug: 'cook-a-meal', keptByTitle: 'Cook a meal', keptOn: '2026-10-03T00:00:00Z' }],
+    done: [{ actionId: 'a', slug: 'cook-a-meal', title: 'Cook a meal', actionStatus: 'published', doneAt: '2026-11-02T00:00:00Z' }, { actionId: 'a', slug: 'cook-a-meal', title: 'Cook a meal', actionStatus: 'published', doneAt: '2026-11-01T00:00:00Z' }, { actionId: 'b', slug: 'old', title: 'Old one', actionStatus: 'archived', doneAt: '2026-10-01T00:00:00Z' }],
+    stories: [{ actionId: 'a', status: 'pending' }],
+    saved: [], joinedMyInvites: [],
+    invitesIJoined: [{ code: 'abc', actionSlug: 'cook-a-meal', actionTitle: 'Cook a meal', inviterName: 'Ana' }],
+  } };
+
+  it('fills the Webflow templates and leaves the designs hidden', async () => {
+    const calls: string[] = [];
+    const p = await page('/account', HTML, (m, path) => { calls.push(m + ' ' + path); return path === '/api/me' ? ME : { data: {} }; });
+    (p.window as unknown as Record<string, unknown>).$memberstackDom = { getCurrentMember: async () => ({ data: {} }) };
+    await p.settle();
+    const d = p.document;
+    const items = (slot: string) => [...d.querySelectorAll(`[data-hf-slot="${slot}"] > li:not([data-hf-template])`)];
+    // Pledges: an open one with the keep link, a kept one with its action.
+    const pl = items("pledges");
+    expect(pl.length).toBe(2);
+    expect(pl[0].querySelector('[data-hf-part="state"]')!.classList.contains('is-open')).toBe(true);
+    expect(pl[0].querySelector('[data-hf-part="keep"]')).not.toBeNull();
+    expect(pl[0].querySelector('[data-hf-part="kept"]')).toBeNull();
+    expect(pl[1].querySelector('[data-hf-part="keep"]')).toBeNull();
+    expect(pl[1].querySelector('[data-hf-part="kept"] a')!.getAttribute('href')).toBe('/action/cook-a-meal');
+    expect((d.querySelector('#hf-pledges [data-hf-part="empty"]') as unknown as { style: { display: string } }).style.display).toBe('none');
+    // Actions: one row per action, repeats counted, a story chip only for live actions.
+    const dn = items('done');
+    expect(dn.length).toBe(2);
+    expect(dn[0].querySelector('[data-hf-part="meta"]')!.textContent).toContain('2 times');
+    expect(dn[0].querySelector('[data-hf-part="story-state"]')!.textContent).toBe(WORDING['acct-story-review']);
+    expect(dn[1].querySelector('[data-hf-part="title"]')!.hasAttribute('href')).toBe(false);
+    expect(dn[1].querySelector('[data-hf-part="story"]')).toBeNull();
+    // Cards with nothing in them stay hidden; the rest show.
+    expect(d.getElementById('acct-saved')!.hasAttribute('data-hf-on')).toBe(false);
+    expect(d.getElementById('acct-joined')!.hasAttribute('data-hf-on')).toBe(false);
+    expect(d.getElementById('acct-invited')!.hasAttribute('data-hf-on')).toBe(true);
+    expect(d.getElementById('acct-ripple')!.hasAttribute('data-hf-on')).toBe(true);
+    expect(d.querySelector('[data-hf-fill="ripple-h"]')!.textContent).toBe('Your actions have reached 4 people');
+    expect(d.querySelectorAll('[data-hf-slot="ripple"] svg').length).toBe(1);
+    // The designs themselves are untouched.
+    expect(d.querySelectorAll('[data-hf-template]').length).toBe(5);
+    // Fold: counts in the title, and the title opens and closes its card.
+    expect(d.querySelector('#acct-pledges [data-hf-fill="fold-count"]')!.textContent).toBe('1 to keep');
+    const fold = d.querySelector('#acct-actions [data-hf-act="fold"]') as unknown as { click: () => void };
+    expect(d.getElementById('acct-actions')!.hasAttribute('data-hf-closed')).toBe(false);
+    fold.click();
+    expect(d.getElementById('acct-actions')!.hasAttribute('data-hf-closed')).toBe(true);
+    fold.click();
+    expect(d.getElementById('acct-actions')!.hasAttribute('data-hf-closed')).toBe(false);
+    // Leaving an invite removes it and hides the empty card.
+    (items('invited')[0].querySelector('[data-hf-act="leave"]') as unknown as { click: () => void }).click();
+    await p.settle();
+    expect(calls).toContain('DELETE /api/invites/abc/join');
+    expect(items('invited').length).toBe(0);
+    expect(d.getElementById('acct-invited')!.hasAttribute('data-hf-on')).toBe(false);
+  });
+});

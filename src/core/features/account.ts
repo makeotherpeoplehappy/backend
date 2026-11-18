@@ -46,6 +46,7 @@ export async function getAccount(env: Env, member: Member) {
     stories: stories.results,
     suggestions: suggestions.results,
     settings: settingsOf(member),
+    homeArea: member.home_area ?? null,
     lab: await hasLabAccess(env, member),
   };
 }
@@ -56,7 +57,14 @@ export function settingsOf(member: Member): Record<EmailKind, boolean> {
   return out;
 }
 
-export async function updateSettings(env: Env, deps: Deps, member: Member, body: { notifications?: Record<string, unknown>; firstName?: unknown }) {
+/** A location slug from the header picker, or null for none. */
+function homeAreaOf(v: unknown): string | null {
+  if (v === null || v === '') return null;
+  if (typeof v !== 'string' || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(v) || v.length > 60) throw new HttpError(400, 'invalid_setting', 'err-invalid-setting');
+  return v;
+}
+
+export async function updateSettings(env: Env, deps: Deps, member: Member, body: { notifications?: Record<string, unknown>; firstName?: unknown; homeArea?: unknown }) {
   const changes = body.notifications || {};
   const sets: string[] = [];
   const values: unknown[] = [];
@@ -66,6 +74,10 @@ export async function updateSettings(env: Env, deps: Deps, member: Member, body:
     values.push(name);
     sets.push(`share_name = ?${values.length}`);
   }
+  if (body.homeArea !== undefined) {
+    values.push(homeAreaOf(body.homeArea));
+    sets.push(`home_area = ?${values.length}`);
+  }
   for (const [kind, value] of Object.entries(changes)) {
     if (!(kind in EMAIL_KINDS) || typeof value !== 'boolean') {
       throw new HttpError(400, 'invalid_setting', 'err-invalid-setting');
@@ -73,12 +85,12 @@ export async function updateSettings(env: Env, deps: Deps, member: Member, body:
     values.push(value ? 1 : 0);
     sets.push(`${EMAIL_KINDS[kind as EmailKind]} = ?${values.length}`);
   }
-  if (!sets.length) return { settings: settingsOf(member), name: displayName(member) };
+  if (!sets.length) return { settings: settingsOf(member), name: displayName(member), homeArea: member.home_area ?? null };
   values.push(iso(deps.now()), member.id);
   const row = await env.DB.prepare(`UPDATE members SET ${sets.join(', ')}, updated_at = ?${values.length - 1} WHERE id = ?${values.length} RETURNING *`)
     .bind(...values)
     .first<Member>();
-  return { settings: settingsOf(row!), name: displayName(row!) };
+  return { settings: settingsOf(row!), name: displayName(row!), homeArea: row!.home_area ?? null };
 }
 
 /**
@@ -122,7 +134,7 @@ export async function deleteMemberData(env: Env, deps: Deps, memberId: number): 
     env.DB.prepare(`DELETE FROM request_keys WHERE scope = ?1`).bind(`m:${memberId}`),
     env.DB.prepare(`DELETE FROM daily_usage WHERE member_id = ?1`).bind(memberId),
     env.DB.prepare(
-      `UPDATE members SET account_id = 'deleted:' || id, first_name = NULL, email = NULL, share_name = NULL,
+      `UPDATE members SET account_id = 'deleted:' || id, first_name = NULL, email = NULL, share_name = NULL, home_area = NULL,
          notify_invite_summary = 0, notify_story_approved = 0, notify_suggestion_live = 0, notify_pledge_reminder = 0,
          deleted_at = ?2, updated_at = ?2
        WHERE id = ?1`,

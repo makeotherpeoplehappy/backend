@@ -24,6 +24,7 @@ export interface Member {
   notify_pledge_reminder: number;
   created_at: string;
   share_name?: string | null;
+  home_area?: string | null;
   inviter_id?: number | null;
   inviter_joined_at?: string | null;
   deleted_at?: string | null;

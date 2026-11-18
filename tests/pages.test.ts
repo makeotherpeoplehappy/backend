@@ -401,6 +401,23 @@ describe('Header', () => {
     expect(p.window.localStorage.getItem('hf_loc')).toBe('copenhagen');
   });
 
+  it("a signed-in member's pick is saved as their home area", async () => {
+    const p = await page('/', HTML, () => ({ data: {} }));
+    const loc = p.document.getElementById('hf-loc') as unknown as { value: string; dispatchEvent: (e: unknown) => void };
+    loc.value = 'copenhagen';
+    loc.dispatchEvent(new p.window.Event('change'));
+    await new Promise((r) => setTimeout(r, 700));
+    expect(p.calls).toContainEqual({ method: 'PATCH', path: '/api/me/settings', body: { homeArea: 'copenhagen' } });
+  });
+
+  it('a new device takes the home area from the account', async () => {
+    const p = await page('/', HTML, (_m, path) => (path === '/api/me/home-area' ? { data: { homeArea: 'copenhagen' } } : { data: {} }));
+    await p.settle();
+    expect((p.document.getElementById('hf-loc') as unknown as { value: string }).value).toBe('copenhagen');
+    // Taken from the account, so not saved back.
+    expect(p.calls.filter((c) => c.method === 'PATCH')).toHaveLength(0);
+  });
+
   it('the phone pin picks a location through the same picker', async () => {
     const p = await page('/', HTML, () => undefined);
     const mini = p.document.querySelector('.hf-loc-mini') as unknown as { value: string; options: unknown[]; dispatchEvent: (e: unknown) => void };

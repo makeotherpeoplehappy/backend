@@ -5,6 +5,7 @@ import cloudflare from '@astrojs/cloudflare';
 import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { transform } from 'esbuild';
+import { createHash } from 'node:crypto';
 
 // The page scripts and stylesheet in public/ are kept readable in the repo and
 // minified in the build output (esbuild ships with Astro). Same file names, so
@@ -14,6 +15,14 @@ const minifyPublic = {
   name: 'hf-minify-public',
   hooks: {
     'astro:build:done': async ({ dir, logger }) => {
+      // Version stamp for the page script and interface text: a hash of what ships,
+      // written into hf-backend.js, which loads them as hf-pages.js?v=… .
+      const hash = createHash('sha256');
+      for (const f of ['public/hf-pages.js', 'src/wording/en.json']) hash.update(await readFile(new URL(f, import.meta.url)));
+      const version = hash.digest('hex').slice(0, 12);
+      const backendFile = fileURLToPath(new URL('hf-backend.js', dir));
+      await writeFile(backendFile, (await readFile(backendFile, 'utf8')).replace('__HF_VERSION__', version));
+      logger.info(`page scripts stamped v=${version}`);
       for (const name of MINIFY) {
         const file = fileURLToPath(new URL(name, dir));
         let code;

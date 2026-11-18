@@ -220,6 +220,8 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
     if (typeof body.childrenInVideo === 'boolean') children = body.childrenInVideo ? 1 : 0;
     if (children === null) throw new HttpError(400, 'video_children_required', 'err-video-children');
   }
+  // One video per story: an upload or a link, not both.
+  if (videoKey && video) throw new HttpError(400, 'one_video', 'err-one-video');
   if (!text && !photoKey && !video && !videoKey) throw new HttpError(400, 'empty_story', 'err-empty-story');
   if (body.consent !== true) throw new HttpError(400, 'consent_required', 'err-consent-required');
   const showName = body.showName !== false;

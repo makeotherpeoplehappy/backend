@@ -97,12 +97,37 @@ export function upsertStatement(env: Env, r: ReturnType<typeof rowFromItem>): D1
 
 export { rowFromItem };
 
+/**
+ * The two "set automatically" switches the action page uses to show the right
+ * main button natively (Webflow can only show an element when a switch is on):
+ * Do it together first, and its opposite, Do it on my own first. Queued only
+ * when an item's switches don't match its Do it with, so a resync writes nothing.
+ */
+export function buttonSwitchFixes(env: Env, deps: Deps, items: webflow.WebflowItem[]): D1PreparedStatement[] {
+  const now = iso(deps.now());
+  const out: D1PreparedStatement[] = [];
+  for (const item of items) {
+    const together = rowFromItem(item, now).can_do_with_others === 1;
+    const f = item.fieldData || {};
+    if (f['do-it-together-first'] === together && f['do-it-on-my-own-first'] === !together) continue;
+    out.push(
+      enqueue(env, deps, `buttons:${item.id}:${together ? 'together' : 'own'}:${now.slice(0, 16)}`, {
+        op: 'webflow.updateLive',
+        collectionId: CMS.actions.id,
+        itemId: item.id,
+        fieldData: { 'do-it-together-first': together, 'do-it-on-my-own-first': !together },
+      }),
+    );
+  }
+  return out;
+}
+
 /** Copies every published action from Webflow; actions no longer live are marked removed. */
 export async function syncActions(env: Env, deps: Deps): Promise<{ published: number; removed: number }> {
   const items = await webflow.listLiveItems(env, deps, CMS.actions.id);
   const now = iso(deps.now());
   const rows = items.filter((i) => !i.isArchived).map((i) => rowFromItem(i, now));
-  const stmts = rows.map((r) => upsertStatement(env, r));
+  const stmts = [...rows.map((r) => upsertStatement(env, r)), ...buttonSwitchFixes(env, deps, items.filter((i) => !i.isArchived))];
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
   const removed = await env.DB.prepare(`UPDATE actions SET status = 'removed', synced_at = ?1 WHERE status = 'published' AND synced_at < ?1`)
     .bind(now)

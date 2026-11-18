@@ -114,6 +114,49 @@
   document.head.appendChild(el('style', { text: css }));
 
   // ---------------------------------------------------------------------------
+  // Native parts. Everything visible is built in Webflow; this script only
+  // fills it in and shows or hides it:
+  //   [data-hf-show="x"]  hidden until turned on (data-hf-on)
+  //   [data-hf-fill="x"]  receives text
+  //   [data-hf-act="x"]   a button or link this script handles
+  //   [data-hf-slot="x"]  a holder for drawn or loaded content (a picture, a video)
+  //   [data-hf-template]  a hidden design the script copies for each item (stories)
+  // ---------------------------------------------------------------------------
+  function partsOf(root) {
+    var P = {
+      root: root,
+      all: function (sel) { return [].slice.call(root.querySelectorAll(sel)); },
+      one: function (sel) { return root.querySelector(sel); },
+      show: function (key, on) { P.all('[data-hf-show="' + key + '"]').forEach(function (e) { if (on) e.setAttribute('data-hf-on', '1'); else e.removeAttribute('data-hf-on'); }); },
+      fill: function (key, t) { P.all('[data-hf-fill="' + key + '"]').forEach(function (e) { e.textContent = t == null ? '' : t; }); },
+      acts: function (name) { return P.all('[data-hf-act="' + name + '"]'); },
+      on: function (name, fn) { P.acts(name).forEach(function (b) { b.addEventListener('click', function (e) { e.preventDefault(); fn(b, e); }); }); },
+      slot: function (name) { return P.one('[data-hf-slot="' + name + '"]'); },
+    };
+    return P;
+  }
+  /** A Webflow form sent by this script (to the backend), never to Webflow's own form handling. */
+  function nativeForm(form, onSubmit) {
+    if (!form || form.getAttribute('data-hfp')) return;
+    form.setAttribute('data-hfp', '1');
+    freeSubmit(form);
+    form.addEventListener('submit', function (e) {
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      onSubmit(e);
+    }, true);
+  }
+  function setBusy(b, busy) {
+    if (!b) return;
+    if (busy) { b.setAttribute('aria-busy', 'true'); b.classList.add('is-disabled'); } else { b.removeAttribute('aria-busy'); b.classList.remove('is-disabled'); }
+  }
+  function say(el2, text, bad) {
+    if (!el2) return;
+    el2.textContent = text || '';
+    el2.classList.toggle('is-error', !!bad);
+  }
+
+  // ---------------------------------------------------------------------------
   // Sharing: the phone's own share sheet, or copy the link on a computer.
   // ---------------------------------------------------------------------------
   async function share(data, note) {
@@ -122,136 +165,137 @@
     }
     try {
       await navigator.clipboard.writeText(data.url);
-      if (note) note.textContent = copyText('share-copied');
+      if (note) say(note, copyText('share-copied'));
     } catch (e) {
-      if (note) note.textContent = data.url;
+      if (note) say(note, data.url);
     }
     return true;
   }
 
-  /** Asks for a first name before the first share, then saves it. */
-  function askName(where, done) {
-    var box = el('form', { class: 'hfp-card' });
-    var input = el('input', { class: 'hf-form-input w-input', id: 'hfp-name', autocomplete: 'given-name', maxlength: '40', required: true });
-    var msg = status();
-    box.appendChild(el('label', { for: 'hfp-name', class: 'hf-form-label', text: copyText('name-label') }));
-    box.appendChild(input);
-    box.appendChild(el('button', { type: 'submit', class: 'hf-button', text: copyText('name-save-share') }));
-    box.appendChild(msg);
-    box.addEventListener('submit', async function (e) {
-      e.preventDefault();
-      var r = await HFB.call('/api/me/settings', { method: 'PATCH', body: { firstName: input.value } });
-      if (!r.ok) { msg.textContent = msgOf(r); msg.setAttribute('data-kind', 'error'); return; }
-      box.remove();
-      done();
-    });
-    where.insertAdjacentElement('afterend', box);
-    input.focus();
-  }
-
-  /** A short personal note before sharing, then the share sheet. */
   function drop(n) { if (n && n.parentNode) n.parentNode.removeChild(n); }
 
-  function compose(actionId, kind, anchor, note) {
-    drop($('hfp-compose'));
-    var form = el('form', { id: 'hfp-compose', class: 'hfp-card' });
-    var ta = el('textarea', { id: 'hfp-note', class: 'hf-form-input is-textarea w-input', maxlength: '280', rows: '3', 'aria-describedby': 'hfp-note-count',
-      placeholder: copyText(kind === 'with_me' ? 'note-example-with' : 'note-example-pass') });
-    var countEl = el('p', { id: 'hfp-note-count', class: 'hfp-muted hfp-small', text: copyText('note-left', { n: 280 }) });
-    ta.addEventListener('input', function () { countEl.textContent = copyText('note-left', { n: 280 - ta.value.length }); });
-    var go = el('button', { type: 'submit', class: 'hf-button', text: copyText(kind === 'with_me' ? 'note-share-invite' : 'note-share') });
-    var cancel = el('button', { type: 'button', class: 'hf-button-light', text: copyText('note-cancel') });
-    cancel.addEventListener('click', function () { drop(form); });
-    form.appendChild(el('label', { for: 'hfp-note', class: 'hf-form-label', text: copyText('note-label') }));
-    form.appendChild(ta);
-    form.appendChild(countEl);
-    form.appendChild(el('div', { class: 'hfp-row' }, [go, cancel]));
-    form.addEventListener('submit', async function (e) {
-      e.preventDefault();
-      go.disabled = true;
-      var ok = await invite(actionId, kind, form, note, ta.value);
-      go.disabled = false;
-      if (ok) drop(form);
-    });
-    anchor.insertAdjacentElement('afterend', form);
-    ta.focus();
-  }
-
-  async function invite(actionId, kind, anchor, note, text) {
-    var r = await HFB.call('/api/invites', { method: 'POST', body: { actionId: actionId, kind: kind, note: text || '' } });
-    if (r.status === 409 && r.data && r.data.error === 'need_first_name') {
-      askName(anchor, function () { invite(actionId, kind, anchor, note, text); });
-      return false;
-    }
-    if (!r.ok) { note.textContent = msgOf(r); return false; }
-    await share({ title: document.title, text: r.data.text, url: r.data.url }, note);
-    return true;
-  }
-
   // ---------------------------------------------------------------------------
-  // Stories (action page and /stories)
+  // Stories: each card is a copy of the Story card template built in Webflow.
   // ---------------------------------------------------------------------------
-  function reportLink(id) {
-    var note = status('hfp-status hfp-small');
-    var b = el('button', { type: 'button', class: 'hfp-link hfp-small hfp-muted', text: copyText('report') });
-    b.addEventListener('click', async function () {
-      var reason = window.prompt(copyText('report-ask'));
-      if (reason === null) return;
-      b.disabled = true;
-      var r = await HFB.call('/api/stories/' + id + '/report', { method: 'POST', body: { reason: reason }, turnstile: true, auth: false });
-      note.textContent = r.ok ? copyText('report-thanks') : msgOf(r);
-      b.disabled = false;
-    });
-    return el('span', null, [b, note]);
-  }
-
-  // An uploaded vertical video: plays muted, looped and inline while on screen;
-  // tap for sound. If the browser can't play it, the still and a short note show.
   var clipWatch = null;
-  function clipPlayer(c, label) {
-    var v = el('video', { class: 'hfp-clip-video', src: HFB.base + '/media/' + c.key, poster: c.poster ? HFB.base + '/media/' + c.poster : null, muted: true, loop: true, playsinline: true, preload: 'none', 'aria-label': label });
-    v.muted = true;
-    var sound = el('button', { type: 'button', class: 'hfp-clip-sound', text: copyText('clip-sound-on') });
-    var sorry = el('p', { class: 'hfp-clip-sorry', text: copyText('clip-cant-play') });
-    var box = el('div', { class: 'hfp-clip' }, [v, sound, sorry]);
-    function toggle() {
+  /**
+   * An uploaded vertical video in a Webflow-built clip box ([data-hf-part="clip"]):
+   * plays muted, looped and inline while on screen; tap for sound. A browser
+   * that can't play the file keeps the still and shows a short note.
+   */
+  function setupClip(box, src, poster, label) {
+    if (!box || box.getAttribute('data-hfp')) return;
+    box.setAttribute('data-hfp', '1');
+    var sound = box.querySelector('[data-hf-part="sound"]');
+    var sorry = box.querySelector('[data-hf-part="sorry"]');
+    var still = box.querySelector('[data-hf-part="poster"]');
+    if (!poster && still && still.getAttribute('src')) poster = still.getAttribute('src');
+    var v = document.createElement('video');
+    v.className = 'hf-clip-video';
+    v.src = src;
+    if (poster) v.poster = poster;
+    v.muted = true; v.loop = true; v.playsInline = true; v.preload = 'none';
+    ['muted', 'loop', 'playsinline'].forEach(function (a) { v.setAttribute(a, ''); });
+    v.setAttribute('aria-label', label || '');
+    box.insertBefore(v, box.firstChild);
+    if (still) drop(still);
+    function toggle(e) {
+      if (e) e.preventDefault();
       var on = v.muted;
-      document.querySelectorAll('.hfp-clip-video').forEach(function (o) { if (o !== v) { o.muted = true; var b = o.parentNode.querySelector('.hfp-clip-sound'); if (b) b.textContent = copyText('clip-sound-on'); } });
+      document.querySelectorAll('.hf-clip-video').forEach(function (o) {
+        if (o === v || o.muted || !o.parentNode) return;
+        o.muted = true;
+        var b = o.parentNode.querySelector('[data-hf-part="sound"]');
+        if (b) b.textContent = copyText('clip-sound-on');
+      });
       v.muted = !on;
-      sound.textContent = copyText(on ? 'clip-sound-off' : 'clip-sound-on');
+      if (sound) sound.textContent = copyText(on ? 'clip-sound-off' : 'clip-sound-on');
       if (v.paused) v.play().catch(function () {});
     }
-    sound.addEventListener('click', toggle);
+    if (sound) sound.addEventListener('click', toggle);
     v.addEventListener('click', toggle);
-    v.addEventListener('error', function () { box.classList.add('is-broken'); });
+    v.addEventListener('error', function () { if (sorry) sorry.removeAttribute('hidden'); if (sound) sound.setAttribute('hidden', ''); });
     if (window.IntersectionObserver) {
       clipWatch = clipWatch || new IntersectionObserver(function (es) {
         es.forEach(function (e) { var x = e.target; if (e.isIntersecting && e.intersectionRatio >= 0.6) x.play().catch(function () {}); else x.pause(); });
       }, { threshold: [0, 0.6] });
       clipWatch.observe(v);
     }
-    return box;
   }
-
+  /** Stories rendered by Webflow from the CMS (/stories, a story's own page): their uploaded videos. */
+  function cmsClips() {
+    document.querySelectorAll('[data-hf-part="clip"][data-src]').forEach(function (box) {
+      var src = box.getAttribute('data-src');
+      if (src) setupClip(box, src, null, '');
+    });
+  }
+  /** "Report this story", on any story (CMS cards carry their slug in data-story). */
+  document.addEventListener('click', async function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('[data-hf-act="report"]') : null;
+    if (!b) return;
+    e.preventDefault();
+    var m = /(\d+)$/.exec(b.getAttribute('data-story') || b.getAttribute('data-story-id') || '');
+    if (!m || !window.HFB) return;
+    var note = b.parentNode && b.parentNode.querySelector('[data-hf-part="report-note"]');
+    var reason = window.prompt(copyText('report-ask'));
+    if (reason === null) return;
+    setBusy(b, true);
+    var r = await HFB.call('/api/stories/' + m[1] + '/report', { method: 'POST', body: { reason: reason }, turnstile: true, auth: false });
+    say(note, r.ok ? copyText('report-thanks') : msgOf(r), !r.ok);
+    setBusy(b, false);
+  });
   function storyCard(s, withAction) {
-    var kids = [];
-    if (s.clip) kids.push(clipPlayer(s.clip, copyText('clip-label', { title: (s.action && s.action.title) || '' })));
-    if (s.photo) kids.push(el('img', { class: 'hfp-photo', src: HFB.base + '/media/' + s.photo.key, alt: s.photo.description || copyText('story-photo-alt'), loading: 'lazy' }));
-    if (s.video) {
-      kids.push(el('div', { class: 'hfp-video' + (s.video.vertical ? ' is-vertical' : '') }, [
-        el('iframe', { src: s.video.embed, title: copyText('story-video-title', { name: s.name || copyText('member-anon') }), loading: 'lazy', allow: 'autoplay; encrypted-media; picture-in-picture', allowfullscreen: true }),
-      ]));
-    }
-    if (s.text) kids.push(el('p', { class: 'hf-story-text', text: s.text }));
-    var who = s.with && s.with.length
-      ? copyText('story-by-with', { name: s.name || copyText('member-anon'), with: s.with.join(', '), date: day(s.createdAt) })
-      : copyText('story-by', { name: s.name || copyText('member-anon'), date: day(s.createdAt) });
-    kids.push(el('p', { class: 'hf-story-meta', text: who }));
-    if (withAction && s.action && s.action.title) {
-      kids.push(s.action.slug ? el('p', null, [el('a', { class: 'hf-story-link', href: '/action/' + s.action.slug, text: copyText('story-action-link', { title: s.action.title }) })]) : el('p', { class: 'hf-story-meta', text: copyText('story-action', { title: s.action.title }) }));
-    }
-    kids.push(reportLink(s.id));
-    return el('article', { class: 'hf-story' + (s.clip ? ' is-clip' : '') }, kids);
+    var tpl = document.querySelector('[data-hf-template="story"]');
+    if (!tpl) return null;
+    var c = tpl.cloneNode(true);
+    c.removeAttribute('data-hf-template');
+    function part(n) { return c.querySelector('[data-hf-part="' + n + '"]'); }
+    var name = s.name || copyText('member-anon');
+    if (s.clip) { setupClip(part('clip'), HFB.base + '/media/' + s.clip.key, s.clip.poster ? HFB.base + '/media/' + s.clip.poster : null, copyText('clip-label', { title: (s.action && s.action.title) || '' })); c.classList.add('is-clip'); } else drop(part('clip'));
+    var embed = part('embed');
+    if (s.video && embed) {
+      if (s.video.vertical) embed.classList.add('is-vertical');
+      var f = document.createElement('iframe');
+      f.className = 'hf-video-iframe';
+      f.src = s.video.embed;
+      f.title = copyText('story-video-title', { name: name });
+      f.loading = 'lazy';
+      f.setAttribute('allow', 'autoplay; encrypted-media; picture-in-picture');
+      f.setAttribute('allowfullscreen', '');
+      embed.appendChild(f);
+    } else drop(embed);
+    var photo = part('photo');
+    if (s.photo && photo) {
+      var img = document.createElement('img');
+      img.className = 'hf-story-upload';
+      img.src = HFB.base + '/media/' + s.photo.key;
+      img.alt = s.photo.description || copyText('story-photo-alt');
+      img.loading = 'lazy';
+      photo.appendChild(img);
+    } else drop(photo);
+    if (s.text) part('text').textContent = s.text; else drop(part('text'));
+    part('meta').textContent = s.with && s.with.length
+      ? copyText('story-by-with', { name: name, with: s.with.join(', '), date: day(s.createdAt) })
+      : copyText('story-by', { name: name, date: day(s.createdAt) });
+    var act = part('action');
+    var link = part('action-link');
+    if (withAction && s.action && s.action.title && act) {
+      if (s.action.slug) { link.textContent = copyText('story-action-link', { title: s.action.title }); link.setAttribute('href', '/action/' + s.action.slug); }
+      else { act.textContent = copyText('story-action', { title: s.action.title }); act.className = 'hf-story-meta'; }
+    } else drop(act);
+    var rep = c.querySelector('[data-hf-act="report"]');
+    if (rep) rep.setAttribute('data-story-id', String(s.id));
+    return c;
+  }
+  /** Fills a stories area: uploaded videos in their grid, then the rest. */
+  function fillStories(clips, list, stories, withAction) {
+    if (clips) clips.innerHTML = '';
+    if (list) list.innerHTML = '';
+    stories.forEach(function (s) {
+      var card = storyCard(s, withAction);
+      if (!card) return;
+      if (s.clip && clips) clips.appendChild(card); else if (list) list.appendChild(card);
+    });
   }
 
   // A group's line: "3 of you are in: Ana, Ben + 1 more" (private to the group, so from 1).
@@ -341,66 +385,60 @@
   window.HFP.drawCard = drawCard;
   window.HFP.cardLine = cardLine;
 
-  /** The share panel under the win: preview, "add my first name", share or download. */
-  function sharePanel(where, o) {
-    var old = $('hfp-proof'); if (old) old.remove();
-    var box = el('div', { id: 'hfp-proof', class: 'hfp-proof' });
-    var img = el('img', { class: 'hfp-proof-img', alt: '' });
-    var nameBox = null;
-    var msg = status();
-    var blob = null;
-    async function paint() {
-      try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
-      var line = cardLine(o.who, nameBox && nameBox.checked ? o.name : null);
-      var c = drawCard({ line: line, title: o.title });
-      if (!c) { box.style.display = 'none'; return line; }
-      img.alt = line;
-      img.src = c.toDataURL('image/png');
-      blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
-      return line;
-    }
-    var url = location.origin + '/action/' + o.slug + (o.ref ? '?r=' + o.ref : '');
-    var go = el('button', { type: 'button', class: 'hf-button', text: copyText('card-share') });
-    var save = el('a', { class: 'hf-button-light', href: '#', text: copyText('card-download'), download: 'happiness-' + o.slug + '.png' });
-    go.addEventListener('click', async function () {
-      var line = await paint();
-      var file = blob && window.File ? new File([blob], 'happiness-' + o.slug + '.png', { type: 'image/png' }) : null;
-      var data = { files: file ? [file] : [], text: copyText('card-share-text', { line: line, url: url }), url: url };
-      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-        try { await navigator.share(data); } catch (e) {}
-      } else {
-        save.click();
-      }
-    });
-    save.addEventListener('click', async function (e) {
-      if (save.getAttribute('data-ready')) return;
-      e.preventDefault();
-      await paint();
-      save.href = URL.createObjectURL(blob);
-      save.setAttribute('data-ready', '1');
-      save.click();
-      setTimeout(function () { save.removeAttribute('data-ready'); }, 1000);
-      msg.textContent = copyText('card-hint');
-    });
-    box.appendChild(img);
-    if (o.name) {
-      nameBox = el('input', { type: 'checkbox', id: 'hfp-proof-name' });
-      nameBox.addEventListener('change', paint);
-      box.appendChild(el('label', { class: 'hfp-proof-name', for: 'hfp-proof-name' }, [nameBox, ' ' + copyText('card-add-name')]));
-    }
-    var canFiles = false;
-    try { canFiles = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] })); } catch (e) {}
-    box.appendChild(el('div', { class: 'hfp-row' }, canFiles ? [go, save] : [save]));
-    if (!canFiles) msg.textContent = copyText('card-hint');
-    box.appendChild(msg);
-    where.appendChild(box);
-    paint().catch(function () { box.style.display = 'none'; });
-  }
-
   // ---------------------------------------------------------------------------
   // Your ripple: you in the middle, a ring per generation, a dot per action
   // done (titles only, never names). Tap or focus a dot to see the action.
+  // The headline, caption and notes around it are built in Webflow; only the
+  // picture is drawn here.
   // ---------------------------------------------------------------------------
+  function rippleSvg(view, onPick) {
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    function s(tag, attrs) { var e = document.createElementNS(SVGNS, tag); Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); }); return e; }
+    var rings = (view && view.rings) || [];
+    var reached = (view && view.reached) || 0;
+    var size = 360, c = size / 2;
+    // Only as big as the rings drawn, so a first ripple isn't lost in empty space.
+    var reach = 36 + Math.max(rings.length, 1) * 28 + 12;
+    var svg = s('svg', { viewBox: (c - reach) + ' ' + (c - reach) + ' ' + reach * 2 + ' ' + reach * 2, width: Math.round(reach * 2.2), role: 'img', 'aria-label': copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached }) });
+    svg.style.maxWidth = '100%';
+    svg.style.height = 'auto';
+    var shown = Math.max(rings.length, 1);
+    for (var k = 1; k <= shown; k++) svg.appendChild(s('circle', { cx: c, cy: c, r: 36 + k * 28, fill: 'none', stroke: 'var(--colour--pale-blue, #cfe0f2)', 'stroke-width': 1.5 }));
+    rings.forEach(function (ring, i) {
+      var r = 36 + (i + 1) * 28, n = ring.dots.length, turn = i * 0.37;
+      ring.dots.forEach(function (title, j) {
+        var a = turn + (j / Math.max(n, 1)) * Math.PI * 2;
+        var dot = s('circle', { cx: (c + r * Math.cos(a)).toFixed(1), cy: (c + r * Math.sin(a)).toFixed(1), r: i === 0 ? 7 : 5.5, fill: i === 0 ? 'var(--colour--deep-blue, #2e5e8e)' : i % 2 ? 'var(--colour--brand-blue, #69c)' : 'var(--colour--light-blue, #9ec0e3)', tabindex: '0', role: 'button', 'aria-label': title, style: 'cursor:pointer;outline-offset:2px' });
+        var t = s('title'); t.textContent = title; dot.appendChild(t);
+        dot.addEventListener('click', function () { onPick(title); });
+        dot.addEventListener('focus', function () { onPick(title); });
+        svg.appendChild(dot);
+      });
+    });
+    svg.appendChild(s('circle', { cx: c, cy: c, r: 26, fill: 'var(--colour--deep-blue, #2e5e8e)' }));
+    var you = s('text', { x: c, y: c + 5, 'text-anchor': 'middle', fill: '#fff', 'font-size': 15, 'font-weight': 700 });
+    you.textContent = copyText('ripple-you');
+    svg.appendChild(you);
+    return svg;
+  }
+  /** Fills a Webflow-built ripple area (headline, picture slot, caption, notes). */
+  function drawRipple(P, view) {
+    var rings = (view && view.rings) || [];
+    var reached = (view && view.reached) || 0;
+    P.fill('ripple-h', copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached.toLocaleString() }));
+    P.fill('ripple-caption', rings.length ? copyText('ripple-tap') : '');
+    var slot = P.slot('ripple');
+    if (slot) {
+      slot.innerHTML = '';
+      slot.appendChild(rippleSvg(view, function (t) { P.fill('ripple-caption', t); }));
+    }
+    var more = rings.map(function (r, i) { return r.marks > r.dots.length ? copyText('ripple-more', { n: (r.marks - r.dots.length).toLocaleString(), ring: i + 1 }) : ''; }).filter(Boolean);
+    P.fill('ripple-more', more.join(' · '));
+    P.show('ripple-more', more.length > 0);
+    P.show('ripple-hint', rings.length <= 1);
+  }
+
+  // Account (until its ripple card is built in Webflow): the same picture in a script-made box.
   function rippleViz(view, opts) {
     opts = opts || {};
     var SVGNS = 'http://www.w3.org/2000/svg';
@@ -441,125 +479,58 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Action page
+  // Action page. The buttons, messages, invite forms, win card, share card,
+  // ripple and stories area are all built in the Action template in Webflow.
+  // Which main button shows (Do this with me or I did this) is set natively from
+  // the action's two automatic switches.
   // ---------------------------------------------------------------------------
   async function actionPage() {
-    var btn = $('hf-did-this');
-    if (!btn || btn.getAttribute('data-hfp')) return;
-    btn.setAttribute('data-hfp', '1');
+    var row = document.querySelector('[data-hf-row="action"]');
+    if (!row || row.getAttribute('data-hfp')) return;
+    row.setAttribute('data-hfp', '1');
+    var P = partsOf(row.closest('section') || document.body);
+    var D = partsOf(document.body);
     var slug = slugFromPath();
-    var msg = $('hf-did-msg') || status();
-    var prompt = $('hf-signup-prompt');
-    msg.setAttribute('role', 'status');
-    msg.setAttribute('aria-live', 'polite');
-    btn.setAttribute('role', 'button');
-
-    var count = el('p', { class: 'hfp-muted', style: 'display:none;margin:20px 0 0;font-weight:500' });
-    var group = el('p', { class: 'hfp-group', style: 'display:none' });
-    var row = el('div', { class: 'hfp-row' });
-    btn.parentNode.insertBefore(count, btn);
-    btn.parentNode.insertBefore(row, btn);
-    row.appendChild(btn);
-    var save = el('button', { type: 'button', class: 'hf-button-light', 'aria-pressed': 'false', text: copyText('action-save') });
-    var withMe = el('button', { type: 'button', class: 'hf-button-light', style: 'display:none', text: copyText('action-with-me') });
-    var story = el('a', { class: 'hf-button-light', style: 'display:none', href: '/share-your-story?action=' + encodeURIComponent(slug), text: copyText('story-share') });
-    row.appendChild(save);
-    row.appendChild(withMe);
-    row.insertAdjacentElement('afterend', group);
-    row.appendChild(story);
-    var undo = el('button', { type: 'button', class: 'hfp-link hfp-small', style: 'display:none', text: copyText('action-undo') });
-    msg.insertAdjacentElement('afterend', undo);
-    var together = el('p', { class: 'hfp-muted', style: 'display:none' });
-    undo.insertAdjacentElement('afterend', together);
-    var shareNote = status();
-    var shareLine = el('p', { class: 'hfp-muted hfp-small', style: 'display:none', text: copyText('action-invite-hint') });
-    together.insertAdjacentElement('afterend', shareLine);
-    shareLine.insertAdjacentElement('afterend', shareNote);
-    var card = el('div', { class: 'hfp-card', style: 'display:none' });
-    shareNote.insertAdjacentElement('afterend', card);
-    // Try before sign-up: marks made signed out are kept on this device until an account keeps them.
-    var keep = el('p', { class: 'hfp-muted hfp-small', style: 'display:none' });
-    card.insertAdjacentElement('afterend', keep);
-    function keepButtons() {
-      var up = el('button', { type: 'button', class: 'hf-button', text: copyText('action-keep-signup') });
-      up.addEventListener('click', function () { if (HF.signup) HF.signup(); else HF.signin(); });
-      var inn = el('button', { type: 'button', class: 'hfp-link', text: copyText('action-keep-signin') });
-      inn.addEventListener('click', function () { HF.signin(); });
-      return el('div', { class: 'hfp-row' }, [up, inn]);
-    }
-    var lead = document.querySelector('.hf-lead');
-    var suggested = el('p', { class: 'hfp-muted hfp-small', style: 'display:none' });
-    if (lead) lead.insertAdjacentElement('afterend', suggested);
+    var msg = $('hf-did-msg');
+    var shareNote = P.one('[data-hf-fill="share-note"]');
+    var noteBox = P.one('[data-hf-field="note"]');
+    var composeForm = P.one('[data-hf-form="compose"]');
+    var nameForm = P.one('[data-hf-form="ask-name"]');
+    var nameBox = P.one('[data-hf-field="first-name"]');
+    var stories = D.one('[data-hf-show="stories"]');
 
     await wait(function () { return window.HFB && window.HF; }, 10000);
     var st = {};
     var id = null;
+    var won = false;
 
     function render() {
-      var me = st.me;
-      if (st.count) { count.textContent = copyText('action-count', { n: st.count.toLocaleString() }); count.style.display = ''; } else count.style.display = 'none';
-      if (st.suggestedBy) { suggested.textContent = copyText('action-suggested', { name: st.suggestedBy }); suggested.style.display = ''; }
-      withMe.style.display = st.canDoWithOthers ? '' : 'none';
-      // Group-friendly actions: "Do this with me" comes first; "I did this" second.
-      if (st.canDoWithOthers && withMe.className !== 'hf-button') {
-        withMe.className = 'hf-button';
-        btn.classList.remove('hf-button');
-        btn.classList.add('hf-button-light');
-        row.insertBefore(withMe, row.firstChild);
-      }
+      var me = st.me || null;
+      P.fill('count', st.count ? copyText('action-count', { n: st.count.toLocaleString() }) : '');
+      P.show('count', !!st.count);
+      D.fill('suggested', st.suggestedBy ? copyText('action-suggested', { name: st.suggestedBy }) : '');
+      D.show('suggested', !!st.suggestedBy);
       var g = me && me.group;
-      if (g) { group.textContent = groupLine(g); group.style.display = ''; } else group.style.display = 'none';
-      shareLine.style.display = st.canDoWithOthers ? '' : 'none';
-      save.textContent = copyText(me && me.liked ? 'action-saved' : 'action-save');
-      save.setAttribute('aria-pressed', me && me.liked ? 'true' : 'false');
-      if (me && me.done) {
-        btn.textContent = copyText('action-did-again');
-        btn.setAttribute('aria-disabled', 'false');
-        msg.textContent = copyText(me.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: me.tally });
-        story.style.display = me.guest ? 'none' : '';
-        story.textContent = copyText(me.story ? 'story-edit' : 'story-share');
-        if (me.guest && card.style.display === 'none') {
-          keep.innerHTML = '';
-          keep.appendChild(document.createTextNode(copyText('action-keep-text') + ' '));
-          var k = el('button', { type: 'button', class: 'hfp-link', text: copyText('action-keep-signup') });
-          k.addEventListener('click', function () { if (HF.signup) HF.signup(); else HF.signin(); });
-          keep.appendChild(k);
-          keep.style.display = '';
-        } else keep.style.display = 'none';
-        undo.style.display = me.canUndo ? '' : 'none';
-        if (me.doneWith && me.doneWith.length) { together.textContent = copyText('action-together', { names: me.doneWith.join(', ') }); together.style.display = ''; } else together.style.display = 'none';
-      } else {
-        btn.textContent = copyText('action-did');
-        btn.setAttribute('aria-disabled', 'false');
-        story.style.display = 'none';
-        keep.style.display = 'none';
-        undo.style.display = 'none';
-        together.style.display = 'none';
-      }
-    }
-
-    function showCard(ripple, guest, data) {
-      data = data || {};
-      card.innerHTML = '';
-      card.appendChild(el('p', { class: 'hf-drop-label', text: copyText('action-card-label') }));
-      card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: copyText('action-card-headline') }));
-      if (data.rippleView) card.appendChild(rippleViz(data.rippleView, { small: true }));
-      else if (ripple > 0) card.appendChild(el('p', { text: copyText('ripple', { n: ripple }) }));
-      // Shareable proof, anonymous unless they add their first name.
-      sharePanel(card, { who: st.cardWho || data.cardWho || null, title: st.title, slug: st.slug, ref: data.refCode, name: st.me && st.me.name });
-      if (guest) {
-        // The win first; then a soft ask to keep it. Never a wall.
-        keep.style.display = 'none';
-        card.appendChild(el('h3', { class: 'hfp-keep-title', text: copyText('action-keep-title') }));
-        card.appendChild(el('p', { class: 'hfp-muted', text: copyText('action-keep-text') }));
-        card.appendChild(keepButtons());
-        card.style.display = '';
-        return;
-      }
-      var pass = el('button', { type: 'button', class: 'hf-button', text: copyText('action-pass') });
-      pass.addEventListener('click', function () { compose(id, 'pass_it_on', card, shareNote); });
-      card.appendChild(el('div', { class: 'hfp-row' }, [pass]));
-      card.style.display = '';
+      P.fill('group', g ? groupLine(g) : '');
+      P.show('group', !!g);
+      P.show('save', true);
+      P.acts('save').forEach(function (b) {
+        b.textContent = copyText(me && me.liked ? 'action-saved' : 'action-save');
+        b.setAttribute('aria-pressed', me && me.liked ? 'true' : 'false');
+      });
+      var done = !!(me && me.done);
+      P.acts('done').forEach(function (b) { b.textContent = copyText(done ? 'action-did-again' : 'action-did'); });
+      P.acts('story').forEach(function (b) {
+        b.textContent = copyText(me && me.story ? 'story-edit' : 'story-share');
+        b.setAttribute('href', '/share-your-story?action=' + encodeURIComponent(slug));
+      });
+      P.show('story', done && !me.guest);
+      P.show('undo', done && me.canUndo);
+      P.fill('together', done && me.doneWith && me.doneWith.length ? copyText('action-together', { names: me.doneWith.join(', ') }) : '');
+      P.show('together', !!(done && me.doneWith && me.doneWith.length));
+      if (done && !won) say(msg, copyText(me.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: me.tally }));
+      // Kept on this device until an account keeps it (once the win card has gone).
+      P.show('keep-line', done && me.guest && !won);
     }
 
     async function load() {
@@ -568,72 +539,155 @@
       st = r.data;
       id = st.actionId;
       render();
-      renderStories(st.stories || []);
+      var list = st.stories || [];
+      if (stories) {
+        var S = partsOf(stories);
+        fillStories(S.slot('clips'), S.slot('stories'), list, false);
+        D.show('stories', list.length > 0);
+      }
     }
 
-    var storiesBox = null;
-    function renderStories(list) {
-      if (!list.length) { if (storiesBox) storiesBox.remove(); storiesBox = null; return; }
-      if (!storiesBox) {
-        storiesBox = el('section', { 'aria-labelledby': 'hfp-stories-h' });
-        var section = btn.closest('section') || row.parentNode;
-        section.insertAdjacentElement('afterend', storiesBox);
-      }
-      storiesBox.innerHTML = '';
-      storiesBox.appendChild(el('h2', { id: 'hfp-stories-h', text: copyText('action-stories-h') }));
-      var clipList = list.filter(function (s) { return s.clip; });
-      if (clipList.length) {
-        var grid = el('div', { class: 'hfp-clip-grid' });
-        clipList.forEach(function (s) { grid.appendChild(storyCard(s, false)); });
-        storiesBox.appendChild(grid);
-      }
-      list.filter(function (s) { return !s.clip; }).forEach(function (s) { storiesBox.appendChild(storyCard(s, false)); });
+    // --- The win: ripple, share card, pass it on or keep it -------------------
+    var proof = null;
+    function showWin(data) {
+      won = true;
+      var guest = !!data.guest;
+      if (data.rippleView) drawRipple(P, data.rippleView);
+      P.show('ripple', !!data.rippleView);
+      proof = { who: st.cardWho || data.cardWho || null, title: st.title, slug: st.slug, ref: data.refCode, name: st.me && st.me.name };
+      paintProof();
+      P.show('pass', !guest);
+      P.show('keep', guest);
+      P.show('keep-line', false);
+      P.show('win', true);
     }
 
-    // Signed out: straight to sign-in. The click is remembered and finished
-    // after sign-in, back on this action.
+    // Shareable proof: drawn in the browser; shared with the phone's share sheet or downloaded.
+    var proofBlob = null;
+    var proofName = P.one('[data-hf-field="proof-name"]');
+    var canFiles = false;
+    try { canFiles = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] })); } catch (e) {}
+    async function paintProof() {
+      if (!proof) return null;
+      try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+      var line = cardLine(proof.who, proofName && proofName.checked ? proof.name : null);
+      var c = drawCard({ line: line, title: proof.title });
+      P.show('proof-name', !!proof.name);
+      P.show('card-share', canFiles);
+      P.show('card-hint', !canFiles);
+      if (!c) { P.show('proof', false); return line; }
+      var slot = P.slot('proof');
+      var img = slot && slot.querySelector('img');
+      if (slot && !img) { img = document.createElement('img'); img.className = 'hf-fill-media'; slot.appendChild(img); }
+      if (img) { img.alt = line; img.src = c.toDataURL('image/png'); }
+      proofBlob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      P.show('proof', true);
+      return line;
+    }
+    if (proofName) proofName.addEventListener('change', paintProof);
+    function proofUrl() { return location.origin + '/action/' + proof.slug + (proof.ref ? '?r=' + proof.ref : ''); }
+    P.on('card-share', async function () {
+      var line = await paintProof();
+      var file = proofBlob && window.File ? new File([proofBlob], 'happiness-' + proof.slug + '.png', { type: 'image/png' }) : null;
+      var data = { files: file ? [file] : [], text: copyText('card-share-text', { line: line, url: proofUrl() }), url: proofUrl() };
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) { try { await navigator.share(data); } catch (e) {} }
+    });
+    P.on('card-download', async function (b) {
+      await paintProof();
+      if (!proofBlob) return;
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(proofBlob);
+      a.download = 'happiness-' + proof.slug + '.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+
+    // --- Invites: a short note, then the share sheet ---------------------------
+    var inviteKind = 'with_me';
+    function openCompose(kind) {
+      inviteKind = kind;
+      if (noteBox) {
+        noteBox.setAttribute('maxlength', '280');
+        noteBox.setAttribute('placeholder', copyText(kind === 'with_me' ? 'note-example-with' : 'note-example-pass'));
+        P.fill('note-left', copyText('note-left', { n: 280 - noteBox.value.length }));
+      }
+      var go = composeForm && composeForm.querySelector('[type=submit]');
+      if (go) go.value = copyText(kind === 'with_me' ? 'note-share-invite' : 'note-share');
+      P.show('compose', true);
+      if (noteBox) noteBox.focus();
+    }
+    if (noteBox) noteBox.addEventListener('input', function () { P.fill('note-left', copyText('note-left', { n: 280 - noteBox.value.length })); });
+    P.on('compose-cancel', function () { P.show('compose', false); });
+    async function sendInvite() {
+      var r = await HFB.call('/api/invites', { method: 'POST', body: { actionId: id, kind: inviteKind, note: noteBox ? noteBox.value : '' } });
+      if (r.status === 409 && r.data && r.data.error === 'need_first_name') {
+        P.show('ask-name', true);
+        if (nameBox) nameBox.focus();
+        return false;
+      }
+      if (!r.ok) { say(shareNote, msgOf(r), true); return false; }
+      P.show('compose', false);
+      await share({ title: document.title, text: r.data.text, url: r.data.url }, shareNote);
+      return true;
+    }
+    nativeForm(composeForm, async function () {
+      var go = composeForm.querySelector('[type=submit]');
+      setBusy(go, true);
+      await sendInvite();
+      setBusy(go, false);
+    });
+    nativeForm(nameForm, async function () {
+      var go = nameForm.querySelector('[type=submit]');
+      setBusy(go, true);
+      var r = await HFB.call('/api/me/settings', { method: 'PATCH', body: { firstName: nameBox ? nameBox.value : '' } });
+      setBusy(go, false);
+      if (!r.ok) { say(shareNote, msgOf(r), true); return; }
+      P.show('ask-name', false);
+      sendInvite();
+    });
+
+    // Signed out: Save goes to sign-in, and is finished after sign-in, back here.
     function ask(kind) {
-      msg.textContent = copyText(kind === 'like' ? 'action-signin-save' : 'action-signin-done');
+      say(msg, copyText(kind === 'like' ? 'action-signin-save' : 'action-signin-done'));
       HFB.requireSignIn({ kind: kind, actionId: id });
     }
 
     var busy = false;
-    btn.addEventListener('click', async function (e) {
-      e.preventDefault();
-      if (busy || !id || btn.getAttribute('aria-disabled') === 'true') return;
+    P.on('done', async function (b) {
+      if (busy || !id) return;
       busy = true;
-      btn.setAttribute('aria-busy', 'true');
+      setBusy(b, true);
       // Signed out, this is saved on this device (try before sign-up).
       var r = await HFB.call('/api/actions/' + id + '/done', { method: 'POST', guest: true, headers: { 'X-HF-Ref': HFB.ref ? HFB.ref() : null } });
       busy = false;
-      btn.removeAttribute('aria-busy');
+      setBusy(b, false);
       if (r.ok) {
-        showCard(r.data.ripple || 0, r.data.guest, r.data);
+        say(msg, copyText(r.data.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: r.data.tally }));
+        showWin(r.data);
         window.dispatchEvent(new Event('hf-done'));
         await load();
       } else if (r.status === 401) ask('done');
-      else msg.textContent = msgOf(r);
+      else say(msg, msgOf(r), true);
     });
 
-    undo.addEventListener('click', async function () {
+    P.on('undo', async function (b) {
       if (!id) return;
-      undo.disabled = true;
+      setBusy(b, true);
       var r = await HFB.call('/api/actions/' + id + '/done', { method: 'DELETE' });
-      undo.disabled = false;
-      if (r.ok) {
-        card.style.display = 'none';
-        keep.style.display = 'none';
-        await load();
-        // The message tells the new total (none left: just "Undone.").
-        var n = r.data && r.data.tally;
-        var left = n ? copyText(n === 1 ? 'action-tally-one' : 'action-tally-many', { n: n }) : '';
-        msg.textContent = copyText('action-undone', { message: left }).trim();
-      }
-      else msg.textContent = msgOf(r);
+      setBusy(b, false);
+      if (!r.ok) return say(msg, msgOf(r), true);
+      won = false;
+      P.show('win', false);
+      await load();
+      // The message tells the new total (none left: just "Undone.").
+      var n = r.data && r.data.tally;
+      var left = n ? copyText(n === 1 ? 'action-tally-one' : 'action-tally-many', { n: n }) : '';
+      say(msg, copyText('action-undone', { message: left }).trim());
     });
 
     var lbusy = false;
-    save.addEventListener('click', async function () {
+    P.on('save', async function (b) {
       if (lbusy || !id) return;
       if (!signedIn()) return ask('like');
       lbusy = true;
@@ -642,14 +696,20 @@
       lbusy = false;
       if (r.ok) { st.me = Object.assign({}, st.me, { liked: want }); render(); }
       else if (r.status === 401) ask('like');
-      else msg.textContent = msgOf(r);
+      else say(msg, msgOf(r), true);
     });
 
-    withMe.addEventListener('click', function () {
+    P.on('with-me', function () {
       if (!id) return;
       if (!signedIn()) return HFB.requireSignIn({ kind: 'return', actionId: id });
-      compose(id, 'with_me', withMe.parentNode, shareNote);
+      openCompose('with_me');
     });
+    P.on('pass', function () {
+      if (!signedIn()) return HFB.requireSignIn({ kind: 'return', actionId: id });
+      openCompose('pass_it_on');
+    });
+    D.on('signup', function () { if (HF.signup) HF.signup(); else HF.signin(); });
+    D.on('signin', function () { HF.signin(); });
 
     document.addEventListener('hfb:resumed', function () { load(); });
     // Back from sharing an invite: the group may have grown.
@@ -1491,44 +1551,8 @@
     await render();
   }
 
-  // ---------------------------------------------------------------------------
-  // Stories page: newest first, 20 at a time, with players and report links
-  // ---------------------------------------------------------------------------
-  async function storiesPage() {
-    if (location.pathname !== '/stories') return;
-    var native = document.querySelector('.w-dyn-list');
-    await wait(function () { return window.HFB; }, 10000);
-    var rv = await HFB.call('/api/stories?videos=1', { auth: false });
-    var clips = rv.ok ? rv.data.stories : [];
-    var r = await HFB.call('/api/stories?page=1&videos=0', { auth: false });
-    if (!r.ok || (!r.data.stories.length && !clips.length)) return;
-    var box = el('div', { id: 'hfp-stories' });
-    if (clips.length) {
-      var grid = el('div', { class: 'hfp-clip-grid' });
-      clips.forEach(function (s) { grid.appendChild(storyCard(s, true)); });
-      box.appendChild(el('section', { 'aria-labelledby': 'hfp-clips-h' }, [el('h2', { id: 'hfp-clips-h', text: copyText('stories-videos-h') }), grid]));
-    }
-    var more = el('button', { type: 'button', class: 'hf-button-light', text: copyText('stories-more') });
-    var page = 1;
-    function add(list) { list.forEach(function (s) { box.appendChild(storyCard(s, true)); }); more.style.display = list.length === 20 ? '' : 'none'; }
-    add(r.data.stories);
-    more.addEventListener('click', async function () {
-      page++;
-      var rr = await HFB.call('/api/stories?videos=0&page=' + page, { auth: false });
-      if (rr.ok) add(rr.data.stories);
-    });
-    if (native) { native.parentNode.insertBefore(box, native); native.style.display = 'none'; }
-    else document.querySelector('h1').insertAdjacentElement('afterend', box);
-    box.insertAdjacentElement('afterend', el('div', { class: 'hfp-row' }, [more]));
-  }
-
-  // Stories template page (/stories/story-12): report link.
-  function storyItemPage() {
-    var m = /^\/stories\/story-(\d+)$/.exec(location.pathname);
-    if (!m || $('hfp-report')) return;
-    var target = document.querySelector('.hf-story') || document.querySelector('h1');
-    if (target) { var r = reportLink(m[1]); r.id = 'hfp-report'; target.appendChild(r); }
-  }
+  // /stories and each story's page are rendered by Webflow from the CMS (newest
+  // first, 20 a page); only their uploaded videos and report links need this script.
 
   // ---------------------------------------------------------------------------
   // /actions: "Most done"
@@ -1997,12 +2021,11 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, storiesPage, mostDone, weeklyDare];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, mostDone, weeklyDare, cmsClips];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }
     });
-    try { storyItemPage(); } catch (e) {}
   }
   // Start once the page and the interface text are there
   // (and Memberstack, which says who is signed in).

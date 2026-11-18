@@ -7,7 +7,7 @@ import type { Member } from '../identity';
 import * as webflow from '../webflow';
 import { enqueue } from '../queue';
 import { forgetDrops } from './drops';
-import { rowFromItem, upsertStatement } from './actions';
+import { buttonSwitchFixes, rowFromItem, upsertStatement } from './actions';
 import { draftActionDeleted, notifySuggestionsLive, reviewItem } from './review';
 import { REAL_MEMBER } from './guests';
 import { dareWarnings } from './dare';
@@ -62,7 +62,7 @@ export async function handleWebflowWebhook(env: Env, deps: Deps, body: Record<st
       if (!(await webflow.getItem(env, deps, CMS.actions.id, itemId))) await draftActionDeleted(env, deps, itemId);
       return { ok: true, action: itemId, live: false };
     }
-    await upsertStatement(env, rowFromItem(item, now)).run();
+    await env.DB.batch([upsertStatement(env, rowFromItem(item, now)), ...buttonSwitchFixes(env, deps, [item])]);
     await notifySuggestionsLive(env, deps, baseUrl);
     return { ok: true, action: itemId, live: true };
   }

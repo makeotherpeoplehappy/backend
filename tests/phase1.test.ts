@@ -87,9 +87,9 @@ describe('Check 1: a call with a forged or expired token is refused', () => {
     expect(evil.status).toBe(403);
     const none = await h.request('GET', `/api/actions/${actionA}/state`, { origin: null });
     expect(none.status).toBe(403);
-    const ok = await h.request('GET', `/api/actions/${actionA}/state`, { origin: 'https://happiness.foundation' });
+    const ok = await h.request('GET', `/api/actions/${actionA}/state`, { origin: 'https://www.makeotherpeoplehappy.com' });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Access-Control-Allow-Origin')).toBe('https://happiness.foundation');
+    expect(ok.headers.get('Access-Control-Allow-Origin')).toBe('https://www.makeotherpeoplehappy.com');
   });
 });
 

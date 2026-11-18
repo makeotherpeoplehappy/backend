@@ -57,7 +57,7 @@ Six things must exist before any code can be deployed. The accounts and keys are
 - [ ] A Webflow Cloud app created from the Happiness Foundation site settings and connected to that repository.
 - [ ] A Shopify app with read access to customers, orders, products and inventory, and write access to customers. Its key is stored in the Webflow Cloud app's settings.
 - [ ] A Webflow API token for the site with CMS read and write access, stored the same way.
-- [ ] An email sending service set up on the happiness.foundation domain. Webflow Cloud does not send email itself, as far as we know.
+- [ ] An email sending service set up on the makeotherpeoplehappy.com domain. Webflow Cloud does not send email itself, as far as we know.
 - [ ] Two environments: Test (the webflow.io site) and live, each with its own database, so test entries never reach the real site.
 
 Webflow Cloud provides the three kinds of storage this build needs: A SQLite database for records, a key-value store for cached counts, and object storage for photos. Its cost at this usage and any plan limits have not been checked.
@@ -66,7 +66,7 @@ Webflow Cloud provides the three kinds of storage this build needs: A SQLite dat
 
 - Webflow Cloud is available on the workspace, and the GitHub account is connected.
 - The Webflow Cloud app "backend" exists on the site, connected to github.com/makeotherpeoplehappy/backend. Its live environment maps the branch main to the path /join, at happiness-foundation.webflow.io/join. The repository holds no app code yet, so there is no working deployment.
-- The app is attached to the site and served from a path on the same domain. Use `/join`, so the site and the backend share one domain. It was chosen over a plain data path because invite links are served by the backend and people see the path in every link they share: happiness.foundation/join/k3x9. Data calls from the site use the same path.
+- The app is attached to the site and served from a path on the same domain. Use `/join`, so the site and the backend share one domain. It was chosen over a plain data path because invite links are served by the backend and people see the path in every link they share: www.makeotherpeoplehappy.com/join/k3x9. Data calls from the site use the same path.
 - Keys and other secret values cannot be set through the Webflow connector. They are entered in the Webflow Cloud app's settings or with the Webflow command-line tool.
 - Each environment maps one Git branch to one path. Use `main` for live and a `test` branch for the test site.
 

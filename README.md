@@ -53,10 +53,10 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `SHOPIFY_ADMIN_API_VERSION` | no | Optional, default `2026-07` |
 | `SHOPIFY_STOREFRONT_TOKEN` | for the shop | Private Storefront API token of the **Happiness Foundation Headless** channel (Shopify admin › Headless › Storefront API). Makes checkouts; without it Buy says the shop is not open yet. The Shopify app needs the scopes `read_publications` and `write_publications` too (Dev Dashboard, released in backend-3) |
 | `WEBFLOW_API_TOKEN` | yes | Site API token with CMS read and write |
-| `RESEND_API_KEY` | yes | Resend API key for happiness.foundation (sending access only) |
+| `RESEND_API_KEY` | yes | Resend API key for makeotherpeoplehappy.com (sending access only) |
 | `MEMBERSTACK_SECRET_KEY` | yes | Memberstack secret key (`sk_sb_…` in test mode, `sk_…` live): checks member sign-ins |
 | `MEMBERSTACK_WEBHOOK_SECRET` | yes | Signing secret of the Memberstack webhook (`whsec_…`), endpoint `/join/api/memberstack/webhook` (events: member updated, member deleted) |
-| `EMAIL_FROM` | no | e.g. `Happiness Foundation <team@happiness.foundation>` |
+| `EMAIL_FROM` | no | e.g. `Happiness Foundation <team@makeotherpeoplehappy.com>` |
 | `ERROR_EMAIL_TO` | no | Where error reports go |
 | `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key |
 | `JOBS_SECRET` | yes | Long random string; the 5-minute timer sends it |
@@ -95,6 +95,14 @@ fulfilment; Memberstack keeps members (there are no Shopify customer logins).
 - **A drop** is a Shopify collection with a **Drop date** (collection field
   `custom.drop_date`). Its pieces are its products; each piece's size is its
   **Edition size** (`custom.edition_size`).
+- **The home page hero** leads with the newest drop once it has a **Hero photo**
+  (collection field `custom.hero_image`, a file). Also on the collection:
+  **Hero headline** (`custom.hero_headline`; mark the accent word with asterisks,
+  e.g. `Happiness is felt by making other people *happy*.`) and **Lead piece**
+  (`custom.lead_product`; else the collection's first product). The copy also
+  carries the drop's pieces and **sold out** (every piece counted, none left);
+  orders, cancellations and refunds queue a copy so it follows stock. Until a drop
+  has a hero photo, and once it is sold out, the home page shows its usual hero.
 - **Early access:** Active members can buy `EARLY_ACCESS_HOURS` (24) before the drop
   date, one of each piece; everyone else from the drop date. Each upcoming drop's
   products are scheduled in Shopify to publish when early access opens (needs the

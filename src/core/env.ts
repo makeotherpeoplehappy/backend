@@ -26,7 +26,7 @@ export interface Env {
   WEBFLOW_API_TOKEN: string;
 
   RESEND_API_KEY: string;
-  /** e.g. Happiness Foundation <team@happiness.foundation> */
+  /** e.g. Happiness Foundation <team@makeotherpeoplehappy.com> (a domain verified in Resend) */
   EMAIL_FROM: string;
   /** Where error reports go. */
   ERROR_EMAIL_TO: string;
@@ -72,13 +72,17 @@ export function missingEnv(env: Partial<Env>): string[] {
   return missing;
 }
 
+/** The site's own addresses: always allowed, whatever ALLOWED_ORIGINS says. */
+export const SITE_ORIGINS = ['https://www.makeotherpeoplehappy.com', 'https://makeotherpeoplehappy.com'];
+
 export function allowedOrigins(env: Env): Set<string> {
-  return new Set(
-    (env.ALLOWED_ORIGINS || '')
+  return new Set([
+    ...SITE_ORIGINS,
+    ...(env.ALLOWED_ORIGINS || '')
       .split(',')
       .map((s) => s.trim().replace(/\/$/, ''))
       .filter(Boolean),
-  );
+  ]);
 }
 
 /** Things the app needs from the outside world, swappable in tests. */

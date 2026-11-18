@@ -19,6 +19,8 @@ export interface FakeCustomer {
   email: string | null;
   /** Memberstack: whether the member's email is verified (default true). */
   verified?: boolean;
+  /** Memberstack: the member's profile photo address. */
+  profileImage?: string | null;
   actionsTaken?: string; // raw metafield JSON
   actionVotes?: string;
 }
@@ -137,7 +139,7 @@ export class FakeServices {
       const m = /^\/members\/([^/]+)$/.exec(url.pathname);
       if (m && method === 'GET') {
         const c = [...this.tokens.values()].find((x) => x.id === decodeURIComponent(m[1]));
-        return j({ data: c ? { id: c.id, verified: c.verified ?? true, auth: { email: c.email }, customFields: c.firstName ? { 'first-name': c.firstName } : {} } : null });
+        return j({ data: c ? { id: c.id, verified: c.verified ?? true, auth: { email: c.email }, customFields: c.firstName ? { 'first-name': c.firstName } : {}, profileImage: c.profileImage ?? null } : null });
       }
     }
 

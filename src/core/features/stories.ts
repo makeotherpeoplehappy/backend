@@ -4,7 +4,7 @@
 import { CMS } from '../config';
 import type { Deps, Env } from '../env';
 import { HttpError, base64url, iso } from '../http';
-import type { Member } from '../identity';
+import { memberstackPhoto, type Member } from '../identity';
 import { enqueue } from '../queue';
 import { consumeDaily, refundDaily } from '../safety';
 import { getAction } from './actions';
@@ -198,6 +198,10 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
   for (const id of withIds) if (!allowed.has(id)) throw new HttpError(400, 'invalid_with', 'err-invalid-with');
 
   const now = iso(deps.now());
+  // The byline avatar: only for a story shared under the member's name, from their profile photo
+  // as it is now (it is copied into Webflow), or else the first letter of the name.
+  const shown = showName && name ? name : '';
+  const authorPhoto = shown ? await memberstackPhoto(env, deps, member.account_id) : null;
   const fieldData: Record<string, unknown> = {
     name: `${showName && name ? name : 'A member'}: ${action.title}`.slice(0, 256),
     story: text,
@@ -208,6 +212,8 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
     status: CMS.stories.status.new,
     photo: photoKey ? { url: `${baseUrl}/media/${photoKey}`, alt: description } : null,
     video: video && (video.provider === 'youtube' || video.provider === 'vimeo') ? video.url : null,
+    'author-photo': authorPhoto ? { url: authorPhoto, alt: '' } : null,
+    'author-initial': shown ? shown.trim().charAt(0).toUpperCase() : '',
   };
   const withStmts = (id: number) => [
     env.DB.prepare(`DELETE FROM story_with WHERE story_id = ?1`).bind(id),

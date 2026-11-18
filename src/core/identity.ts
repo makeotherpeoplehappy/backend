@@ -39,6 +39,25 @@ interface MemberstackMember {
   verified?: boolean;
   auth?: { email?: string | null };
   customFields?: Record<string, string | null | undefined>;
+  profileImage?: string | null;
+}
+
+/**
+ * The member's Memberstack profile photo (an https address), or null: none set, not a Memberstack
+ * member, or Memberstack unreachable. Never throws, so a story is never held up by it.
+ */
+export async function memberstackPhoto(env: Env, deps: Deps, accountId: string): Promise<string | null> {
+  if (!env.MEMBERSTACK_SECRET_KEY || !accountId.startsWith('mem_')) return null;
+  try {
+    const res = await callUpstream(deps.fetch, 'memberstack', `${MEMBERSTACK}/members/${encodeURIComponent(accountId)}`, {
+      headers: { 'X-API-KEY': env.MEMBERSTACK_SECRET_KEY, Accept: 'application/json' },
+    });
+    if (!res.ok) return null;
+    const url = ((await res.json()) as { data: MemberstackMember | null }).data?.profileImage;
+    return typeof url === 'string' && /^https:\/\//.test(url) ? url : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Reads one member from Memberstack's Admin API (null when there is none). */

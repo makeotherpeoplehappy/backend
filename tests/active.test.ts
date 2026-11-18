@@ -98,4 +98,12 @@ describe('People made happy', () => {
     await h.settle(); await drain(h.env, h.app.deps);
     expect(planCalls()).toEqual(['add-plan pln_inactive-un8s0xdg', 'remove-plan pln_active-er8r0xp0']);
   });
+
+  it('a plan the member never had counts as removed, so nothing is left failing', async () => {
+    h.fake.planNotFound = true;
+    await me();
+    await refreshAllActive(h.env, h.app.deps);
+    await h.settle(); await drain(h.env, h.app.deps);
+    expect(await h.db(`SELECT status FROM outbox WHERE dedupe_key LIKE 'active-plan:%'`)).toEqual([{ status: 'done' }]);
+  });
 });

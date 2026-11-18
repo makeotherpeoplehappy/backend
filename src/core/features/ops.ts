@@ -247,6 +247,11 @@ export async function labKpis(env: Env, deps: Deps) {
   const health = {
     queuePending: await n(`SELECT COUNT(*) AS n FROM outbox WHERE status IN ('pending', 'running')`),
     queueFailed: await n(`SELECT COUNT(*) AS n FROM outbox WHERE status = 'dead'`),
+    // The latest writes that gave up, so the Lab can say what failed and why.
+    failedWrites: await many<{ what: string; target: string; attempts: number; error: string; at: string }>(
+      `SELECT dedupe_key AS what, target, attempts, substr(COALESCE(last_error, ''), 1, 300) AS error, updated_at AS at
+       FROM outbox WHERE status = 'dead' ORDER BY updated_at DESC LIMIT 10`,
+    ),
     actionsMirrored: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
     jobs: await many<{ job: string; last_run_at: string }>(`SELECT job, last_run_at FROM job_runs ORDER BY job`),
     dareWarnings: await dareWarnings(env, deps),

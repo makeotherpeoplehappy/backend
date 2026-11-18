@@ -113,9 +113,15 @@
         ['Actions mirrored', h.actionsMirrored]
       ].concat((h.jobs || []).map(function (j) { return ['Last ' + j.job, new Date(j.last_run_at).toLocaleString()]; })))
     ]);
+    if ((h.failedWrites || []).length) {
+      details.appendChild(el('h2', { text: 'Writes that failed' }));
+      details.appendChild(table(['When', 'Where', 'What', 'Tries', 'Error'], h.failedWrites.map(function (f) {
+        return [new Date(f.at).toLocaleString(), f.target, f.what, f.attempts, f.error];
+      })));
+    }
     root.appendChild(details);
     (h.dareWarnings || []).forEach(function (w) { root.insertBefore(el('p', { class: 'warn', text: w }), root.children[2]); });
-    if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. See the error emails.' }), root.children[2]);
+    if (h.queueFailed) root.insertBefore(el('p', { class: 'warn', text: h.queueFailed + ' write(s) failed permanently. Details under System, below.' }), root.children[2]);
   }
 
   // "To review": anyone with access approves or rejects new suggestions and

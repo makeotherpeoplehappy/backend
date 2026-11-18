@@ -360,15 +360,19 @@
   // Page features (action page, account, stories, invites) live in one
   // script served by the backend, so they ship with the backend and are tested.
   // The interface text first, then the page features, in that order.
+  // Each deploy stamps a version here (astro.config.mjs), so a browser never runs an
+  // old copy of the page script or text next to a newer page. Unstamped in tests.
+  var VERSION = '__HF_VERSION__';
+  var V = VERSION.indexOf('__') === 0 ? '' : '?v=' + VERSION;
   var parent = document.head || document.body;
   if (parent && !window.HFW) {
     var words = document.createElement('script');
-    words.src = BASE + '/hf-wording.js';
+    words.src = BASE + '/hf-wording.js' + V;
     words.async = false;
     parent.appendChild(words);
   }
   var pages = document.createElement('script');
-  pages.src = BASE + '/hf-pages.js';
+  pages.src = BASE + '/hf-pages.js' + V;
   pages.async = false;
   if (parent && !(window.HFB_NO_PAGES)) parent.appendChild(pages);
 

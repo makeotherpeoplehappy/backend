@@ -186,11 +186,34 @@ describe('Invite page', () => {
     expect(p.document.body.textContent).toContain('Leave this invite');
   });
 
-  it('a signed-out visitor goes to sign in and comes back to the same invite', async () => {
-    const p = await page('/do-this-with-me?i=AbCdEfGh23', INVITE_HTML, () => ({ data: { kind: 'with_me', inviterName: 'Ana', action: { title: 'Cook', slug: 'cook', live: true }, alternatives: [], me: null } }), { signedIn: false });
+  it('a signed-out visitor joins with just a first name, and sees the group', async () => {
+    let joined = false;
+    const p = await page(
+      '/do-this-with-me?i=AbCdEfGh23',
+      INVITE_HTML,
+      (m, path) => {
+        if (m === 'POST' && path.endsWith('/join')) { joined = true; return { data: { joined: true } }; }
+        return { data: { kind: 'with_me', inviterName: 'Ana', action: { title: 'Cook', shortAnswer: 'Cook', slug: 'cook', live: true }, alternatives: [], group: joined ? { count: 2, names: ['Ben'], more: 0 } : { count: 1, names: [], more: 0 }, me: joined ? { isMine: false, joined: true } : null } };
+      },
+      { signedIn: false },
+    );
+    expect(p.document.getElementById('hfp-invite-group')!.textContent).toContain('Just you so far');
     p.document.getElementById('hf-join-in')!.click();
     await p.settle();
-    expect(p.signIns).toEqual([{ kind: 'join', inviteCode: 'AbCdEfGh23', returnTo: '/do-this-with-me?i=AbCdEfGh23' }]);
+    expect(p.signIns).toEqual([]);
+    const input = p.document.getElementById('hfp-join-first') as unknown as { value: string };
+    input.value = 'Ben';
+    p.document.getElementById('hfp-join-name')!.dispatchEvent(new p.window.Event('submit', { cancelable: true }));
+    await p.settle();
+    expect(p.calls).toContainEqual({ method: 'POST', path: '/api/invites/AbCdEfGh23/join', body: { firstName: 'Ben' } });
+    expect(p.document.getElementById('hf-join-in')!.textContent).toBe("You're in");
+    expect(p.document.getElementById('hfp-invite-group')!.textContent).toBe('2 of you are in: Ben');
+    expect(p.document.getElementById('hfp-join-name')?.style.display ?? 'none').toBe('none');
+  });
+
+  it('caps the names at five, then "+ N more"', async () => {
+    const p = await page('/do-this-with-me?i=AbCdEfGh23', INVITE_HTML, () => ({ data: { kind: 'with_me', inviterName: 'Ana', action: { title: 'Cook', shortAnswer: '', slug: 'cook', live: true }, alternatives: [], group: { count: 201, names: ['A', 'B', 'C', 'D', 'E'], more: 195 }, me: null } }));
+    expect(p.document.getElementById('hfp-invite-group')!.textContent).toBe('201 of you are in: A, B, C, D, E + 195 more');
   });
 
   it('a removed action shows three others', async () => {

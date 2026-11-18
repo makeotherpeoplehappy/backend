@@ -122,6 +122,27 @@ fulfilment; Memberstack keeps members (there are no Shopify customer logins).
 - **Pledges:** every purchase makes one pledge; a drop's "pledges made, kept" counts
   the orders that hold one of its pieces.
 
+## Going live on www.makeotherpeoplehappy.com
+
+The site's address is **www.makeotherpeoplehappy.com** (happiness.foundation is the
+old one). The backend already allows both makeotherpeoplehappy.com origins and
+builds every link from the address a request came in on. On launch day:
+
+1. **Webflow:** add the domain in Site settings › Publishing, point its DNS at
+   Webflow, and publish to it.
+2. **Timer:** set `JOBS_URL` in `timer/wrangler.toml` to
+   `https://www.makeotherpeoplehappy.com/join/api/jobs/tick` and deploy the timer,
+   so job emails link to the new address.
+3. **Resend:** add and verify makeotherpeoplehappy.com, then set `EMAIL_FROM` to an
+   address on it (until then mail keeps coming from happiness.foundation).
+4. **Memberstack:** the site head loads Memberstack from its custom domain
+   `memberstack-client.happiness.foundation`; set up the same on
+   makeotherpeoplehappy.com in Memberstack and update the site head.
+5. **Shopify:** in the redirect theme's settings (Theme settings › Redirect) set the
+   website address to `www.makeotherpeoplehappy.com`, then turn the store password
+   off (checkout is blocked while it is on). Optional: a checkout subdomain such as
+   checkout.makeotherpeoplehappy.com.
+
 ## The Make Someone Happy pledge
 
 Every purchase from our own shop comes with a **Make Someone Happy pledge**.

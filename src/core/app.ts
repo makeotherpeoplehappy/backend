@@ -22,7 +22,7 @@ import { labDecide, reviewAll, reviewQueue } from './features/review';
 import { myStory, reportStory, saveStory, servePhoto, storiesFor, uploadPhoto } from './features/stories';
 import { completeVideo, serveVideo, startVideo, uploadVideoPart } from './features/videos';
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
-import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labKpis, listLabAccess, publicImpact, removeLabAccess } from './features/ops';
+import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labFailedWrite, labKpis, listLabAccess, publicImpact, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
 import { memberstackWebhook } from './features/memberstack';
 import { addPartner, cancelPledges, claimEmails, claimPledges, lastMonth, listPartners, partnerFromRequest, partnerReport, partnerReports, registerPledges, setPartnerActive } from './features/partners';
@@ -294,6 +294,14 @@ route('POST', '/api/lab/access', true, async ({ req, env, deps, ctx, baseUrl }) 
 route('DELETE', '/api/lab/access', true, async ({ req, env, deps }) => {
   await assertLabAccess(env, await requireMember(req, env, deps));
   return json(await removeLabAccess(env, await readJson(req)));
+});
+
+// A failed write, from /lab: try it again or dismiss it.
+route('POST', '/api/lab/failed', true, async ({ req, env, deps, ctx }) => {
+  await assertLabAccess(env, await requireMember(req, env, deps));
+  const out = await labFailedWrite(env, deps, await readJson(req));
+  ctx.waitUntil(drain(env, deps, { limit: 5, deadlineMs: 10_000 }).catch(() => undefined));
+  return json(out);
 });
 
 // Reviewing stories and suggestions from /lab.

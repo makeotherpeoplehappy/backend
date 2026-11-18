@@ -99,3 +99,5 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 @media (max-width:991px){.hf-nav-right .hf-loc-form>.w-embed{margin-top:15px}}
 /* Story cards rendered from the CMS: no uploaded video, no video box */
 .hf-clip[data-src=""]{display:none}
+/* "Most done" (/actions): the whole section stays out of sight until an action has a public count */
+[data-hf-most-done]:has(.w-dyn-empty){display:none}

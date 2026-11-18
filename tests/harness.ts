@@ -76,6 +76,7 @@ export class FakeServices {
   shopifyDown = false;
   /** Memberstack's Admin API is unreachable. */
   memberstackDown = false;
+  planNotFound = false;
   /** Admin API token currently accepted (issued by the client credentials grant). */
   adminToken: string | null = null;
   adminTokensIssued = 0;
@@ -137,7 +138,7 @@ export class FakeServices {
         return j({ data: { id: c.id, type: 'member', iat: 1, exp: 2, aud: c.id.startsWith('mem_other') ? 'app_other' : MEMBERSTACK_APP_ID, iss: 'https://api.memberstack.com' } });
       }
       const plan = /^\/members\/([^/]+)\/(add|remove)-plan$/.exec(url.pathname);
-      if (plan && method === 'POST') return j({ data: { id: decodeURIComponent(plan[1]) } });
+      if (plan && method === 'POST') return this.planNotFound && plan[2] === 'remove' ? j({ code: 'not-found', message: 'Plan connection not found' }, 404) : j({ data: { id: decodeURIComponent(plan[1]) } });
       const m = /^\/members\/([^/]+)$/.exec(url.pathname);
       if (m && method === 'GET') {
         const c = [...this.tokens.values()].find((x) => x.id === decodeURIComponent(m[1]));

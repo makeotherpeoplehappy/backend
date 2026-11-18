@@ -89,6 +89,18 @@ describe('/lab access managed on the page', () => {
     expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_owner' })).status).toBe(200);
   });
 
+  it('lists the writes that failed, with what and why', async () => {
+    await h.env.DB.prepare(
+      `INSERT INTO outbox (target, op, payload, dedupe_key, status, attempts, last_error, next_attempt_at, created_at, updated_at)
+       VALUES ('memberstack', 'task', '{}', 'active-plan:1:off:2026-11-18T08:20', 'dead', 25, 'Memberstack remove-plan 404', '2026-11-18T08:20:00Z', '2026-11-18T08:20:00Z', '2026-11-18T09:00:00Z')`,
+    ).run();
+    const k = await (await h.request('GET', '/api/lab/kpis', { token: 'shcat_owner' })).json();
+    expect(k.health.queueFailed).toBe(1);
+    expect(k.health.failedWrites).toEqual([
+      { what: 'active-plan:1:off:2026-11-18T08:20', target: 'memberstack', attempts: 25, error: 'Memberstack remove-plan 404', at: '2026-11-18T09:00:00Z' },
+    ]);
+  });
+
   it('an owner invites someone: they get access and an invitation email, no redeploy', async () => {
     expect((await h.request('GET', '/api/lab/kpis', { token: 'shcat_guest' })).status).toBe(403);
     const r = await (await access('POST', 'shcat_owner', { email: 'Guest@Example.com' })).json();

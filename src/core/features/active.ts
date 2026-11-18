@@ -136,8 +136,9 @@ async function planCall(env: Env, deps: Deps, accountId: string, path: 'add-plan
     headers: { 'X-API-KEY': env.MEMBERSTACK_SECRET_KEY!, 'Content-Type': 'application/json' },
     body: JSON.stringify({ planId }),
   });
-  // Already on (or already off) is fine; a wrong key, a missing member or rate limits are not.
-  if (res.ok || (res.status >= 400 && res.status < 500 && ![401, 403, 404, 429].includes(res.status))) return;
+  // Already on, already off, or a member Memberstack no longer has: nothing left to do.
+  // A wrong key or rate limits are worth retrying (and reporting).
+  if (res.ok || (res.status >= 400 && res.status < 500 && ![401, 403, 429].includes(res.status))) return;
   throw new Error(`Memberstack ${path} ${planId} ${res.status}`);
 }
 registerTask('memberstack.activePlan', async (env, deps, args) => {

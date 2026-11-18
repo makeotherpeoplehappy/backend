@@ -103,6 +103,13 @@ describe('The story', () => {
     expect(row).toMatchObject({ video_key: key, has_children: 1, status: 'new' });
   });
 
+  it('takes one video: an upload or a link, not both', async () => {
+    const key = await videoKey();
+    const r = await h.request('POST', '/api/stories', { token: 'ms_ana', body: { actionId: action, consent: true, videoKey: key, videoConsent: true, childrenInVideo: false, videoUrl: 'https://youtu.be/dQw4w9WgXcQ' } });
+    expect(r.status).toBe(400);
+    expect((await r.json()).error).toBe('one_video');
+  });
+
   it("refuses someone else's upload", async () => {
     const key = await videoKey();
     h.fake.signIn('ms_ben', { id: 'mem_ben', firstName: 'Ben', email: 'ben@example.com' });

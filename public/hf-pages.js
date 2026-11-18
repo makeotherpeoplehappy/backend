@@ -1202,6 +1202,19 @@
     else if (vLabel) vLabel.insertAdjacentElement('beforebegin', vBox);
     else if (video) video.insertAdjacentElement('afterend', vBox);
     else form.insertBefore(vBox, form.firstChild);
+    // One video per story: an upload or a link. Whichever is in use greys out the other.
+    var linkNote = el('p', { class: 'hf-form-help hfp-small', style: 'display:none', text: copyText('st-video-link-off') });
+    var fileNote = el('p', { class: 'hf-form-help hfp-small', style: 'display:none', text: copyText('st-video-file-off') });
+    if (video) video.insertAdjacentElement('afterend', linkNote);
+    vInput.insertAdjacentElement('afterend', fileNote);
+    function oneVideo() {
+      var hasFile = !!(vid.key || vid.up || vid.busy);
+      var hasLink = !!(video && video.value.trim());
+      if (video) { video.disabled = hasFile; linkNote.style.display = hasFile ? '' : 'none'; }
+      vInput.disabled = hasLink && !hasFile;
+      fileNote.style.display = hasLink && !hasFile ? '' : 'none';
+    }
+    if (video) video.addEventListener('input', oneVideo);
     function vSay(t, bad) { vMsg.textContent = t; if (bad) vMsg.setAttribute('data-kind', 'error'); else vMsg.removeAttribute('data-kind'); }
     function meta(file) {
       return new Promise(function (resolve) {
@@ -1255,10 +1268,11 @@
         if (!(await sendParts())) { vSay(copyText('st-video-stopped'), true); vRetry.style.display = ''; return; }
         var parts = Object.keys(vid.up.done).map(function (k) { return { partNumber: Number(k), etag: vid.up.done[k] }; });
         var c = await HFB.call('/api/stories/video/complete', { method: 'POST', body: { uploadId: vid.up.uploadId, parts: parts } });
-        if (!c.ok) { vSay(msgOf(c), true); vid.up = null; vInput.value = ''; vPrev.style.display = 'none'; vAsk.style.display = 'none'; return; }
+        if (!c.ok) { vSay(msgOf(c), true); vid.up = null; vInput.value = ''; vPrev.style.display = 'none'; vAsk.style.display = 'none'; oneVideo(); return; }
         vid.key = c.data.videoKey; vid.isNew = true; vid.up = null;
         vSay(copyText('st-video-added'));
         vRemove.style.display = '';
+        oneVideo();
       } catch (e) {
         vSay((e && e.message) || copyText('st-video-stopped'), true); vRetry.style.display = '';
       } finally { vid.busy = false; }
@@ -1268,6 +1282,7 @@
       vid.key = null; vid.poster = null; vid.isNew = true; vid.up = null;
       vPrev.removeAttribute('src'); vPrev.style.display = 'none'; vRemove.style.display = 'none'; vAsk.style.display = 'none'; vInput.value = '';
       vSay(copyText('st-video-removed'));
+      oneVideo();
     });
     vInput.addEventListener('change', async function () {
       var file = vInput.files && vInput.files[0];
@@ -1299,8 +1314,10 @@
       if (!st0.ok) return vSay(msgOf(st0), true);
       vid.up = { file: file, uploadId: st0.data.uploadId, partSize: st0.data.partSize, parts: st0.data.parts, done: {} };
       vSay(copyText('st-video-uploading', { n: 0 }));
+      oneVideo();
       finishUpload();
     });
+    oneVideo();
 
     // People the member did the action with (from their account).
     var withBoxes = [];
@@ -1342,6 +1359,7 @@
       if (vid.busy || vid.up) { msg.textContent = copyText('st-video-wait'); msg.setAttribute('data-kind', 'error'); return; }
       if (vid.key && vid.isNew && !vConsent.checked) { msg.textContent = copyText('err-video-consent'); msg.setAttribute('data-kind', 'error'); vConsent.focus(); return; }
       if (vid.key && !vKidsYes.checked && !vKidsNo.checked) { msg.textContent = copyText('err-video-children'); msg.setAttribute('data-kind', 'error'); vKidsYes.focus(); return; }
+      if (vid.key && link.trim()) { msg.textContent = copyText('err-one-video'); msg.setAttribute('data-kind', 'error'); return; }
       if (!words.trim() && !photoKey && !link.trim() && !vid.key) { msg.textContent = copyText('st-empty'); msg.setAttribute('data-kind', 'error'); text && text.focus(); return; }
       if (submit) { submit.setAttribute('data-hfp-busy', '1'); submit.disabled = true; }
       var body = {

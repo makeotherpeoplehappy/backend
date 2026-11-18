@@ -266,7 +266,8 @@
   function drawCard(o) {
     var c = document.createElement('canvas');
     c.width = CARD.w; c.height = CARD.h;
-    var x = c.getContext('2d');
+    var x = c.getContext && c.getContext('2d');
+    if (!x) return null; // no canvas (very old browser): no card
     var display = cssVar(CARD.display, 'sans-serif'), body = cssVar(CARD.body, 'sans-serif');
     var ink = cssVar(CARD.ink, '#fff'), soft = cssVar(CARD.soft, '#cfe0f2');
     x.fillStyle = cssVar(CARD.bg, '#2e5e8e');
@@ -323,6 +324,7 @@
       try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
       var line = cardLine(o.who, nameBox && nameBox.checked ? o.name : null);
       var c = drawCard({ line: line, title: o.title });
+      if (!c) { box.style.display = 'none'; return line; }
       img.alt = line;
       img.src = c.toDataURL('image/png');
       blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
@@ -363,7 +365,7 @@
     if (!canFiles) msg.textContent = copyText('card-hint');
     box.appendChild(msg);
     where.appendChild(box);
-    paint();
+    paint().catch(function () { box.style.display = 'none'; });
   }
 
   // ---------------------------------------------------------------------------

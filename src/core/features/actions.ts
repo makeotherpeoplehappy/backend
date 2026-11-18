@@ -6,7 +6,7 @@ import { enqueue } from '../queue';
 import * as webflow from '../webflow';
 import { recomputeKeeps } from './pledges';
 import { storiesFor } from './stories';
-import { doneWithNames, displayName, rippleTotal } from './ripple';
+import { doneWithNames, displayName, groupFor, rippleTotal } from './ripple';
 import { assertGuestCanMark, isGuest, touchGuest } from './guests';
 import { forgetDare } from './dare';
 
@@ -173,6 +173,7 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
       doneWith: last?.last ? await doneWithNames(env, member.id, actionId) : [],
       name: displayName(member),
       guest: isGuest(member),
+      group: action.can_do_with_others === 1 ? await groupFor(env, member.id, actionId) : null,
     };
   }
   return state;

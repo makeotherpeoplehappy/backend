@@ -190,11 +190,14 @@ route('POST', '/api/invites', true, memberWrite('invite', async ({ req, env, dep
   return createInvite(env, deps, m, body, baseUrl);
 }, 201));
 
-route('GET', '/api/invites/:code', true, async ({ req, env, deps, params }) => json(await getInvite(env, deps, params.code, await optionalMember(req, env, deps))));
+route('GET', '/api/invites/:code', true, async ({ req, env, deps, params }) =>
+  json(await getInvite(env, deps, params.code, (await optionalMember(req, env, deps)) || (await guestFromRequest(req, env, deps, false)))),
+);
 
-route('POST', '/api/invites/:code/join', true, memberWrite('invite-join', async ({ env, deps, params }, m) => joinInvite(env, deps, m, params.code)));
+// "I'm in" works without an account (a guest, with a first name).
+route('POST', '/api/invites/:code/join', true, doerWrite('invite-join', true, async ({ req, env, deps, params }, m) => joinInvite(env, deps, m, params.code, await readJson(req).catch(() => ({})))));
 
-route('DELETE', '/api/invites/:code/join', true, memberWrite('invite-leave', async ({ env, deps, params }, m) => leaveInvite(env, deps, m, params.code)));
+route('DELETE', '/api/invites/:code/join', true, doerWrite('invite-leave', false, async ({ env, deps, params }, m) => leaveInvite(env, deps, m, params.code)));
 
 route(
   'DELETE',

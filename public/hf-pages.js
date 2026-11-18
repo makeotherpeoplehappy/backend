@@ -95,7 +95,7 @@
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
     '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
     '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
@@ -225,6 +225,14 @@
     return el('article', { class: 'hf-story' }, kids);
   }
 
+  // A group's line: "3 of you are in: Ana, Ben + 1 more" (private to the group, so from 1).
+  function groupLine(g) {
+    if (!g) return '';
+    if (g.count <= 1) return copyText('group-just-you');
+    var names = g.names.join(', ') + (g.more > 0 ? ' ' + copyText('group-more', { n: g.more }) : '');
+    return names ? copyText('group-names', { n: g.count, names: names }) : copyText('group-count', { n: g.count });
+  }
+
   // ---------------------------------------------------------------------------
   // Action page
   // ---------------------------------------------------------------------------
@@ -240,6 +248,7 @@
     btn.setAttribute('role', 'button');
 
     var count = el('p', { class: 'hfp-muted', style: 'display:none;margin:20px 0 0;font-weight:500' });
+    var group = el('p', { class: 'hfp-group', style: 'display:none' });
     var row = el('div', { class: 'hfp-row' });
     btn.parentNode.insertBefore(count, btn);
     btn.parentNode.insertBefore(row, btn);
@@ -249,6 +258,7 @@
     var story = el('a', { class: 'hf-button-light', style: 'display:none', href: '/share-your-story?action=' + encodeURIComponent(slug), text: copyText('story-share') });
     row.appendChild(save);
     row.appendChild(withMe);
+    row.insertAdjacentElement('afterend', group);
     row.appendChild(story);
     var undo = el('button', { type: 'button', class: 'hfp-link hfp-small', style: 'display:none', text: copyText('action-undo') });
     msg.insertAdjacentElement('afterend', undo);
@@ -283,6 +293,15 @@
       if (st.count) { count.textContent = copyText('action-count', { n: st.count.toLocaleString() }); count.style.display = ''; } else count.style.display = 'none';
       if (st.suggestedBy) { suggested.textContent = copyText('action-suggested', { name: st.suggestedBy }); suggested.style.display = ''; }
       withMe.style.display = st.canDoWithOthers ? '' : 'none';
+      // Group-friendly actions: "Do this with me" comes first; "I did this" second.
+      if (st.canDoWithOthers && withMe.className !== 'hf-button') {
+        withMe.className = 'hf-button';
+        btn.classList.remove('hf-button');
+        btn.classList.add('hf-button-light');
+        row.insertBefore(withMe, row.firstChild);
+      }
+      var g = me && me.group;
+      if (g) { group.textContent = groupLine(g); group.style.display = ''; } else group.style.display = 'none';
       shareLine.style.display = st.canDoWithOthers ? '' : 'none';
       save.textContent = copyText(me && me.liked ? 'action-saved' : 'action-save');
       save.setAttribute('aria-pressed', me && me.liked ? 'true' : 'false');
@@ -416,6 +435,8 @@
     });
 
     document.addEventListener('hfb:resumed', function () { load(); });
+    // Back from sharing an invite: the group may have grown.
+    document.addEventListener('visibilitychange', function () { if (!document.hidden && id) load(); });
     await load();
   }
 
@@ -1023,6 +1044,10 @@
       }
       actionEl.textContent = v.action.title;
       descEl.textContent = v.action.shortAnswer;
+      var groupEl = $('hfp-invite-group');
+      if (!groupEl) { groupEl = el('p', { id: 'hfp-invite-group', class: 'hfp-group' }); descEl.insertAdjacentElement('afterend', groupEl); }
+      groupEl.textContent = v.group ? groupLine(v.group) : '';
+      groupEl.style.display = v.group ? '' : 'none';
       var link = el('a', { class: 'hf-button-light', href: '/action/' + v.action.slug, text: copyText('inv-see') });
       if (v.me && v.me.isMine) {
         titleEl.textContent = copyText('inv-mine-h');
@@ -1054,12 +1079,30 @@
       inBtn.textContent = copyText('inv-join');
       inBtn.removeAttribute('aria-disabled');
       noteEl.textContent = '';
+      async function join(firstName) {
+        var jr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'POST', guest: true, body: firstName ? { firstName: firstName } : {} });
+        if (jr.ok || (jr.data && jr.data.error === 'own_invite')) { var f = $('hfp-join-name'); if (f) { f.style.display = 'none'; try { f.remove(); } catch (x) {} } render(); return true; }
+        noteEl.textContent = msgOf(jr);
+        return false;
+      }
       inBtn.onclick = async function (e) {
         e.preventDefault();
-        if (!signedIn()) return HFB.requireSignIn({ kind: 'join', inviteCode: code, returnTo: location.pathname + location.search });
-        var jr = await HFB.call('/api/invites/' + encodeURIComponent(code) + '/join', { method: 'POST' });
-        if (jr.ok || (jr.data && jr.data.error === 'own_invite')) render();
-        else noteEl.textContent = msgOf(jr);
+        if (signedIn()) return join();
+        // No account needed: just a first name, so the group can see who joined.
+        if ($('hfp-join-name')) { $('hfp-join-first').focus(); return; }
+        var form = el('form', { id: 'hfp-join-name', class: 'hfp-card' });
+        var input = el('input', { class: 'hf-form-input w-input', id: 'hfp-join-first', autocomplete: 'given-name', maxlength: '40', required: true });
+        form.appendChild(el('label', { for: 'hfp-join-first', class: 'hf-form-label', text: copyText('join-name-label') }));
+        form.appendChild(input);
+        form.appendChild(el('button', { type: 'submit', class: 'hf-button', text: copyText('inv-join') }));
+        form.appendChild(el('p', { class: 'hfp-muted hfp-small', text: copyText('join-name-help') }));
+        form.addEventListener('submit', async function (ev) {
+          ev.preventDefault();
+          if (!input.value.trim()) return input.focus();
+          await join(input.value);
+        });
+        inBtn.parentNode.insertAdjacentElement('afterend', form);
+        input.focus();
       };
     }
     document.addEventListener('hfb:resumed', function () { render(); });

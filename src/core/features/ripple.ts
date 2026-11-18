@@ -10,6 +10,7 @@ import { memberEmail } from '../email';
 import { enqueue } from '../queue';
 import { consumeDaily } from '../safety';
 import { getAction } from './actions';
+import { isGuest } from './guests';
 
 export const displayName = (m: { share_name?: string | null; first_name?: string | null }) => m.share_name || m.first_name || null;
 
@@ -118,8 +119,50 @@ export async function getInvite(env: Env, deps: Deps, code: string, member: Memb
     note: inv.inviterDeleted ? null : inv.note,
     action: { id: inv.actionId, title: action?.title || '', shortAnswer: action?.short_answer || '', slug: live ? action!.slug : null, live },
     alternatives: live ? [] : await alternatives(env, inv.actionId),
+    group: inv.kind === 'with_me' && live ? await groupOf(env, code) : null,
     me,
   };
+}
+
+/** Names shown for a group; more people than this show as "+ N more". */
+export const GROUP_NAMES = 5;
+
+/**
+ * An invite's group: the inviter plus everyone in (not left). Private to the
+ * group, so it shows from 1. Names are first names only, in joining order.
+ */
+export async function groupOf(env: Env, code: string) {
+  const r = await env.DB.prepare(
+    `SELECT COALESCE(m.share_name, m.first_name) AS name FROM invite_joins j JOIN members m ON m.id = j.member_id
+     WHERE j.invite_code = ?1 AND j.left_at IS NULL AND m.deleted_at IS NULL ORDER BY j.joined_at, j.id`,
+  )
+    .bind(code)
+    .all<{ name: string | null }>();
+  const named = r.results.map((x) => x.name).filter((x): x is string => !!x);
+  const names = named.slice(0, GROUP_NAMES);
+  return { count: r.results.length + 1, names, more: r.results.length - names.length };
+}
+
+/** The member's group for an action: their own "Do this with me" invite, else one they joined. */
+export async function groupFor(env: Env, memberId: number, actionId: string) {
+  const own = await env.DB.prepare(`SELECT code FROM invites WHERE inviter_id = ?1 AND action_id = ?2 AND kind = 'with_me'`).bind(memberId, actionId).first<{ code: string }>();
+  const row =
+    own ||
+    (await env.DB.prepare(
+      `SELECT i.code FROM invite_joins j JOIN invites i ON i.code = j.invite_code
+       WHERE j.member_id = ?1 AND i.action_id = ?2 AND i.kind = 'with_me' AND j.left_at IS NULL ORDER BY j.joined_at DESC LIMIT 1`,
+    )
+      .bind(memberId, actionId)
+      .first<{ code: string }>());
+  if (!row) return null;
+  return { code: row.code, mine: !!own, ...(await groupOf(env, row.code)) };
+}
+
+/** A first name typed on the invite page: one line, at most 40 characters. */
+export function cleanFirstName(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const t = v.replace(/[\u0000-\u001f\u007f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 40);
+  return t || null;
 }
 
 /** Would making `inviterId` the member's inviter create a loop? */
@@ -142,13 +185,21 @@ async function forgetRipple(env: Env, memberId: number): Promise<void> {
   }
 }
 
-export async function joinInvite(env: Env, deps: Deps, member: Member, code: string) {
+export async function joinInvite(env: Env, deps: Deps, member: Member, code: string, body: { firstName?: unknown } = {}) {
   const inv = await inviteRow(env, code);
   if (!inv) throw new HttpError(404, 'invite_not_found', 'err-invite-not-found');
   if (inv.inviterId === member.id) throw new HttpError(409, 'own_invite', 'err-own-invite');
   const action = await getAction(env, deps, inv.actionId);
   if (!action || action.status !== 'published') throw new HttpError(410, 'action_removed', 'err-action-removed');
   const now = iso(deps.now());
+  // Without an account, the group sees a first name, so one is asked for.
+  const typed = cleanFirstName(body.firstName);
+  if (isGuest(member)) {
+    if (!typed && !member.first_name) throw new HttpError(409, 'need_join_name', 'err-need-join-name');
+    if (typed && typed !== member.first_name) await env.DB.prepare(`UPDATE members SET first_name = ?2, updated_at = ?3 WHERE id = ?1`).bind(member.id, typed, now).run();
+  } else if (typed && !displayName(member)) {
+    await env.DB.prepare(`UPDATE members SET share_name = ?2, updated_at = ?3 WHERE id = ?1`).bind(member.id, typed, now).run();
+  }
   await env.DB.prepare(
     `INSERT INTO invite_joins (invite_code, member_id, joined_at) VALUES (?1, ?2, ?3)
      ON CONFLICT (invite_code, member_id) DO UPDATE SET left_at = NULL, joined_at = CASE WHEN invite_joins.left_at IS NULL THEN invite_joins.joined_at ELSE excluded.joined_at END,
@@ -162,7 +213,12 @@ export async function joinInvite(env: Env, deps: Deps, member: Member, code: str
     await env.DB.prepare(`UPDATE members SET inviter_id = ?2, inviter_joined_at = ?3 WHERE id = ?1 AND inviter_id IS NULL`).bind(member.id, inv.inviterId, now).run();
     await forgetRipple(env, inv.inviterId);
   }
-  return { joined: true, inviterName: inv.inviterName, action: { id: action.cms_item_id, title: action.title, slug: action.slug } };
+  return {
+    joined: true,
+    inviterName: inv.inviterName,
+    action: { id: action.cms_item_id, title: action.title, slug: action.slug },
+    group: inv.kind === 'with_me' ? await groupOf(env, code) : null,
+  };
 }
 
 export async function leaveInvite(env: Env, deps: Deps, member: Member, code: string) {

@@ -1824,8 +1824,8 @@
           location.reload();
         } catch (e) { setBusy(b, false); say(msg, authError(e, authState.mode), true); }
       });
-      form.addEventListener('submit', async function (ev) {
-        ev.preventDefault();
+      // A Webflow form: taken over before Webflow's own form handling sees it.
+      nativeForm(form, async function () {
         var mode2 = authState.mode;
         var v = {};
         Array.prototype.forEach.call(form.querySelectorAll('input[data-hf-field]:not([disabled])'), function (i) { v[i.getAttribute('data-hf-field')] = i.value.trim(); });

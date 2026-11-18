@@ -99,48 +99,22 @@ A drop is a Shopify collection with a **Drop date** (collection field
 - **Notify me:** Shopify customers tagged `notify-drop-<handle>`; send the "it's
   live" email with Shopify Email.
 
-## Pledge API (the Make Someone Happy pledge)
+## The Make Someone Happy pledge
 
-What buyers and brands see is the **Make Someone Happy pledge**: every purchase
-comes with one. Partner shops add it through the **Pledge API**, and they send
-**no customer data**: no order number, no name, no email. Partners see their
-results only as numbers.
+Every purchase from our own shop comes with a **Make Someone Happy pledge**.
+There are no outside partner shops: the Pledge API, partner keys and partner
+reports were removed in November 2026 (the `partners` table and the
+`partner_id` columns stay, with our shop as id 1, so existing claim links keep
+working).
 
-1. In `/lab` › **Partners**, an owner types the brand name (and, optionally, an
-   email for the monthly report) and presses **Set up partner**. The page shows
-   the partner ID, the key (`hfp_…`, shown once, only its hash is stored) and
-   ready-to-paste code to send the partner. Partners can be switched off and
-   their report email changed there.
-2. When an order is paid, the shop's server asks for its pledge:
-
-   ```
-   POST /join/api/partners/pledges
-   Authorization: Bearer hfp_…
-   Idempotency-Key: <any value unique to the purchase, e.g. a random UUID>
-   {}
-   ```
-
-   Answer: `{"pledge": "pl_…", "status": "open", "claimUrl"}`. The same
-   Idempotency-Key gets the same pledge, so retries are safe. Sending `order`,
-   `email` or other customer fields is refused (`400 no_customer_data`).
-3. The shop shows `claimUrl` on its thank-you page or in its order email. It
-   opens `/keep-your-pledge`; after signing in or creating a free account the
-   pledge is the member's. A claimed link cannot be taken by someone else.
-4. A cancelled or fully refunded purchase: `POST /join/api/partners/pledges/cancel`
-   with `{"pledge": "pl_…"}` (the shop keeps our pledge reference only if it
-   wants to cancel).
-5. Numbers, never names: `GET /join/api/partners/report?month=YYYY-MM` gives
-   `{month, given, claimed, kept, total}` (pledges given, kept by the buyer in
-   an account, turned into an action). On the first day of each month partners
-   with a report email get last month's numbers (Resend template
-   "Partner monthly report" (`partners.ts` REPORT_TEMPLATE, by ID); variables `PARTNER`, `MONTH`, `GIVEN`, `CLAIMED`, `KEPT`,
-   `TOTAL_GIVEN`, `TOTAL_CLAIMED`, `TOTAL_KEPT`).
-
-Our own shop's orders arrive through the Shopify webhook and get the same claim
-link; buyers without an account get it by email (Resend template
-`hf-pledge-claim`, sent by its ID, variables `CLAIM_URL` and `COUNT`). A partial
-refund keeps the pledge; a cancellation or full refund removes it. A drop's
-"pledges made, kept" counts the orders that hold one of its pieces.
+Orders arrive through the Shopify webhook. An order joins the member with the
+same verified email; otherwise the buyer is emailed a "Keep your pledge" link
+(Resend template `hf-pledge-claim`, sent by its ID, variables `CLAIM_URL` and
+`COUNT`; `claims.ts`). The link opens `/keep-your-pledge`; after signing in or
+creating a free account the pledge is the member's, and nobody else can take
+it. A partial refund keeps the pledge; a cancellation or full refund removes
+it. A drop's "pledges made, kept" counts the orders that hold one of its
+pieces.
 
 ## Calls from the site
 

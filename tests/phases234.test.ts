@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { CMS } from '../src/core/config';
 import { drain } from '../src/core/queue';
-import { CLAIM_TEMPLATE } from '../src/core/features/partners';
+import { CLAIM_TEMPLATE } from '../src/core/features/claims';
 import { stripJpegMetadata, parseVideo } from '../src/core/features/stories';
 import { createHarness, SITE, type Harness } from './harness';
 
@@ -383,6 +383,20 @@ describe('Phase 3: pledges', () => {
     expect(mails).toHaveLength(1);
     expect(mails[0].to).toEqual(['new@example.com']);
     expect(mails[0].template!.variables).toMatchObject({ COUNT: '1', CLAIM_URL: expect.stringMatching(/\/keep-your-pledge\?c=/) });
+    // Signing in with the link makes the pledge theirs; nobody else can take it.
+    const code = new URL(String(mails[0].template!.variables.CLAIM_URL)).searchParams.get('c');
+    h.fake.signIn('ms_new', { id: 'mem_new', email: 'other@example.com' });
+    h.fake.signIn('ms_ian', { id: 'mem_ian', email: 'ian@example.com' });
+    expect((await h.request('POST', '/api/pledges/claim', { body: { code } })).status).toBe(401);
+    expect(await (await h.request('POST', '/api/pledges/claim', { token: 'ms_new', body: { code } })).json()).toEqual({ claimed: 1 });
+    expect(await (await h.request('POST', '/api/pledges/claim', { token: 'ms_new', body: { code } })).json()).toEqual({ claimed: 1 });
+    expect((await h.request('POST', '/api/pledges/claim', { token: 'ms_ian', body: { code } })).status).toBe(409);
+    expect((await h.request('POST', '/api/pledges/claim', { token: 'ms_ian', body: { code: 'not-a-code' } })).status).toBe(404);
+  });
+
+  it('there is no outside Pledge API any more', async () => {
+    expect((await h.request('POST', '/api/partners/pledges', { origin: null, key: null, headers: { Authorization: 'Bearer hfp_x' }, body: {} })).status).toBe(404);
+    expect((await h.request('GET', '/api/lab/partners', { token: 'shcat_ana' })).status).toBe(404);
   });
 
   it('a cancelled order removes its pledge', async () => {

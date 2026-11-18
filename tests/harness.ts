@@ -136,6 +136,8 @@ export class FakeServices {
         if (!c) return j({ code: 'INVALID_TOKEN', message: 'Invalid token' }, 400);
         return j({ data: { id: c.id, type: 'member', iat: 1, exp: 2, aud: c.id.startsWith('mem_other') ? 'app_other' : MEMBERSTACK_APP_ID, iss: 'https://api.memberstack.com' } });
       }
+      const plan = /^\/members\/([^/]+)\/(add|remove)-plan$/.exec(url.pathname);
+      if (plan && method === 'POST') return j({ data: { id: decodeURIComponent(plan[1]) } });
       const m = /^\/members\/([^/]+)$/.exec(url.pathname);
       if (m && method === 'GET') {
         const c = [...this.tokens.values()].find((x) => x.id === decodeURIComponent(m[1]));

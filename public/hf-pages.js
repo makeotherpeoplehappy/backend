@@ -2196,6 +2196,17 @@
     document.addEventListener('hfb:resumed', load);
   }
 
+  /** The dot next to Shop in the menu (in Webflow): on while a drop is coming up or on sale. */
+  async function shopDot() {
+    var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
+    if (!dots.length || dots[0].getAttribute('data-hfp')) return;
+    dots.forEach(function (d) { d.setAttribute('data-hfp', '1'); });
+    await wait(function () { return window.HFB; }, 10000);
+    var r = await HFB.call('/api/drops');
+    var on = !!(r.ok && r.data.drops.some(function (d) { return d.phase === 'upcoming' || d.phase === 'early' || d.phase === 'live'; }));
+    dots.forEach(function (d) { if (on) d.setAttribute('data-hf-on', '1'); else d.removeAttribute('data-hf-on'); });
+  }
+
   async function productPage() {
     var row = document.querySelector('[data-hf-row="product"]');
     if (!row || row.getAttribute('data-hfp')) return;
@@ -2274,7 +2285,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

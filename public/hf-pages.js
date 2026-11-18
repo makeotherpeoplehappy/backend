@@ -383,7 +383,15 @@
       undo.disabled = true;
       var r = await HFB.call('/api/actions/' + id + '/done', { method: 'DELETE' });
       undo.disabled = false;
-      if (r.ok) { card.style.display = 'none'; keep.style.display = 'none'; await load(); msg.textContent = copyText('action-undone', { message: msg.textContent }); }
+      if (r.ok) {
+        card.style.display = 'none';
+        keep.style.display = 'none';
+        await load();
+        // The message tells the new total (none left: just "Undone.").
+        var n = r.data && r.data.tally;
+        var left = n ? copyText(n === 1 ? 'action-tally-one' : 'action-tally-many', { n: n }) : '';
+        msg.textContent = copyText('action-undone', { message: left }).trim();
+      }
       else msg.textContent = msgOf(r);
     });
 

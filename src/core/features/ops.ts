@@ -9,6 +9,7 @@ import { enqueue } from '../queue';
 import { forgetDrops } from './drops';
 import { rowFromItem, upsertStatement } from './actions';
 import { draftActionDeleted, notifySuggestionsLive, reviewItem } from './review';
+import { REAL_MEMBER } from './guests';
 
 // ---------------------------------------------------------------------------
 // Webflow webhooks. The message is only a hint that something changed: the
@@ -205,7 +206,7 @@ export async function labKpis(env: Env, deps: Deps) {
 
   const d7 = daysAgo(7);
   const d30 = daysAgo(30);
-  const live = `deleted_at IS NULL`;
+  const live = `deleted_at IS NULL AND ${REAL_MEMBER}`;
 
   const impact = {
     peopleMadeHappy: await n(`SELECT COUNT(*) AS n FROM done_marks`),

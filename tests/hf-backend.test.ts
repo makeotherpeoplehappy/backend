@@ -27,9 +27,9 @@ const el = (id?: string, text = ''): FakeEl => ({
   },
 });
 
-function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: string; pathname?: string; elements?: FakeEl[]; home?: Record<string, string> }) {
+function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; guestKey?: string; search?: string; pathname?: string; elements?: FakeEl[]; home?: Record<string, string> }) {
   const elements = new Map((opts.elements || []).map((e) => [e.id!, e]));
-  const storage = new Map<string, string>();
+  const storage = new Map<string, string>(opts.guestKey ? [['hf_guest', opts.guestKey]] : []);
   const calls: { method: string; url: string; headers: Record<string, string>; body?: unknown }[] = [];
   let signinCalls = 0;
   const location = { pathname: opts.pathname ?? '/account', search: opts.search ?? '', href: '', origin: 'https://site.test' };
@@ -61,6 +61,7 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
     const json = (data: unknown, status = 200) => ({ ok: status < 400, status, json: async () => data });
     if (url.endsWith('/api/intents') && method === 'POST') return json(opts.intentStatus === 201 ? { id: 'abcdefghijklmnopqrstuv' } : { error: 'bot_check_required' }, opts.intentStatus);
     if (url.includes('/done') && method === 'POST') return json({ tally: 1 }, 201);
+    if (url.endsWith('/api/me/claim-guest') && method === 'POST') return json({ merged: 1 });
     if (url.includes('/like') && method === 'PUT') return json({ liked: true });
     if (url.endsWith('/api/me')) return json({ done: [], tally: 0 });
     if (url === '/' && method === 'GET') return { ok: true, status: 200, text: async () => 'home' };
@@ -71,6 +72,7 @@ function fakeBrowser(opts: { intentStatus: number; signedIn: boolean; search?: s
     window,
     document: {
       currentScript: { src: 'https://site.test/join/hf-backend.js', getAttribute: () => null },
+      cookie: '',
       readyState: 'complete',
       addEventListener: () => undefined,
       dispatchEvent: (e: { type: string }) => events.push(e.type),
@@ -147,3 +149,31 @@ describe('Site helper: resume after sign-in', () => {
   });
 });
 
+
+describe('Site helper: try before sign-up', () => {
+  type Call = (p: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>;
+  it('signed out, "I did this" makes a guest key and sends it; other calls make none', async () => {
+    const b = fakeBrowser({ intentStatus: 201, signedIn: false });
+    const HFB = b.window.HFB as { call: Call; guest: () => boolean };
+    await HFB.call('/api/actions/a1/state');
+    expect(b.storage.get('hf_guest')).toBeUndefined();
+    await HFB.call('/api/actions/a1/done', { method: 'POST', guest: true });
+    const key = b.storage.get('hf_guest')!;
+    expect(key).toMatch(/^[A-Za-z0-9-]{20,64}$/);
+    expect(b.calls.at(-1)!.headers['X-HF-Guest']).toBe(key);
+    expect(b.calls.at(-1)!.headers.Authorization).toBeUndefined();
+    expect(HFB.guest()).toBe(true);
+  });
+
+  it('signed in with a guest key, the marks are claimed first and the key forgotten', async () => {
+    const b = fakeBrowser({ intentStatus: 201, signedIn: true, guestKey: 'guest-key-0123456789abcdef' });
+    const HFB = b.window.HFB as { call: Call; guest: () => boolean };
+    await HFB.call('/api/me');
+    const claim = b.calls.find((c) => c.url.endsWith('/api/me/claim-guest'))!;
+    expect(claim.headers['X-HF-Guest']).toBe('guest-key-0123456789abcdef');
+    expect(claim.headers.Authorization).toBe('Bearer shcat_test');
+    expect(b.calls.findIndex((c) => c.url.endsWith('/api/me/claim-guest'))).toBeLessThan(b.calls.findIndex((c) => c.url.endsWith('/api/me')));
+    expect(b.storage.get('hf_guest')).toBeUndefined();
+    expect(b.calls.filter((c) => c.url.endsWith('/api/me/claim-guest'))).toHaveLength(1);
+  });
+});

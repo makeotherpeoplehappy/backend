@@ -9,7 +9,8 @@ workers_dev = false
 crons = ["*/5 * * * *"]
 
 [vars]
-JOBS_URL = "https://happiness-foundation.webflow.io/join/api/jobs/tick"
+JOBS_URL = "https://www.makeotherpeoplehappy.com/join/api/jobs/tick"
+JOBS_FALLBACK_URL = "https://happiness-foundation.webflow.io/join/api/jobs/tick"
 
 [observability]
 enabled = true

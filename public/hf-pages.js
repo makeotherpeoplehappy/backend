@@ -95,7 +95,7 @@
   // A few styles for the parts this script adds; everything else uses the site's classes.
   var css = '.hfp-row{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin:16px 0}' +
     '.hfp-status{margin:8px 0}.hfp-status[data-kind=error]{color:#A3122A}' +
-    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
+    '.hfp-muted{color:#3D434C}.hfp-small{font-size:15px}.hfp-card{background:#EEF4FA;border-radius:24px;padding:24px;margin:16px 0}.hfp-keep-title{font-size:20px;line-height:1.3;margin:24px 0 4px}.hfp-group{margin:12px 0 0;font-weight:600;color:var(--colour--deep-blue,#2E5E8E)}.hfp-proof{margin:20px 0 0}.hfp-ripple{margin:16px 0 0}.hfp-ripple-h{margin:0 0 8px}.hfp-ripple-svg{display:block;width:min(100%,360px);height:auto;margin:0 auto}.hfp-ripple-dot{cursor:pointer;outline:none}.hfp-ripple-dot:focus-visible{stroke:var(--colour--ink,#111418);stroke-width:2}.hfp-ripple-caption{min-height:1.5em;text-align:center;font-weight:600;margin:8px 0 0}.hfp-proof-img{display:block;width:min(240px,60vw);aspect-ratio:9/16;border-radius:16px;margin:0 0 12px;box-shadow:0 8px 24px rgba(17,20,24,.15)}.hfp-proof-name{display:flex;align-items:center;gap:8px;margin:0 0 12px;font-weight:500}' +
     '.hfp-link{background:none;border:0;padding:0;color:inherit;text-decoration:underline;cursor:pointer;font:inherit}' +
     '.hfp-video{position:relative;width:100%;aspect-ratio:16/9;margin:0 0 12px;border-radius:16px;overflow:hidden;background:#E3E8EF}' +
     '.hfp-video.is-vertical{max-width:340px;aspect-ratio:9/16}.hfp-video iframe{position:absolute;inset:0;width:100%;height:100%;border:0}' +
@@ -369,6 +369,47 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Your ripple: you in the middle, a ring per generation, a dot per action
+  // done (titles only, never names). Tap or focus a dot to see the action.
+  // ---------------------------------------------------------------------------
+  function rippleViz(view, opts) {
+    opts = opts || {};
+    var SVGNS = 'http://www.w3.org/2000/svg';
+    function s(tag, attrs) { var e = document.createElementNS(SVGNS, tag); Object.keys(attrs || {}).forEach(function (k) { e.setAttribute(k, attrs[k]); }); return e; }
+    var rings = (view && view.rings) || [];
+    var reached = (view && view.reached) || 0;
+    var box = el('div', { class: 'hfp-ripple' });
+    box.appendChild(el(opts.small ? 'p' : 'h2', { class: 'hfp-ripple-h', text: copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached.toLocaleString() }) }));
+    var size = 360, c = size / 2;
+    var svg = s('svg', { viewBox: '0 0 ' + size + ' ' + size, class: 'hfp-ripple-svg', role: 'img', 'aria-label': copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached }) });
+    var caption = el('p', { class: 'hfp-ripple-caption', 'aria-live': 'polite', text: rings.length ? copyText('ripple-tap') : '' });
+    var shown = Math.max(rings.length, 1);
+    for (var k = 1; k <= shown; k++) svg.appendChild(s('circle', { cx: c, cy: c, r: 36 + k * 28, fill: 'none', stroke: 'var(--colour--pale-blue, #cfe0f2)', 'stroke-width': 1.5 }));
+    rings.forEach(function (ring, i) {
+      var r = 36 + (i + 1) * 28, n = ring.dots.length, turn = i * 0.37;
+      ring.dots.forEach(function (title, j) {
+        var a = turn + (j / Math.max(n, 1)) * Math.PI * 2;
+        var dot = s('circle', { cx: (c + r * Math.cos(a)).toFixed(1), cy: (c + r * Math.sin(a)).toFixed(1), r: i === 0 ? 7 : 5.5, fill: i === 0 ? 'var(--colour--deep-blue, #2e5e8e)' : i % 2 ? 'var(--colour--brand-blue, #69c)' : 'var(--colour--light-blue, #9ec0e3)', tabindex: '0', role: 'button', 'aria-label': title, class: 'hfp-ripple-dot' });
+        var t = s('title'); t.textContent = title; dot.appendChild(t);
+        function show() { caption.textContent = title; }
+        dot.addEventListener('click', show);
+        dot.addEventListener('focus', show);
+        svg.appendChild(dot);
+      });
+    });
+    svg.appendChild(s('circle', { cx: c, cy: c, r: 26, fill: 'var(--colour--deep-blue, #2e5e8e)' }));
+    var you = s('text', { x: c, y: c + 5, 'text-anchor': 'middle', fill: '#fff', 'font-size': 15, 'font-weight': 700 });
+    you.textContent = copyText('ripple-you');
+    svg.appendChild(you);
+    box.appendChild(svg);
+    box.appendChild(caption);
+    var more = rings.map(function (r, i) { return r.marks > r.dots.length ? copyText('ripple-more', { n: (r.marks - r.dots.length).toLocaleString(), ring: i + 1 }) : ''; }).filter(Boolean);
+    if (more.length) box.appendChild(el('p', { class: 'hfp-muted hfp-small', text: more.join(' · ') }));
+    if (rings.length <= 1) box.appendChild(el('p', { class: 'hfp-muted', text: copyText('ripple-share-hint') }));
+    return box;
+  }
+
+  // ---------------------------------------------------------------------------
   // Action page
   // ---------------------------------------------------------------------------
   async function actionPage() {
@@ -471,7 +512,8 @@
       card.innerHTML = '';
       card.appendChild(el('p', { class: 'hf-drop-label', text: copyText('action-card-label') }));
       card.appendChild(el('p', { class: 'hf-drop-statement', style: 'font-size:28px', text: copyText('action-card-headline') }));
-      if (ripple > 0) card.appendChild(el('p', { text: copyText('ripple', { n: ripple }) }));
+      if (data.rippleView) card.appendChild(rippleViz(data.rippleView, { small: true }));
+      else if (ripple > 0) card.appendChild(el('p', { text: copyText('ripple', { n: ripple }) }));
       // Shareable proof, anonymous unless they add their first name.
       sharePanel(card, { who: st.cardWho || data.cardWho || null, title: st.title, slug: st.slug, ref: data.refCode, name: st.me && st.me.name });
       if (guest) {
@@ -762,6 +804,16 @@
     if ($('hf-name')) $('hf-name').textContent = me.name || me.firstName || copyText('acct-there');
     if ($('hf-tally')) $('hf-tally').textContent = String(me.tally);
     var tally = $('hf-tally');
+    // Your ripple: the picture goes right under the impact numbers.
+    if (me.rippleView) {
+      var oldViz = $('hfp-ripple-viz');
+      var viz = rippleViz(me.rippleView);
+      viz.id = 'hfp-ripple-viz';
+      viz.classList.add('hf-acct-card');
+      var impact = document.querySelector('#hf-acct-in .hf-acct-impact');
+      if (oldViz) oldViz.replaceWith(viz);
+      else if (impact) impact.insertAdjacentElement('afterend', viz);
+    }
     var rippleText = me.ripple > 0 ? copyText('ripple', { n: me.ripple }) : copyText('acct-ripple-none');
     if ($('hfp-ripple')) $('hfp-ripple').textContent = rippleText;
     else if (tally) tally.insertAdjacentElement('afterend', el('p', { id: 'hfp-ripple', class: 'hfp-muted', text: rippleText }));

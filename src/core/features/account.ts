@@ -7,6 +7,7 @@ import { memberTally } from './actions';
 import { storyRemovalStatements, suggestionSlug } from './submissions';
 import { memberPledges } from './pledges';
 import { displayName, memberRipple } from './ripple';
+import { rippleView } from './rings';
 import { hasLabAccess } from './ops';
 
 export async function getAccount(env: Env, member: Member) {
@@ -41,6 +42,7 @@ export async function getAccount(env: Env, member: Member) {
     tally: await memberTally(env, member.id),
     pledges: await memberPledges(env, member.id),
     ...(await memberRipple(env, member.id)),
+    rippleView: await rippleView(env, member.id),
     done: done.results,
     saved: saved.results,
     stories: stories.results,

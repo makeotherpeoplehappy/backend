@@ -905,7 +905,7 @@
     var prev = MILESTONES.filter(function (m) { return m <= n; }).pop() || 0;
     var bar = partIn(inn, 'tally-bar');
     if (bar) bar.style.width = goal ? Math.round(((n - prev) / (goal - prev)) * 100) + '%' : '100%';
-    P.fill('tally-next', goal ? copyText(goal - n === 1 ? 'dash-next-one' : 'dash-next-many', { left: goal - n, goal: goal }) : copyText('dash-next-done'));
+    P.fill('tally-next', !goal ? copyText('dash-next-done') : goal - n === 1 ? copyText('dash-next-one', { goal: goal }) : copyText('dash-next-many', { left: goal - n, goal: goal }));
 
     // Next up: the first card not done, saved or skipped.
     var seen = {};

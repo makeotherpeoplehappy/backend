@@ -130,14 +130,16 @@ builds every link from the address a request came in on. On launch day:
 
 1. **Webflow:** add the domain in Site settings › Publishing, point its DNS at
    Webflow, and publish to it.
-2. **Timer:** set `JOBS_URL` in `timer/wrangler.toml` to
-   `https://www.makeotherpeoplehappy.com/join/api/jobs/tick` and deploy the timer,
-   so job emails link to the new address.
-3. **Resend:** add and verify makeotherpeoplehappy.com, then set `EMAIL_FROM` to an
-   address on it (until then mail keeps coming from happiness.foundation).
-4. **Memberstack:** the site head loads Memberstack from its custom domain
-   `memberstack-client.happiness.foundation`; set up the same on
-   makeotherpeoplehappy.com in Memberstack and update the site head.
+2. **Timer:** nothing to do. It calls www.makeotherpeoplehappy.com first and the
+   Webflow test address only while the new address isn't the backend yet, so it switches by
+   itself once the site is published there.
+3. **Resend:** makeotherpeoplehappy.com is added (DNS records at GoDaddy). Once
+   Resend shows it as verified, set `EMAIL_FROM` in Webflow Cloud to an address on
+   it, e.g. `Happiness Foundation <team@makeotherpeoplehappy.com>`.
+4. **Memberstack:** done. Its custom domain is makeotherpeoplehappy.com (the site
+   head loads it from `memberstack-client.makeotherpeoplehappy.com`, hosted pages on
+   `login.makeotherpeoplehappy.com`), and both makeotherpeoplehappy.com addresses
+   are live app domains.
 5. **Shopify:** in the redirect theme's settings (Theme settings › Redirect) set the
    website address to `www.makeotherpeoplehappy.com`, then turn the store password
    off (checkout is blocked while it is on). Optional: a checkout subdomain such as

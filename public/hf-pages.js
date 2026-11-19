@@ -1055,8 +1055,9 @@
     var file = window.File ? new File([blob], 'happiness.png', { type: 'image/png' }) : null;
     var url = location.origin + '/';
     if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], text: copyText('card-share-text', { line: line, url: url }), url: url }); } catch (e) {}
-      return;
+      try { await navigator.share({ files: [file], text: copyText('card-share-text', { line: line, url: url }), url: url }); return; }
+      catch (e) { if (e && e.name === 'AbortError') return; }
+      // The share sheet was refused (for example the tap was too long ago): save the picture instead.
     }
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);

@@ -308,13 +308,12 @@
   "dash-next-one": "1 more to reach {goal}.",
   "dash-next-many": "{left} more to reach {goal}.",
   "dash-next-done": "Over 1,000 people made happier. Thank you.",
-  "dash-why-first": "A good first one – loved by lots of people",
-  "dash-why-popular": "Lots of people love this one",
   "feed-did": "You did: {action}",
   "feed-joined": "{name} joined you: {action}",
   "feed-i-joined": "You joined {name}: {action}",
   "feed-see-action": "See the action",
   "feed-pledge-open": "You pledged with a drop piece – one action to keep it",
   "feed-pledge-kept": "Pledge kept with {action}",
-  "feed-pledge-keep": "Keep it now"
+  "feed-pledge-keep": "Keep it now",
+  "dash-next-label": "Up next for you"
 }

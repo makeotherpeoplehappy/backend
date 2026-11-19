@@ -807,7 +807,7 @@ describe('Account lists (built in Webflow)', () => {
     const latest = items('ripple-latest');
     expect(latest.length).toBe(2);
     expect(latest[0].textContent).toContain('Call a grandparent');
-    expect(latest[0].querySelector('[data-hf-part="meta"]')!.textContent).toContain('for a grandparent');
+    expect(latest[0].querySelector('[data-hf-part="meta"]')!.textContent).toContain('For a grandparent');
     expect(d.querySelector('[data-hf-fill="ripple-their"]')!.textContent).toBe('2');
     expect(d.querySelector('[data-hf-slot="ripple"] svg [aria-label^="Call a grandparent"]')!.getAttribute('aria-label')).toBe('Call a grandparent · for a grandparent');
     expect(d.getElementById('hfp-ripple')!.textContent).toBe('Your actions have led to 4 more.');

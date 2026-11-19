@@ -2357,6 +2357,67 @@
     });
   }
 
+  // "Something to do" on /account (built in Webflow: .hf-take with one card per slide, and dots):
+  // one card at a time, turning every 8 seconds. It pauses while someone points at it, focuses
+  // it or has just swiped, and stays put for people who prefer less motion. Empty slides are skipped.
+  var TAKE_MS = 8000;
+  function takeRotator() {
+    var row = document.querySelector('.hf-take');
+    if (!row || row.getAttribute('data-hfp')) return;
+    row.setAttribute('data-hfp', '1');
+    var dotsBox = document.querySelector('[data-hf-show="take-dots"]');
+    var dots = dotsBox ? [].slice.call(dotsBox.querySelectorAll('[data-hf-act="take-go"]')) : [];
+    function live() {
+      return [].slice.call(row.children).map(function (el, i) { return { el: el, dot: dots[i] }; })
+        .filter(function (x) { return x.el.offsetHeight > 0 && x.el.querySelector('*') && [].slice.call(x.el.querySelectorAll('*')).some(function (c) { return c.offsetHeight > 0; }); });
+    }
+    var at = 0, paused = false, lastTouch = 0;
+    function show(i, smooth) {
+      var list = live();
+      if (!list.length) return;
+      at = (i + list.length) % list.length;
+      var target = list[at].el;
+      row.scrollTo({ left: target.offsetLeft - row.offsetLeft, behavior: smooth === false ? 'auto' : 'smooth' });
+      mark(list);
+    }
+    function mark(list) {
+      dots.forEach(function (d) { d.style.display = 'none'; d.removeAttribute('aria-current'); });
+      list.forEach(function (x, j) { if (x.dot) { x.dot.style.display = ''; if (j === at) x.dot.setAttribute('aria-current', 'true'); } });
+      if (dotsBox) { if (list.length > 1) dotsBox.setAttribute('data-hf-on', '1'); else dotsBox.removeAttribute('data-hf-on'); }
+    }
+    dots.forEach(function (d) {
+      d.addEventListener('click', function () {
+        var list = live();
+        var j = list.map(function (x) { return x.dot; }).indexOf(d);
+        lastTouch = Date.now();
+        if (j >= 0) show(j);
+      });
+    });
+    // Keep the dots right after a swipe.
+    var settle = null;
+    row.addEventListener('scroll', function () {
+      clearTimeout(settle);
+      settle = setTimeout(function () {
+        var list = live();
+        var best = 0, dist = Infinity;
+        list.forEach(function (x, j) { var d = Math.abs(x.el.offsetLeft - row.offsetLeft - row.scrollLeft); if (d < dist) { dist = d; best = j; } });
+        at = best; mark(list);
+      }, 120);
+    });
+    ['pointerdown', 'touchstart', 'wheel'].forEach(function (ev) { row.addEventListener(ev, function () { lastTouch = Date.now(); }, { passive: true }); });
+    row.addEventListener('mouseenter', function () { paused = true; });
+    row.addEventListener('mouseleave', function () { paused = false; });
+    row.addEventListener('focusin', function () { paused = true; });
+    row.addEventListener('focusout', function () { paused = false; });
+    show(0, false);
+    var calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (calm) return;
+    setInterval(function () {
+      if (paused || document.hidden || Date.now() - lastTouch < TAKE_MS * 2) return;
+      if (live().length > 1) show(at + 1);
+    }, TAKE_MS);
+  }
+
   async function shopDot() {
     var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
     if (!dots.length || dots[0].getAttribute('data-hfp')) return;
@@ -2445,7 +2506,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, evergreenSection, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, evergreenSection, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

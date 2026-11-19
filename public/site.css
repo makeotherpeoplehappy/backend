@@ -103,3 +103,6 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 /* FAQ (built in Webflow as details/summary): no browser arrow; the + turns to × when open. */
 .hf-faq-q::-webkit-details-marker{display:none}
 .hf-faq[open] .hf-faq-icon{transform:rotate(45deg)}
+/* Account "Something to do" row: no scrollbar; the current dot is filled. */
+.hf-take{scrollbar-width:none}.hf-take::-webkit-scrollbar{display:none}
+.hf-take-dot[aria-current="true"]{background-color:#2E5E8E}

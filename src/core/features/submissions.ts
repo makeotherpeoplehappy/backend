@@ -7,6 +7,7 @@ import { HttpError, iso } from '../http';
 import type { Member } from '../identity';
 import { enqueue } from '../queue';
 import { consumeDaily, refundDaily } from '../safety';
+import { placeBySlug } from './places';
 
 const MAX_SUGGESTION = 2000;
 
@@ -22,17 +23,21 @@ function titleFrom(text: string): string {
 export const suggestionSlug = (id: number) => `suggestion-${id}`;
 export { storySlug, storyCreateKey } from './stories';
 
-export async function sendSuggestion(env: Env, deps: Deps, member: Member, body: { text?: unknown }) {
+export async function sendSuggestion(env: Env, deps: Deps, member: Member, body: { text?: unknown; location?: unknown }) {
   const text = cleanText(body.text, MAX_SUGGESTION);
   if (text.length < 3) throw new HttpError(400, 'empty_suggestion', 'err-empty-suggestion');
+  // Where it works best (optional): one of the site's places, or anywhere.
+  const slug = typeof body.location === 'string' ? body.location.trim() : '';
+  const place = slug ? await placeBySlug(env, deps, slug) : null;
+  if (slug && !place) throw new HttpError(400, 'invalid_location', 'err-invalid-location');
   await consumeDaily(env, deps, member.id, 'suggestion');
   let id: number | null = null;
   try {
     const now = iso(deps.now());
     const row = await env.DB.prepare(
-      `INSERT INTO suggestions (member_id, text, status, created_at, updated_at) VALUES (?1, ?2, 'new', ?3, ?3) RETURNING id`,
+      `INSERT INTO suggestions (member_id, text, location, status, created_at, updated_at) VALUES (?1, ?2, ?4, 'new', ?3, ?3) RETURNING id`,
     )
-      .bind(member.id, text, now)
+      .bind(member.id, text, now, place?.slug ?? null)
       .first<{ id: number }>();
     id = row!.id;
     const similar = await similarNotes(env, text, id);
@@ -54,6 +59,7 @@ export async function sendSuggestion(env: Env, deps: Deps, member: Member, body:
           'submitted-on': now,
           status: CMS.suggestions.status.new,
           'review-notes': similar,
+          ...(place ? { location: place.id } : {}),
         },
         saveIdTo: { table: 'suggestions', id },
       },

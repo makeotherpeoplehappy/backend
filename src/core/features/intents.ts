@@ -23,7 +23,7 @@ export interface Intent {
   actionId?: string;
   inviteCode?: string;
   /** Typed text kept across sign-in (suggestion or story). */
-  data?: { text?: string; showName?: boolean };
+  data?: { text?: string; showName?: boolean; location?: string };
   returnTo: string | null;
   createdAt: string;
 }
@@ -44,6 +44,7 @@ export async function createIntent(env: Env, deps: Deps, body: Record<string, un
     intent.data = {
       ...(typeof data.text === 'string' ? { text: data.text.slice(0, 5000) } : {}),
       ...(typeof data.showName === 'boolean' ? { showName: data.showName } : {}),
+      ...(typeof data.location === 'string' && /^[a-z0-9-]{1,64}$/.test(data.location) ? { location: data.location } : {}),
     };
   }
   if (kind === 'join' && !intent.inviteCode) throw new HttpError(400, 'invalid_intent', 'err-invalid-intent-invite');
@@ -70,7 +71,7 @@ export async function completeIntent(env: Env, deps: Deps, member: Member, id: s
     try {
       if (intent.kind === 'done') result = await markDone(env, deps, member, intent.actionId!);
       if (intent.kind === 'like') result = await setLike(env, deps, member, intent.actionId!, true);
-      if (intent.kind === 'suggestion') result = await sendSuggestion(env, deps, member, { text: intent.data?.text });
+      if (intent.kind === 'suggestion') result = await sendSuggestion(env, deps, member, { text: intent.data?.text, location: intent.data?.location });
       if (intent.kind === 'join') result = await joinInvite(env, deps, member, intent.inviteCode || '');
     } catch (e) {
       // Already done today, or it is the member's own invite: nothing more to do.

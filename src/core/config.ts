@@ -39,6 +39,8 @@ export const CMS = {
       '56e007376964f22ad048c19233d89268': 25, // A whole community
     } as Record<string, number>,
   },
+  /** Places (Copenhagen, The Hamptons, …): Actions › Locations, Suggestions › Location. */
+  locations: { id: '6af7f94aa1aa086f74f94113' },
   suggestions: {
     id: '6af8ab957991d4c1991814e9',
     status: {

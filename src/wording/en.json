@@ -180,6 +180,7 @@
   "err-invalid-json": "The request could not be read.",
   "err-invalid-name": "Please enter a first name of up to 40 letters.",
   "err-invalid-setting": "That setting could not be saved.",
+  "err-invalid-location": "Pick one of the places in the list, or Anywhere.",
   "err-empty-suggestion": "Please write your idea before sending it.",
   "err-drop-not-found": "This drop could not be found.",
   "err-invalid-email": "Please enter a valid email address.",

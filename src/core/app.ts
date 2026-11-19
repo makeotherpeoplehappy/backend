@@ -317,7 +317,7 @@ route('POST', '/api/lab/failed', true, async ({ req, env, deps, ctx }) => {
 // Reviewing stories and suggestions from /lab.
 route('GET', '/api/lab/review', true, async ({ req, env, deps }) => {
   await assertLabAccess(env, await requireMember(req, env, deps));
-  return json(await reviewQueue(env));
+  return json(await reviewQueue(env, deps));
 });
 route('POST', '/api/lab/review', true, async ({ req, env, deps, ctx, baseUrl }) => {
   const me = await assertLabAccess(env, await requireMember(req, env, deps));

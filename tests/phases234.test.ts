@@ -64,6 +64,20 @@ describe('Phase 2: suggestions', () => {
     expect(String(item.fieldData['review-notes'])).toContain('Action: Compliment a stranger');
   });
 
+  it('a suggestion can say where it works best; the draft action starts in that place', async () => {
+    items(CMS.locations.id).push({ id: 'loccph', isDraft: false, live: true, fieldData: { name: 'Copenhagen', slug: 'copenhagen' } });
+    expect((await h.request('POST', '/api/suggestions', { token: 'shcat_ana', body: { text: 'Bring cake to the bike repair shop', location: 'nowhere' } })).status).toBe(400);
+    expect((await h.request('POST', '/api/suggestions', { token: 'shcat_ana', body: { text: 'Bring cake to the bike repair shop', location: 'copenhagen' } })).status).toBe(201);
+    await flush();
+    expect(await h.db(`SELECT location FROM suggestions`)).toEqual([{ location: 'copenhagen' }]);
+    expect(items(CMS.suggestions.id)[0].fieldData.location).toBe('loccph');
+    setStatus(CMS.suggestions.id, 'suggestion-1', CMS.suggestions.status.approved);
+    await tick();
+    await flush();
+    const draft = items(CMS.actions.id).find((i) => i.fieldData.slug === 'suggested-action-1')!;
+    expect(draft.fieldData).toMatchObject({ 'location-specific': true, locations: ['loccph'] });
+  });
+
   it('"Approved" creates exactly one draft action, even when toggled twice', async () => {
     await h.request('POST', '/api/suggestions', { token: 'shcat_ana', body: { text: 'Leave a note on a parked bike' } });
     await flush();

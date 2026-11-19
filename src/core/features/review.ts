@@ -14,6 +14,7 @@ import { enqueue, registerTask } from '../queue';
 import * as webflow from '../webflow';
 import { suggestionSlug, titleFrom } from './submissions';
 import { storySlug } from './stories';
+import { listPlaces, placeBySlug } from './places';
 
 type Status = 'new' | 'approved' | 'rejected';
 
@@ -84,12 +85,14 @@ export const draftSlug = (id: number) => `suggested-action-${id}`;
 /** Creates the draft action for an approved suggestion and links the two. */
 registerTask('suggestion.createDraft', async (env, deps, args) => {
   const id = Number(args.id);
-  const s = await env.DB.prepare(`SELECT id, text, cms_item_id, draft_action_id, status FROM suggestions WHERE id = ?1`)
+  const s = await env.DB.prepare(`SELECT id, text, location, cms_item_id, draft_action_id, status FROM suggestions WHERE id = ?1`)
     .bind(id)
-    .first<{ id: number; text: string; cms_item_id: string | null; draft_action_id: string | null; status: string }>();
+    .first<{ id: number; text: string; location: string | null; cms_item_id: string | null; draft_action_id: string | null; status: string }>();
   if (!s || s.draft_action_id || s.status !== 'approved') return 'ok';
   if (!s.cms_item_id) return 'defer';
   const d = await draftDefaults(env, deps);
+  // Suggested for a place: the draft starts location-specific, in that place.
+  const place = await placeBySlug(env, deps, s.location);
   const item = await webflow.createItem(
     env,
     deps,
@@ -102,6 +105,7 @@ registerTask('suggestion.createDraft', async (env, deps, args) => {
       commitment: ONE_OFF,
       ...(d.time ? { time: d.time } : {}),
       ...(d.cost ? { cost: d.cost } : {}),
+      ...(place ? { 'location-specific': true, locations: [place.id] } : {}),
     },
     true,
   );
@@ -254,9 +258,9 @@ export { storySlug };
 // then applied exactly as if it had been made in the CMS.
 // ---------------------------------------------------------------------------
 
-export async function reviewQueue(env: Env) {
+export async function reviewQueue(env: Env, deps: Deps) {
   const suggestions = await env.DB.prepare(
-    `SELECT s.id, s.text, s.similar_notes AS similar, s.created_at AS createdAt, s.cms_item_id IS NOT NULL AS ready,
+    `SELECT s.id, s.text, s.location, s.similar_notes AS similar, s.created_at AS createdAt, s.cms_item_id IS NOT NULL AS ready,
        COALESCE(m.share_name, m.first_name) AS name
      FROM suggestions s LEFT JOIN members m ON m.id = s.member_id
      WHERE s.status = 'new' ORDER BY s.created_at LIMIT 50`,
@@ -269,7 +273,9 @@ export async function reviewQueue(env: Env) {
      FROM stories s JOIN members m ON m.id = s.member_id LEFT JOIN actions a ON a.cms_item_id = s.action_id
      WHERE s.status = 'new' ORDER BY s.created_at LIMIT 50`,
   ).all();
-  return { suggestions: suggestions.results, stories: stories.results };
+  const places = await listPlaces(env, deps).catch(() => []);
+  const where = (slug: unknown) => (slug ? places.find((p) => p.slug === slug)?.name || String(slug) : null);
+  return { suggestions: suggestions.results.map((r) => ({ ...r, location: where(r.location) })), stories: stories.results };
 }
 
 export async function labDecide(env: Env, deps: Deps, reviewer: string, body: { type?: unknown; id?: unknown; decision?: unknown }, baseUrl: string) {

@@ -1065,6 +1065,19 @@
     var done = wrap.querySelector('.w-form-done');
     var fail = wrap.querySelector('.w-form-fail');
     var ta = f.querySelector('textarea');
+    // "Where does this work best?" (in Webflow, starting on Anywhere): its places
+    // are the ones in the site's location picker, so there's one list to keep.
+    var where = f.querySelector('[data-hf-field="where"]');
+    var loc = $('hf-loc');
+    if (where && loc) {
+      [].forEach.call(loc.options, function (o) {
+        if (!o.value || where.querySelector('option[value="' + o.value + '"]')) return;
+        var n = document.createElement('option');
+        n.value = o.value;
+        n.textContent = o.textContent;
+        where.appendChild(n);
+      });
+    }
     var P = partsOf(wrap);
     var msg = P.one('[data-hf-fill="sug-msg"]');
     freeSubmit(f);
@@ -1084,13 +1097,15 @@
       say(msg, '');
       var text = (ta && ta.value || '').trim();
       if (text.length < 3) { say(msg, copyText('sug-empty'), true); if (ta) ta.focus(); return; }
-      if (!signedIn()) return HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
+      var place = where ? where.value : '';
+      var data = place ? { text: text, location: place } : { text: text };
+      if (!signedIn()) return HFB.requireSignIn({ kind: 'suggestion', data: data });
       var submit = f.querySelector('[type=submit]');
       if (submit) { submit.setAttribute('data-hfp-busy', '1'); submit.disabled = true; }
-      var r = await HFB.call('/api/suggestions', { method: 'POST', body: { text: text } });
+      var r = await HFB.call('/api/suggestions', { method: 'POST', body: data });
       if (submit) { submit.removeAttribute('data-hfp-busy'); submit.disabled = false; }
       if (r.ok) finished();
-      else if (r.status === 401) HFB.requireSignIn({ kind: 'suggestion', data: { text: text } });
+      else if (r.status === 401) HFB.requireSignIn({ kind: 'suggestion', data: data });
       else { say(msg, msgOf(r), true); if (fail) fail.style.display = 'block'; }
     }, true);
     document.addEventListener('hfb:resumed', function (ev) {

@@ -197,6 +197,7 @@
       });
       d.suggestions.forEach(function (s) {
         var kids = [el('p', { class: 'sub', text: 'Suggestion · ' + (s.name || 'A member') + ' · ' + when(s.createdAt) }), el('p', { class: 'review-text', text: s.text })];
+        kids.push(el('p', { class: 'sub', text: s.location ? 'Works best in ' + s.location + ' (the draft action is set to it)' : 'Works anywhere' }));
         if (s.similar) kids.push(el('p', { class: 'sub', text: s.similar }));
         body.appendChild(card('suggestion', s, kids));
       });

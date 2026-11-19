@@ -66,7 +66,7 @@ export class FakeServices {
   /** Shopify collections by handle: product ids. */
   shopCollections = new Map<string, string[]>();
   /** Drops: Shopify collections with a drop date (custom.drop_date), by handle; their products are in shopCollections. */
-  dropCollections = new Map<string, { title: string; description?: string; dropDate: string; heroHeadline?: string; heroImageUrl?: string; leadProductId?: string }>();
+  dropCollections = new Map<string, { title: string; description?: string; dropDate: string; heroHeadline?: string; imageUrl?: string | null; leadProductId?: string }>();
   /** Shopify customers created or updated by drop sign-ups, by email. */
   marketing = new Map<string, { id: string; tags: string[]; state: string; firstName?: string }>();
   /** collectionId -> items */
@@ -252,7 +252,8 @@ export class FakeServices {
           description: c.description || '',
           dropDate: { value: c.dropDate },
           heroHeadline: c.heroHeadline ? { value: c.heroHeadline } : null,
-          heroImage: c.heroImageUrl ? { reference: { image: { url: c.heroImageUrl, altText: null } } } : null,
+          // A drop has its image unless a test says it hasn't (imageUrl: null).
+          image: c.imageUrl === null ? null : { url: c.imageUrl || `https://cdn.shopify.com/${handle}.jpg`, altText: null },
           lead: c.leadProductId ? { reference: { id: c.leadProductId } } : null,
           products: { nodes: (this.shopCollections.get(handle) || []).map((id) => ({ id })) },
         }));

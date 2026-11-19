@@ -237,7 +237,7 @@ export async function labKpis(env: Env, deps: Deps) {
   const topActions = await many<{ title: string; slug: string | null; people: number; times: number }>(
     `SELECT COALESCE(a.title, d.action_title) AS title, a.slug AS slug, COUNT(DISTINCT d.member_id) AS people, COUNT(*) AS times
      FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id
-     WHERE d.done_at >= ?1 GROUP BY d.action_id ORDER BY people DESC, times DESC LIMIT 10`,
+     WHERE d.done_at >= ?1 GROUP BY d.action_id ORDER BY COUNT(DISTINCT d.member_id) DESC, COUNT(*) DESC LIMIT 10`,
     d30,
   );
   const mostLiked = await many<{ title: string; likes: number }>(

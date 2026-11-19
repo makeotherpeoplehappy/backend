@@ -308,7 +308,7 @@ export async function mostDone(env: Env) {
     `SELECT a.cms_item_id AS actionId, a.slug, a.title, COUNT(DISTINCT d.member_id) AS people
      FROM done_marks d JOIN actions a ON a.cms_item_id = d.action_id
      WHERE a.status = 'published'
-     GROUP BY a.cms_item_id HAVING people >= ?1 ORDER BY people DESC, a.title LIMIT 50`,
+     GROUP BY a.cms_item_id HAVING COUNT(DISTINCT d.member_id) >= ?1 ORDER BY COUNT(DISTINCT d.member_id) DESC, a.title LIMIT 50`,
   )
     .bind(COUNT_THRESHOLD)
     .all<{ actionId: string; slug: string; title: string; people: number }>();

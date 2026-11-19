@@ -755,7 +755,7 @@ describe('Weekly dare', () => {
 describe('Account lists (built in Webflow)', () => {
   const T = (name: string, inner: string) => `<li data-hf-template="${name}" data-hf-show="template">${inner}</li>`;
   const HTML = `<div id="hf-acct-in" data-hf-show="signed-in"><p id="hf-tally"></p><p id="hfp-ripple">When someone you invite takes an action, it shows here.</p>
-    <div class="hf-acct-card" id="acct-ripple" data-hf-show="ripple"><p data-hf-fill="ripple-h"></p><div data-hf-slot="ripple"></div><p data-hf-fill="ripple-caption"></p><p data-hf-show="ripple-more" data-hf-fill="ripple-more"></p><p data-hf-show="ripple-hint">Share</p></div>
+    <div class="hf-acct-card" id="acct-ripple" data-hf-show="ripple"><p data-hf-fill="ripple-h"></p><p data-hf-fill="ripple-actions">0</p><p data-hf-fill="ripple-friends">0</p><p data-hf-fill="ripple-their">0</p><div data-hf-slot="ripple"></div><p data-hf-fill="ripple-caption"></p><p data-hf-show="ripple-more" data-hf-fill="ripple-more"></p><p data-hf-show="ripple-hint">Share</p></div>
     <div class="hf-acct-card" id="acct-pledges"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-pledges"><span>Your pledges</span><span data-hf-fill="fold-count"></span></a></h2>
       <div id="hf-pledges"><p data-hf-part="empty">No pledges yet.</p><ul data-hf-slot="pledges">${T('pledge', '<div><span data-hf-part="state">Open</span><span data-hf-part="date">x</span></div><p data-hf-part="kept">x</p><a data-hf-part="keep" href="/actions"><span>Find an action</span></a>')}</ul></div></div>
     <div class="hf-acct-card" id="acct-saved" data-hf-show="saved"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-saved"><span>Saved</span><span data-hf-fill="fold-count"></span></a></h2><ul data-hf-slot="saved">${T('saved', '<a data-hf-part="title" href="/actions">x</a>')}</ul></div>
@@ -770,7 +770,7 @@ describe('Account lists (built in Webflow)', () => {
   </div>`;
   const ME = { data: {
     name: 'Tess', tally: 3, ripple: 4, settings: {},
-    rippleView: { reached: 4, rings: [{ marks: 2, dots: ['Call a grandparent', 'Cook a meal'] }] },
+    rippleView: { reached: 4, actions: 2, friends: 1, theirActions: 2, rings: [{ marks: 2, dots: [{ title: 'Call a grandparent', who: 'grandparent' }, 'Cook a meal'] }] },
     pledges: [{ status: 'open', orderedAt: '2026-11-01T00:00:00Z' }, { status: 'kept', orderedAt: '2026-10-01T00:00:00Z', keptBySlug: 'cook-a-meal', keptByTitle: 'Cook a meal', keptOn: '2026-10-03T00:00:00Z' }],
     done: [{ actionId: 'a', slug: 'cook-a-meal', title: 'Cook a meal', actionStatus: 'published', doneAt: '2026-11-02T00:00:00Z' }, { actionId: 'a', slug: 'cook-a-meal', title: 'Cook a meal', actionStatus: 'published', doneAt: '2026-11-01T00:00:00Z' }, { actionId: 'b', slug: 'old', title: 'Old one', actionStatus: 'archived', doneAt: '2026-10-01T00:00:00Z' }],
     stories: [{ actionId: 'a', status: 'pending' }],
@@ -801,6 +801,9 @@ describe('Account lists (built in Webflow)', () => {
     expect(d.getElementById('acct-ripple')!.hasAttribute('data-hf-on')).toBe(true);
     expect(d.querySelector('[data-hf-fill="ripple-h"]')!.textContent).toBe('Your actions have reached 4 people');
     expect(d.querySelectorAll('[data-hf-slot="ripple"] svg').length).toBe(1);
+    expect(d.querySelector('[data-hf-fill="ripple-friends"]')!.textContent).toBe('1');
+    expect(d.querySelector('[data-hf-fill="ripple-their"]')!.textContent).toBe('2');
+    expect(d.querySelector('[data-hf-slot="ripple"] svg [aria-label^="Call a grandparent"]')!.getAttribute('aria-label')).toBe('Call a grandparent · for a grandparent');
     expect(d.getElementById('hfp-ripple')!.textContent).toBe('Your actions have led to 4 more.');
     // The designs themselves are untouched.
     expect(d.querySelectorAll('[data-hf-template]').length).toBe(5);

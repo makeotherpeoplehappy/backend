@@ -66,16 +66,21 @@ describe('Active membership', () => {
 });
 
 describe('People made happy', () => {
-  it('counts each action by its "how many", in the account, after I did this and on the home page', async () => {
+  it('counts 1 per "I did this", never the action\'s estimate, until the member says how many', async () => {
     const few = Object.keys(CMS.actions.howManyPeople as Record<string, number>).find((k) => (CMS.actions.howManyPeople as Record<string, number>)[k] === 3)!;
     const a = h.fake.addAction('cook-for-friends', 'Cook for friends');
     Object.assign(h.fake.collection(CMS.actions.id).find((i) => i.id === a)!.fieldData, { 'how-many': few });
     await syncActions(h.env, h.app.deps);
     const r = await (await done(a)).json();
-    expect(r.tally).toBe(3);
-    expect((await me()).tally).toBe(3);
+    expect(r.tally).toBe(1);
+    // "2–5" counts low: 2.
+    const p = await h.request('PATCH', `/api/actions/${a}/done`, { token: 'shcat_ana', body: { people: 'few' } });
+    expect(p.status).toBe(200);
+    expect((await p.json()).tally).toBe(2);
+    expect((await me()).tally).toBe(2);
     const impact = await (await h.request('GET', '/api/impact')).json();
-    expect(impact.peopleMadeHappy).toBe(3);
+    expect(impact.peopleMadeHappy).toBe(2);
+    expect((await h.request('PATCH', `/api/actions/${a}/done`, { token: 'shcat_ana', body: { people: 'lots' } })).status).toBe(400);
   });
 
   it('keeps the Memberstack plan in step: Inactive for everyone first, Active once earned, back on drop-out', async () => {

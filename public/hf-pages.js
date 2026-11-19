@@ -997,7 +997,7 @@
       // Your own action (not on the site yet): its story is shared by its own reference.
       var ref = live ? d.slug : /^own-\d+$/.test(d.actionId || '') ? d.actionId : '';
       var s = storyFor[d.actionId];
-      items.push({ cat: 'mine', at: d.doneAt, by: 'me', title: copyText('feed-did', { action: d.title }),
+      items.push({ cat: 'mine', at: d.doneAt, by: 'me', card: { title: d.title, who: firstWhoOf(d.who) }, title: copyText('feed-did', { action: d.title }),
         meta: day(d.doneAt) + (s ? ' · ' + copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') : ''), go: ref ? { href: '/share-your-story?action=' + encodeURIComponent(ref), text: copyText(s ? 'story-edit' : 'story-share') } : null });
     });
     (me.joinedMyInvites || []).forEach(function (x) {
@@ -1026,6 +1026,12 @@
       if (m) m.textContent = x.meta;
       var go = partIn(li, 'go');
       if (x.go) setLink(go, x.go.href, x.go.text); else drop(go);
+      // The share card for what you did, right next to its story.
+      var card = partIn(li, 'card');
+      if (card && x.card) card.addEventListener('click', function (e) { e.preventDefault(); shareCardNow(x.card); });
+      else drop(card);
+      var row = partIn(li, 'actions');
+      if (row && !row.children.length) drop(row);
     }, 'feed-item');
     P.show('feed-end', items.length > 0);
     feedFilter(inn, inn.getAttribute('data-hf-feed') || 'all');
@@ -1035,6 +1041,31 @@
       chip.addEventListener('click', function (e) { e.preventDefault(); feedFilter(inn, chip.getAttribute('data-hf-filter')); });
     });
   }
+  function firstWhoOf(raw) {
+    try { var l = JSON.parse(raw || '[]'); return Array.isArray(l) && typeof l[0] === 'string' ? l[0] : null; } catch (e) { return null; }
+  }
+  // Share card from the feed: drawn now, then the phone's share sheet (or saved as an image).
+  async function shareCardNow(c) {
+    try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+    var line = cardLine(c.who, null);
+    var canvas = drawCard({ line: line, title: c.title, logo: await loadLogo() });
+    if (!canvas) return;
+    var blob = await new Promise(function (r) { canvas.toBlob(r, 'image/png'); });
+    if (!blob) return;
+    var file = window.File ? new File([blob], 'happiness.png', { type: 'image/png' }) : null;
+    var url = location.origin + '/';
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], text: copyText('card-share-text', { line: line, url: url }), url: url }); } catch (e) {}
+      return;
+    }
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'happiness.png';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
   // The feed's round badge is whoever did it: your photo or initial, or your friend's initial.
   function feedAvatar(b, x) {
     var photo = '';
@@ -2610,6 +2641,27 @@
     });
   }
 
+  // Collaborator (drops and products) and the share given to Happiness Foundation
+  // (products): built in Webflow and bound to the CMS; shown only when filled in.
+  function cmsOptional() {
+    var empty = function (el) { return !el || el.classList.contains('w-dyn-bind-empty') || !el.textContent.trim(); };
+    document.querySelectorAll('[data-hf-show="collab"]').forEach(function (box) {
+      if (empty(box.querySelector('[data-hf-part="collab-name"]'))) return;
+      box.querySelectorAll('[data-hf-part="collab-photo"]').forEach(function (img) {
+        var src = img.getAttribute('src') || '';
+        if (!src || img.classList.contains('w-dyn-bind-empty') || /placeholder/.test(src)) drop(img);
+      });
+      box.querySelectorAll('[data-hf-part="collab-link"]').forEach(function (a) {
+        var h = a.getAttribute('href') || '';
+        if (!h || h === '#' || a.classList.contains('w-dyn-bind-empty')) drop(a);
+      });
+      box.setAttribute('data-hf-on', '1');
+    });
+    document.querySelectorAll('[data-hf-show="donate"]').forEach(function (box) {
+      if (!empty(box.querySelector('[data-hf-part="donate-pct"]'))) box.setAttribute('data-hf-on', '1');
+    });
+  }
+
   async function shopDot() {
     var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
     if (!dots.length || dots[0].getAttribute('data-hfp')) return;
@@ -2698,7 +2750,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, ownLink, finderFromLink, ownAction, evergreenSection, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, ownLink, finderFromLink, ownAction, cmsOptional, evergreenSection, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

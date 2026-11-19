@@ -13,8 +13,9 @@ import { hasLabAccess } from './ops';
 
 export async function getAccount(env: Env, deps: Deps, member: Member) {
   const done = await env.DB.prepare(
-    `SELECT d.action_id AS actionId, d.action_title AS title, d.done_at AS doneAt, a.slug AS slug, a.status AS actionStatus
-     FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id
+    `SELECT d.action_id AS actionId, d.action_title AS title, d.done_at AS doneAt, a.slug AS slug, a.status AS actionStatus,
+       COALESCE(a.who, s.who) AS who
+     FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id LEFT JOIN suggestions s ON s.id = d.suggestion_id
      WHERE d.member_id = ?1 ORDER BY d.done_at DESC LIMIT 500`,
   )
     .bind(member.id)

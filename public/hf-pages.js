@@ -452,7 +452,10 @@
       var bits = [];
       if (d && d.who && copyText(whoKey)) bits.push(copyText('ripple-for', { who: copyText(whoKey) }));
       if (d && d.at) bits.push(day(d.at));
-      m.textContent = bits.length ? ' · ' + bits.join(' · ') : '';
+      // Its own line under the title: "For a friend · Nov 19, 2026".
+      var line = bits.join(' · ');
+      m.textContent = line ? line.charAt(0).toUpperCase() + line.slice(1) : '';
+      if (!line) drop(m);
     });
     // The three real numbers (built in Webflow): your actions, friends who joined, their actions.
     P.fill('ripple-actions', String((view && view.actions) || 0));

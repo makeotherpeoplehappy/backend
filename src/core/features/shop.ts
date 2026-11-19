@@ -186,6 +186,8 @@ function productFields(p: ShopifyProduct, dropItemId: string | null) {
     price: priceText(p.priceRangeV2.minVariantPrice.amount, p.priceRangeV2.minVariantPrice.currencyCode),
     'edition-size': editionSize(p.edition?.value),
     drop: dropItemId,
+    // Not part of a drop: shown under "Always available" in the shop.
+    evergreen: dropItemId === null,
   };
 }
 

@@ -2211,6 +2211,13 @@
     document.addEventListener('hfb:resumed', load);
   }
 
+  /** The shop's "Always available" section (in Webflow) shows once it has a product in it. */
+  function evergreenSection() {
+    document.querySelectorAll('[data-hf-show="evergreen"]').forEach(function (sec) {
+      if (sec.querySelector('.hf-shop-card:not(.w-condition-invisible)')) sec.setAttribute('data-hf-on', '1');
+    });
+  }
+
   /** The dot next to Shop in the menu (in Webflow): on while a drop is coming up or on sale. */
   async function shopDot() {
     var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
@@ -2300,7 +2307,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, evergreenSection, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

@@ -52,7 +52,7 @@ describe('Shopify → Webflow', () => {
     expect(drop.fieldData).toMatchObject({ name: 'Drop 01', slug: 'drop-01', 'drop-date': DROP_AT, 'early-access': EARLY_AT, description: 'The first drop.' });
     const [product] = h.fake.collection(CMS.products.id);
     expect(product.live).toBe(true);
-    expect(product.fieldData).toMatchObject({ name: 'Drop 01 Tee', slug: 'drop-01-tee', price: '$45', 'edition-size': 100, drop: drop.id, 'short-description': 'Soft. Kind.' });
+    expect(product.fieldData).toMatchObject({ name: 'Drop 01 Tee', slug: 'drop-01-tee', price: '$45', 'edition-size': 100, drop: drop.id, evergreen: false, 'short-description': 'Soft. Kind.' });
     expect((product.fieldData.image as { url: string }).url).toBe('https://cdn.shopify.com/tee.jpg');
     // The home page hero: no headline or photo yet (the hero waits for a photo), the lead piece and its pieces.
     expect(drop.fieldData).toMatchObject({ 'hero-before': 'Drop 01', 'hero-accent': '', 'hero-image': null, 'lead-name': 'Drop 01 Tee', 'lead-price': '$45', 'lead-slug': 'drop-01-tee', pieces: [product.id], 'piece-count': 1, 'sold-out': false, open: true, 'hero-on': false, 'hero-off': true });
@@ -75,6 +75,13 @@ describe('Shopify → Webflow', () => {
     h.fake.inventory.set('gid://shopify/Product/556', 0);
     await syncShop(h.env, h.app.deps);
     expect(h.fake.collection(CMS.drops.id)[0].fieldData).toMatchObject({ 'sold-out': true, open: false, 'hero-on': false, 'hero-off': true });
+  });
+
+  it('a product outside any drop is evergreen', async () => {
+    h.fake.products.push({ id: 'gid://shopify/Product/777', handle: 'thank-you-cards', title: 'Thank-you cards', status: 'ACTIVE', descriptionHtml: '', description: '' });
+    await syncShop(h.env, h.app.deps);
+    const cards = h.fake.collection(CMS.products.id).find((i) => i.fieldData.slug === 'thank-you-cards')!;
+    expect(cards.fieldData).toMatchObject({ drop: null, evergreen: true });
   });
 
   it('a product webhook queues one sync shortly after', async () => {

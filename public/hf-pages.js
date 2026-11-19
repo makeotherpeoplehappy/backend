@@ -100,6 +100,10 @@
   //   [data-hf-slot="x"]  a holder for drawn or loaded content (a picture, a video)
   //   [data-hf-template]  a hidden design the script copies for each item (stories)
   // ---------------------------------------------------------------------------
+  /** Typed text is not kept once you leave a page (earlier drafts on this page are removed too). */
+  function forgetDrafts() {
+    try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf('hfb_draft:' + location.pathname) === 0) localStorage.removeItem(k); }); } catch (e) {}
+  }
   function partsOf(root) {
     var P = {
       root: root,
@@ -978,20 +982,20 @@
     (me.done || []).forEach(function (d) {
       var live = d.slug && d.actionStatus === 'published';
       var s = storyFor[d.actionId];
-      items.push({ cat: 'mine', at: d.doneAt, badge: '✓', title: copyText('feed-did', { action: d.title }),
+      items.push({ cat: 'mine', at: d.doneAt, by: 'me', title: copyText('feed-did', { action: d.title }),
         meta: day(d.doneAt) + (s ? ' · ' + copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') : ''), go: live ? { href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') } : null });
     });
     (me.joinedMyInvites || []).forEach(function (x) {
-      items.push({ cat: 'together', at: x.joinedAt, badge: '+', title: copyText('feed-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '' }),
+      items.push({ cat: 'together', at: x.joinedAt, by: x.name || '', title: copyText('feed-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '' }),
         meta: day(x.joinedAt), go: x.actionSlug ? { href: '/action/' + x.actionSlug, text: copyText('feed-see-action') } : null });
     });
     (me.invitesIJoined || []).forEach(function (x) {
-      items.push({ cat: 'together', at: x.joinedAt, badge: '+', title: copyText('feed-i-joined', { name: x.inviterName || copyText('acct-someone'), action: x.actionTitle || '' }),
+      items.push({ cat: 'together', at: x.joinedAt, by: 'me', title: copyText('feed-i-joined', { name: x.inviterName || copyText('acct-someone'), action: x.actionTitle || '' }),
         meta: day(x.joinedAt), go: x.actionSlug ? { href: '/action/' + x.actionSlug, text: copyText('feed-see-action') } : null });
     });
     (me.pledges || []).forEach(function (p) {
       var kept = p.status === 'kept';
-      items.push({ cat: 'drops', at: kept && p.keptOn ? p.keptOn : p.orderedAt, badge: '◆',
+      items.push({ cat: 'drops', at: kept && p.keptOn ? p.keptOn : p.orderedAt, badge: kept ? null : '◆', by: kept ? 'me' : null,
         title: kept ? copyText('feed-pledge-kept', { action: p.keptByTitle || copyText('acct-pledge-an-action') }) : copyText('feed-pledge-open'),
         meta: day(kept && p.keptOn ? p.keptOn : p.orderedAt), go: kept ? null : { href: '/#find', text: copyText('feed-pledge-keep') } });
     });
@@ -1000,7 +1004,7 @@
     fillList('feed', items, function (li, x) {
       li.setAttribute('data-cat', x.cat);
       var b = partIn(li, 'badge');
-      if (b) { b.textContent = x.badge; b.classList.toggle('is-green', x.cat === 'together'); b.classList.toggle('is-ink', x.cat === 'drops'); }
+      if (b) feedAvatar(b, x);
       var t = partIn(li, 'title');
       if (t) t.textContent = x.title;
       var m = partIn(li, 'meta');
@@ -1015,6 +1019,23 @@
       chip.setAttribute('data-hfp', '1');
       chip.addEventListener('click', function (e) { e.preventDefault(); feedFilter(inn, chip.getAttribute('data-hf-filter')); });
     });
+  }
+  // The feed's round badge is whoever did it: your photo or initial, or your friend's initial.
+  function feedAvatar(b, x) {
+    var photo = '';
+    var text = x.badge || '';
+    if (x.by === 'me') {
+      var m = memberSaved() || {};
+      var first = (m.customFields && m.customFields['first-name']) || '';
+      text = String(first || (m.auth && m.auth.email) || '').trim().charAt(0).toUpperCase();
+      if (m.profileImage) photo = String(m.profileImage).replace(/["\\]/g, '');
+    } else if (x.by) {
+      text = String(x.by).trim().charAt(0).toUpperCase();
+    }
+    b.textContent = photo ? '' : text;
+    b.style.backgroundImage = photo ? 'url("' + photo + '")' : '';
+    b.classList.toggle('is-green', x.cat === 'together' && x.by !== 'me');
+    b.classList.toggle('is-ink', !x.by);
   }
   function feedFilter(inn, f) {
     inn.setAttribute('data-hf-feed', f);
@@ -1206,9 +1227,10 @@
     var P = partsOf(wrap);
     var msg = P.one('[data-hf-fill="sug-msg"]');
     freeSubmit(f);
-    var draft = HFB.keepDraft(f);
+    forgetDrafts();
+    window.addEventListener('pageshow', function (e) { if (e.persisted) f.reset(); });
     function finished() {
-      draft.clear();
+      f.reset();
       f.style.display = 'none';
       if (fail) fail.style.display = 'none';
       if (done) { done.style.display = 'block'; done.setAttribute('role', 'status'); }
@@ -2454,14 +2476,23 @@
     var text = document.getElementById('own-text');
     var msg = P.one('[data-hf-fill="own-msg"]');
     if (!form || !text) return;
-    function reveal() { box.setAttribute('data-hf-on', '1'); }
-    var showBtn = document.getElementById('hf-show');
-    if (showBtn) showBtn.addEventListener('click', function () { setTimeout(reveal, 300); });
-    if (/[?&](time|who|occasion)=/.test(location.search) || location.hash === '#own') reveal();
+    function reveal(focus) {
+      box.setAttribute('data-hf-on', '1');
+      if (focus) { box.scrollIntoView({ block: 'start', behavior: 'smooth' }); setTimeout(function () { text.focus({ preventScroll: true }); }, 400); }
+    }
+    // "Log your own" at the end of the results (in the finder): shown once there are results.
+    var results = document.getElementById('hf-results');
+    var links = [].slice.call(document.querySelectorAll('[data-hf-show="own-link"]'));
+    function linkOn() { var on = !!(results && results.children.length); links.forEach(function (l) { if (on) l.setAttribute('data-hf-on', '1'); else l.removeAttribute('data-hf-on'); }); }
+    if (results) { new MutationObserver(linkOn).observe(results, { childList: true }); linkOn(); }
+    document.querySelectorAll('[data-hf-act="own-open"]').forEach(function (a) {
+      a.addEventListener('click', function (e) { e.preventDefault(); reveal(true); });
+    });
+    if (location.hash === '#own') reveal(true);
     form.addEventListener('submit', function (e) { e.preventDefault(); }, true);
+    forgetDrafts();
+    window.addEventListener('pageshow', function (e) { if (e.persisted) form.reset(); });
     await wait(function () { return window.HF && window.HFB; }, 10000);
-    var draft = HFB.keepDraft(form);
-    if (text.value) reveal();
     var timer = null;
     var asked = '';
     text.addEventListener('input', function () {
@@ -2488,7 +2519,7 @@
       var r = await HFB.call('/api/own-actions', { method: 'POST', body: { text: t, who: form.elements.who.value, people: form.elements.people.value } });
       setBusy(b, false);
       if (r.ok) {
-        draft.clear();
+        form.reset();
         form.style.display = 'none';
         P.show('own-matches', false);
         P.show('own-done', true);

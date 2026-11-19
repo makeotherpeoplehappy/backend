@@ -215,7 +215,7 @@ export async function labKpis(env: Env, deps: Deps) {
     peopleMadeHappy30d: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d WHERE d.done_at >= ?1`, d30),
     peopleMadeHappy7d: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d WHERE d.done_at >= ?1`, d7),
     activeMembers: await activeCount(env),
-    actionsEverDone: await n(`SELECT COUNT(DISTINCT action_id) AS n FROM done_marks`),
+    actionsEverDone: await n(`SELECT COUNT(DISTINCT action_id) AS n FROM done_marks WHERE source != 'own'`),
     pledgesMade: await n(`SELECT COUNT(*) AS n FROM pledges WHERE status != 'cancelled'`),
     pledgesKept: await n(`SELECT COUNT(*) AS n FROM pledges WHERE status = 'kept'`),
   };
@@ -283,8 +283,9 @@ export async function publicImpact(env: Env): Promise<{ peopleMadeHappy: number;
   if (cached) return cached;
   const n = async (sql: string) => (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? 0;
   const out = {
-    // Each "I did this" counts the action's "how many" (1, 3, 8 or 25), as everywhere else.
-    peopleMadeHappy: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d`),
+    // Each "I did this" counts the people the member said it reached (1 when they didn't say).
+    // Own actions count here once they are approved and on the site.
+    peopleMadeHappy: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d WHERE d.source != 'own'`),
     actions: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
     stories: await n(`SELECT COUNT(*) AS n FROM stories WHERE status = 'approved'`),
   };

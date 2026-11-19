@@ -2442,6 +2442,61 @@
     box.scrollIntoView({ block: 'start' });
   }
 
+  // Your own action (on /actions, built in Webflow: #own). Shown after a search.
+  // Logging it counts for you now (one a day) and sends it to review; while you
+  // type, close matches among the site's actions are offered instead.
+  async function ownAction() {
+    var box = document.getElementById('own');
+    if (!box || box.getAttribute('data-hfp')) return;
+    box.setAttribute('data-hfp', '1');
+    var P = partsOf(box);
+    var form = P.one('[data-hf-part="own-form"]');
+    var text = document.getElementById('own-text');
+    var msg = P.one('[data-hf-fill="own-msg"]');
+    if (!form || !text) return;
+    function reveal() { box.setAttribute('data-hf-on', '1'); }
+    var showBtn = document.getElementById('hf-show');
+    if (showBtn) showBtn.addEventListener('click', function () { setTimeout(reveal, 300); });
+    if (/[?&](time|who|occasion)=/.test(location.search) || location.hash === '#own') reveal();
+    form.addEventListener('submit', function (e) { e.preventDefault(); }, true);
+    await wait(function () { return window.HF && window.HFB; }, 10000);
+    var draft = HFB.keepDraft(form);
+    if (text.value) reveal();
+    var timer = null;
+    var asked = '';
+    text.addEventListener('input', function () {
+      clearTimeout(timer);
+      timer = setTimeout(async function () {
+        var q = text.value.trim();
+        if (q === asked) return;
+        asked = q;
+        if (q.length < 4) { P.show('own-matches', false); return; }
+        var r = await HFB.call('/api/actions/match?q=' + encodeURIComponent(q), { auth: false });
+        if (asked !== q) return;
+        var list = (r.ok && r.data && r.data.matches) || [];
+        fillList('own-matches', list, function (a, m) { a.textContent = m.title; a.setAttribute('href', '/action/' + m.slug); });
+        P.show('own-matches', list.length > 0);
+      }, 350);
+    });
+    form.addEventListener('submit', async function () {
+      say(msg, '');
+      var t = text.value.trim();
+      if (t.length < 3) { say(msg, copyText('own-empty'), true); text.focus(); return; }
+      if (!signedIn()) return HFB.requireSignIn({ kind: 'return', returnTo: location.pathname + '#own' });
+      var b = form.querySelector('[type=submit]');
+      setBusy(b, true);
+      var r = await HFB.call('/api/own-actions', { method: 'POST', body: { text: t, who: form.elements.who.value, people: form.elements.people.value } });
+      setBusy(b, false);
+      if (r.ok) {
+        draft.clear();
+        form.style.display = 'none';
+        P.show('own-matches', false);
+        P.show('own-done', true);
+      } else if (r.status === 401) HFB.requireSignIn({ kind: 'return', returnTo: location.pathname + '#own' });
+      else say(msg, msgOf(r), true);
+    });
+  }
+
   async function shopDot() {
     var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
     if (!dots.length || dots[0].getAttribute('data-hfp')) return;
@@ -2530,7 +2585,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, finderFromLink, evergreenSection, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, finderFromLink, ownAction, evergreenSection, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

@@ -11,7 +11,7 @@ import { placeBySlug } from './places';
 
 const MAX_SUGGESTION = 2000;
 
-function cleanText(value: unknown, max: number): string {
+export function cleanText(value: unknown, max: number): string {
   return typeof value === 'string' ? value.replace(/\r\n/g, '\n').trim().slice(0, max) : '';
 }
 
@@ -30,18 +30,35 @@ export async function sendSuggestion(env: Env, deps: Deps, member: Member, body:
   const slug = typeof body.location === 'string' ? body.location.trim() : '';
   const place = slug ? await placeBySlug(env, deps, slug) : null;
   if (slug && !place) throw new HttpError(400, 'invalid_location', 'err-invalid-location');
+  const id = await createSuggestion(env, deps, member, { text, place });
+  return { id, status: 'new' };
+}
+
+/**
+ * Saves a suggestion and queues it for the Suggestions collection (as "New").
+ * kind 'own' is something the member already did (see own.ts): the review
+ * notes say so, with who it was for.
+ */
+export async function createSuggestion(
+  env: Env,
+  deps: Deps,
+  member: Member,
+  opts: { text: string; place?: { slug: string; id: string } | null; kind?: 'idea' | 'own'; who?: string | null; note?: string },
+): Promise<number> {
+  const { text, place = null, kind = 'idea', who = null, note = '' } = opts;
   await consumeDaily(env, deps, member.id, 'suggestion');
   let id: number | null = null;
   try {
     const now = iso(deps.now());
     const row = await env.DB.prepare(
-      `INSERT INTO suggestions (member_id, text, location, status, created_at, updated_at) VALUES (?1, ?2, ?4, 'new', ?3, ?3) RETURNING id`,
+      `INSERT INTO suggestions (member_id, text, location, status, created_at, updated_at, kind, who) VALUES (?1, ?2, ?4, 'new', ?3, ?3, ?5, ?6) RETURNING id`,
     )
-      .bind(member.id, text, now, place?.slug ?? null)
+      .bind(member.id, text, now, place?.slug ?? null, kind, who)
       .first<{ id: number }>();
     id = row!.id;
     const similar = await similarNotes(env, text, id);
     if (similar) await env.DB.prepare(`UPDATE suggestions SET similar_notes = ?2 WHERE id = ?1`).bind(id, similar).run();
+    const notes = [note, similar].filter(Boolean).join(' | ').slice(0, 2000);
     await enqueue(
       env,
       deps,
@@ -58,14 +75,14 @@ export async function sendSuggestion(env: Env, deps: Deps, member: Member, body:
           email: member.email || '',
           'submitted-on': now,
           status: CMS.suggestions.status.new,
-          'review-notes': similar,
+          'review-notes': notes,
           ...(place ? { location: place.id } : {}),
         },
         saveIdTo: { table: 'suggestions', id },
       },
       member.id,
     ).run();
-    return { id, status: 'new' };
+    return id;
   } catch (e) {
     // The record and its queued write are kept together: neither or both.
     if (id !== null) await env.DB.prepare(`DELETE FROM suggestions WHERE id = ?1`).bind(id).run();

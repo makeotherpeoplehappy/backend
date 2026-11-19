@@ -25,6 +25,7 @@ import { completeVideo, serveVideo, startVideo, uploadVideoPart } from './featur
 import { createInvite, getInvite, invitePreview, inviteSummaries, isInviteCode, joinInvite, leaveInvite } from './features/ripple';
 import { addLabAccess, assertLabAccess, backupDatabase, handleWebflowWebhook, labFailedWrite, labKpis, listLabAccess, publicImpact, removeLabAccess } from './features/ops';
 import { deleteStory, sendSuggestion } from './features/submissions';
+import { logOwnAction, matchActions } from './features/own';
 import { memberstackWebhook } from './features/memberstack';
 import { claimEmails, claimPledges } from './features/claims';
 import { customerGid } from './shopify';
@@ -162,6 +163,12 @@ route(
   true,
   memberWrite('suggestion', async ({ req, env, deps }, m) => sendSuggestion(env, deps, m, await readJson(req)), 201),
 );
+
+// Your own action: something kind you did that isn't on the site. Counts for you
+// now (one a day) and goes to review as a suggestion; public once it's an action.
+route('POST', '/api/own-actions', true, memberWrite('own', async ({ req, env, deps }, m) => logOwnAction(env, deps, m, await readJson(req)), 201));
+// "Is it one of these?" while typing: close matches among the site's actions.
+route('GET', '/api/actions/match', true, async ({ req, env }) => json(await matchActions(env, new URL(req.url).searchParams.get('q')), 200, { 'Cache-Control': 'public, max-age=60' }));
 
 // Stories: send or edit, the member's own story, photos, the public list, reports.
 route(

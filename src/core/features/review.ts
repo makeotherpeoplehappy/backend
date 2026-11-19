@@ -13,6 +13,7 @@ import { word } from '../wording';
 import { enqueue, registerTask } from '../queue';
 import * as webflow from '../webflow';
 import { suggestionSlug, titleFrom } from './submissions';
+import { relinkOwnMarks } from './own';
 import { storySlug } from './stories';
 import { listPlaces, placeBySlug } from './places';
 
@@ -136,13 +137,14 @@ export async function draftActionDeleted(env: Env, deps: Deps, actionItemId: str
 /** "Your action is live": once, when an action made from a suggestion is published. */
 export async function notifySuggestionsLive(env: Env, deps: Deps, baseUrl: string) {
   const due = await env.DB.prepare(
-    `SELECT s.id, s.member_id AS memberId, a.title, a.slug FROM suggestions s JOIN actions a ON a.suggestion_cms_id = s.cms_item_id
+    `SELECT s.id, s.member_id AS memberId, a.cms_item_id AS actionId, a.title, a.slug FROM suggestions s JOIN actions a ON a.suggestion_cms_id = s.cms_item_id
      WHERE a.status = 'published' AND s.live_notified_at IS NULL LIMIT 50`,
-  ).all<{ id: number; memberId: number | null; title: string; slug: string }>();
+  ).all<{ id: number; memberId: number | null; actionId: string; title: string; slug: string }>();
   const site = baseUrl.replace(/\/join$/, '');
   let sent = 0;
   for (const d of due.results) {
-    const stmts = [env.DB.prepare(`UPDATE suggestions SET live_notified_at = ?2 WHERE id = ?1`).bind(d.id, iso(deps.now()))];
+    // An own action that is now on the site: the member's mark moves to it and counts in public.
+    const stmts = [env.DB.prepare(`UPDATE suggestions SET live_notified_at = ?2 WHERE id = ?1`).bind(d.id, iso(deps.now())), relinkOwnMarks(env, d.id, d.actionId, d.title)];
     const member = await memberById(env, d.memberId);
     const msg = member ? await memberEmail(env, member, 'suggestion_live', { actionTitle: d.title, actionUrl: `${site}/action/${d.slug}` }, baseUrl) : null;
     if (msg) {
@@ -260,7 +262,7 @@ export { storySlug };
 
 export async function reviewQueue(env: Env, deps: Deps) {
   const suggestions = await env.DB.prepare(
-    `SELECT s.id, s.text, s.location, s.similar_notes AS similar, s.created_at AS createdAt, s.cms_item_id IS NOT NULL AS ready,
+    `SELECT s.id, s.text, s.location, s.similar_notes AS similar, s.created_at AS createdAt, s.cms_item_id IS NOT NULL AS ready, s.kind, s.who,
        COALESCE(m.share_name, m.first_name) AS name
      FROM suggestions s LEFT JOIN members m ON m.id = s.member_id
      WHERE s.status = 'new' ORDER BY s.created_at LIMIT 50`,

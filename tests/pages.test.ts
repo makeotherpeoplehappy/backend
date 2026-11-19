@@ -997,9 +997,10 @@ describe('Shop', () => {
 
 describe('Drop piece cards (nested Webflow lists)', () => {
   it('link to their own product page', async () => {
-    const p = await page('/shop', '<a class="hf-shop-card" href="/product" data-hf-product-link="drop-01-tee">Tee</a><a href="/product" data-hf-product-link="">None</a>', () => ({ data: { drops: [] } }));
-    const [a, b] = [...p.document.querySelectorAll('a')];
+    const p = await page('/shop', '<a class="hf-shop-card" href="/product" data-hf-product-link="drop-01-tee">Tee</a><a href="/product" data-hf-product-link="">None</a><a href="/action" data-hf-action-link="buy-a-coffee">Go</a>', () => ({ data: { drops: [] } }));
+    const [a, b, c] = [...p.document.querySelectorAll('a')];
     expect(a.getAttribute('href')).toBe('/product/drop-01-tee');
     expect(b.getAttribute('href')).toBe('/product');
+    expect(c.getAttribute('href')).toBe('/action/buy-a-coffee');
   });
 });

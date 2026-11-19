@@ -2304,12 +2304,16 @@
   }
 
   /** The dot next to Shop in the menu (in Webflow): on while a drop is coming up or on sale. */
-  // Product cards inside a drop's piece list (a nested Webflow list) carry their product
-  // slug (data-hf-product-link, bound in Webflow) because nested lists can't link to the item.
+  // Links Webflow can't point at a CMS item (inside a nested list or a component) carry the
+  // item's slug, bound in Webflow: data-hf-product-link (drop pieces) and
+  // data-hf-action-link (the Action of the month component).
+  var ITEM_LINKS = { 'data-hf-product-link': '/product/', 'data-hf-action-link': '/action/' };
   function productLinks() {
-    document.querySelectorAll('a[data-hf-product-link]').forEach(function (a) {
-      var slug = a.getAttribute('data-hf-product-link');
-      if (slug) a.setAttribute('href', '/product/' + encodeURIComponent(slug));
+    Object.keys(ITEM_LINKS).forEach(function (attr) {
+      document.querySelectorAll('a[' + attr + ']').forEach(function (a) {
+        var slug = a.getAttribute(attr);
+        if (slug) a.setAttribute('href', ITEM_LINKS[attr] + encodeURIComponent(slug));
+      });
     });
   }
 

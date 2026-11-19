@@ -184,7 +184,7 @@ export async function addLabAccess(env: Env, deps: Deps, by: string, input: { em
           '',
           'If you did not expect this, you can ignore this email.',
           '',
-          'Happiness Foundation',
+          'Make Other People Happy',
         ].join('\n'),
       },
     }).run();

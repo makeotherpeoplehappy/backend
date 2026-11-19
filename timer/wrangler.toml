@@ -1,4 +1,4 @@
-# The 5-minute timer for the Happiness Foundation backend.
+# The 5-minute timer for the Make Other People Happy backend.
 # Deploy: cd timer && npx wrangler deploy
 name = "hf-timer"
 main = "index.js"

@@ -1,4 +1,4 @@
-// Fixed IDs from the Happiness Foundation Webflow site. These are not
+// Fixed IDs from the Make Other People Happy Webflow site. These are not
 // secrets; keys and tokens are read from environment variables (see env.ts).
 
 /** The foundation site's Memberstack app (public ID; tokens from other apps are refused). */

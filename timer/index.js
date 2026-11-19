@@ -1,4 +1,4 @@
-// Happiness Foundation timer: a Cloudflare Worker that runs every 5 minutes
+// Make Other People Happy timer: a Cloudflare Worker that runs every 5 minutes
 // (Cron Trigger) and asks the backend to do its scheduled jobs. Replaces the
 // GitHub Actions timer, which ran late and pauses after 60 quiet days.
 //
@@ -19,14 +19,14 @@ export default {
   },
   // Visiting the worker's address shows that it is alive; it never runs the jobs.
   async fetch() {
-    return new Response('Happiness Foundation timer. Runs every 5 minutes.', { headers: { 'Content-Type': 'text/plain' } });
+    return new Response('Make Other People Happy timer. Runs every 5 minutes.', { headers: { 'Content-Type': 'text/plain' } });
   },
 };
 
 async function call(url, env) {
   return fetch(url, {
     method: 'POST',
-    headers: { Authorization: `Bearer ${env.JOBS_SECRET}`, 'User-Agent': 'HappinessFoundationTimer/1.1' },
+    headers: { Authorization: `Bearer ${env.JOBS_SECRET}`, 'User-Agent': 'MakeOtherPeopleHappyTimer/1.1' },
   });
 }
 

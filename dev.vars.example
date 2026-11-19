@@ -15,7 +15,7 @@ SHOPIFY_CLIENT_SECRET=
 WEBFLOW_API_TOKEN=
 
 RESEND_API_KEY=
-EMAIL_FROM=Happiness Foundation <team@makeotherpeoplehappy.com>
+EMAIL_FROM=Make Other People Happy <team@makeotherpeoplehappy.com>
 ERROR_EMAIL_TO=
 
 TURNSTILE_SECRET_KEY=

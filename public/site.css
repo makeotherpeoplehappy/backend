@@ -100,3 +100,6 @@ input[type=checkbox],input[type=radio]{width:24px;height:24px;accent-color:var(-
 /* Live line (home): the dot pulses gently; still when the device asks for less motion */
 @keyframes hf-pulse{0%{box-shadow:0 0 0 0 rgba(74,222,128,.55)}70%{box-shadow:0 0 0 10px rgba(74,222,128,0)}100%{box-shadow:0 0 0 0 rgba(74,222,128,0)}}
 .hf-live-dot{animation:hf-pulse 1.8s ease-out infinite}
+/* FAQ (built in Webflow as details/summary): no browser arrow; the + turns to × when open. */
+.hf-faq-q::-webkit-details-marker{display:none}
+.hf-faq[open] .hf-faq-icon{transform:rotate(45deg)}

@@ -991,9 +991,11 @@
     var items = [];
     (me.done || []).forEach(function (d) {
       var live = d.slug && d.actionStatus === 'published';
+      // Your own action (not on the site yet): its story is shared by its own reference.
+      var ref = live ? d.slug : /^own-\d+$/.test(d.actionId || '') ? d.actionId : '';
       var s = storyFor[d.actionId];
       items.push({ cat: 'mine', at: d.doneAt, by: 'me', title: copyText('feed-did', { action: d.title }),
-        meta: day(d.doneAt) + (s ? ' · ' + copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') : ''), go: live ? { href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') } : null });
+        meta: day(d.doneAt) + (s ? ' · ' + copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') : ''), go: ref ? { href: '/share-your-story?action=' + encodeURIComponent(ref), text: copyText(s ? 'story-edit' : 'story-share') } : null });
     });
     (me.joinedMyInvites || []).forEach(function (x) {
       items.push({ cat: 'together', at: x.joinedAt, by: x.name || '', title: copyText('feed-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '' }),
@@ -1330,18 +1332,20 @@
     if (!r.ok) return sayLink(msgOf(r), copyText('st-account'), '/account');
     var mine = r.data;
     if (!mine.done) return sayLink(copyText('st-not-done'), copyText('st-go-action'), '/action/' + slug);
-    var title = slug.replace(/-/g, ' ');
-    try {
-      var h = await fetch('/action/' + slug).then(function (x) { return x.ok ? x.text() : ''; });
-      var t = new DOMParser().parseFromString(h, 'text/html').querySelector('h1');
-      if (t && t.textContent.trim()) title = t.textContent.trim();
-    } catch (e) {}
+    var title = mine.title || slug.replace(/-/g, ' ');
+    if (!mine.own) {
+      try {
+        var h = await fetch('/action/' + slug).then(function (x) { return x.ok ? x.text() : ''; });
+        var t = new DOMParser().parseFromString(h, 'text/html').querySelector('h1');
+        if (t && t.textContent.trim()) title = t.textContent.trim();
+      } catch (e) {}
+    }
     var s = mine.story || {};
     var msg = P.one('[data-hf-fill="story-msg"]');
     if ($('hf-story-title')) $('hf-story-title').textContent = title;
     if ($('hf-story-status') && mine.story) $('hf-story-status').textContent = copyText(mine.story.status === 'approved' ? 'st-on-site' : 'st-in-review');
     var backLink = P.one('[data-hf-link="back"]');
-    if (backLink) backLink.setAttribute('href', '/action/' + slug);
+    if (backLink) backLink.setAttribute('href', mine.own ? '/account' : '/action/' + slug);
     var text = $('hfp-story-text');
     var photo = $('hfp-photo');
     var desc = $('hfp-photo-desc');

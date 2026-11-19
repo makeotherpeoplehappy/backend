@@ -47,6 +47,8 @@ export function assertActionId(id: string): void {
  */
 export async function resolveActionRef(env: Env, deps: Deps, ref: string): Promise<string> {
   if (ID_PATTERN.test(ref)) return ref;
+  // A member's own action (own.ts), not on the site yet: "own-<suggestion id>".
+  if (/^own-\d{1,12}$/.test(ref)) return ref;
   if (!SLUG_PATTERN.test(ref)) throw new HttpError(400, 'invalid_action', 'err-invalid-action');
   const find = () =>
     env.DB.prepare(`SELECT cms_item_id FROM actions WHERE slug = ?1 ORDER BY status = 'published' DESC LIMIT 1`).bind(ref).first<{ cms_item_id: string }>();

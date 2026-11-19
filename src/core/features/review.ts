@@ -13,7 +13,7 @@ import { word } from '../wording';
 import { enqueue, registerTask } from '../queue';
 import * as webflow from '../webflow';
 import { suggestionSlug, titleFrom } from './submissions';
-import { relinkOwnMarks } from './own';
+import { relinkOwn, removeOwn } from './own';
 import { storySlug } from './stories';
 import { listPlaces, placeBySlug } from './places';
 
@@ -56,6 +56,8 @@ export async function applySuggestion(env: Env, deps: Deps, id: number, cmsId: s
     stmts.push(enqueue(env, deps, `suggestion-draft:${id}`, { op: 'task', name: 'suggestion.createDraft', target: 'webflow', args: { id } }));
   }
   if (stmts.length) await env.DB.batch(stmts);
+  // Rejected: someone's own action is removed for good (they asked for this).
+  if (status === 'rejected' && row.status !== 'rejected') await removeOwn(env, deps, id);
   return row.status === status ? null : `${id}:${status}`;
 }
 
@@ -144,7 +146,7 @@ export async function notifySuggestionsLive(env: Env, deps: Deps, baseUrl: strin
   let sent = 0;
   for (const d of due.results) {
     // An own action that is now on the site: the member's mark moves to it and counts in public.
-    const stmts = [env.DB.prepare(`UPDATE suggestions SET live_notified_at = ?2 WHERE id = ?1`).bind(d.id, iso(deps.now())), relinkOwnMarks(env, d.id, d.actionId, d.title)];
+    const stmts = [env.DB.prepare(`UPDATE suggestions SET live_notified_at = ?2 WHERE id = ?1`).bind(d.id, iso(deps.now())), ...(await relinkOwn(env, deps, d.id, d.actionId, d.title))];
     const member = await memberById(env, d.memberId);
     const msg = member ? await memberEmail(env, member, 'suggestion_live', { actionTitle: d.title, actionUrl: `${site}/action/${d.slug}` }, baseUrl) : null;
     if (msg) {

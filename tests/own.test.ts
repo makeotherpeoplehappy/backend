@@ -88,4 +88,41 @@ describe('own actions', () => {
     expect(r.matches).toEqual([{ slug: 'compliment-a-stranger', title: 'Compliment a stranger' }]);
     expect((await (await h.request('GET', '/api/actions/match?q=hi')).json()).matches).toEqual([]);
   });
+
+  it('a story can be told about it; rejecting it deletes the entry and the story for good', async () => {
+    const { id } = await (await own({ text: 'Fixed the bike of the kid next door', who: 'child' })).json();
+    const mine = await (await h.request('GET', `/api/stories/mine?action=own-${id}`, { token: 'shcat_ana' })).json();
+    expect(mine).toMatchObject({ done: true, own: true, title: 'Fixed the bike of the kid next door' });
+    const st = await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: `own-${id}`, text: 'His face when it worked!', consent: true } });
+    expect(st.status).toBe(201);
+    await flush();
+    const story = items(CMS.stories.id)[0];
+    expect(story.fieldData.name).toBe('Ana: Fixed the bike of the kid next door');
+    expect(story.fieldData.action).toBeUndefined();
+    const sug = items(CMS.suggestions.id)[0];
+    sug.fieldData.status = CMS.suggestions.status.rejected;
+    await hook(CMS.suggestions.id, sug.id);
+    await flush();
+    expect(await h.db(`SELECT id FROM done_marks`)).toEqual([]);
+    expect(await h.db(`SELECT id FROM stories`)).toEqual([]);
+    expect(items(CMS.stories.id)).toEqual([]);
+  });
+
+  it('when the action goes live, the story moves to it', async () => {
+    const { id } = await (await own({ text: 'Left flowers for the night nurse' })).json();
+    await h.request('POST', '/api/stories', { token: 'shcat_ana', body: { actionId: `own-${id}`, text: 'She cried a bit.', consent: true } });
+    await flush();
+    const sug = items(CMS.suggestions.id)[0];
+    sug.fieldData.status = CMS.suggestions.status.approved;
+    await hook(CMS.suggestions.id, sug.id);
+    await flush();
+    const draft = items(CMS.actions.id).find((i) => i.fieldData.slug === 'suggested-action-1')!;
+    draft.live = true;
+    draft.isDraft = false;
+    await hook(CMS.actions.id, draft.id);
+    await hook(CMS.actions.id, draft.id);
+    await flush();
+    expect(await h.db(`SELECT action_id AS a FROM stories`)).toEqual([{ a: draft.id }]);
+    expect(items(CMS.stories.id)[0].fieldData.action).toBe(draft.id);
+  });
 });

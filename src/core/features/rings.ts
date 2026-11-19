@@ -37,8 +37,8 @@ async function marksWhere(env: Env, sql: string, ids: number[]): Promise<Mark[]>
   return out;
 }
 
-const SELECT = `SELECT d.id, d.member_id, COALESCE(a.title, d.action_title) AS title, COALESCE(d.people, 1) AS people, a.who AS who, d.done_at AS done_at
-  FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id`;
+const SELECT = `SELECT d.id, d.member_id, COALESCE(a.title, d.action_title) AS title, COALESCE(d.people, 1) AS people, COALESCE(a.who, s.who) AS who, d.done_at AS done_at
+  FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id LEFT JOIN suggestions s ON s.id = d.suggestion_id`;
 
 export async function rippleView(env: Env, memberId: number, fresh = false) {
   const key = `rings:${memberId}`;

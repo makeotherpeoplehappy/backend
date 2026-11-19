@@ -23,6 +23,7 @@ interface Mark {
   title: string;
   people: number;
   who: string | null;
+  done_at: string;
 }
 
 async function marksWhere(env: Env, sql: string, ids: number[]): Promise<Mark[]> {
@@ -36,7 +37,7 @@ async function marksWhere(env: Env, sql: string, ids: number[]): Promise<Mark[]>
   return out;
 }
 
-const SELECT = `SELECT d.id, d.member_id, COALESCE(a.title, d.action_title) AS title, COALESCE(d.people, 1) AS people, a.who AS who
+const SELECT = `SELECT d.id, d.member_id, COALESCE(a.title, d.action_title) AS title, COALESCE(d.people, 1) AS people, a.who AS who, d.done_at AS done_at
   FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id`;
 
 export async function rippleView(env: Env, memberId: number, fresh = false) {
@@ -52,7 +53,7 @@ export async function rippleView(env: Env, memberId: number, fresh = false) {
 
 async function compute(env: Env, memberId: number) {
   const seen = new Set<number>([memberId]);
-  const rings: { marks: number; people: number; members: number; dots: { title: string; who: string | null }[] }[] = [];
+  const rings: { marks: number; people: number; members: number; dots: { title: string; who: string | null; at: string }[] }[] = [];
   let frontier = [memberId];
   let level: Mark[] = await marksWhere(env, `${SELECT} WHERE d.member_id IN ({ids}) ORDER BY d.done_at DESC`, frontier);
   for (let ring = 1; ring <= RINGS; ring++) {
@@ -61,7 +62,7 @@ async function compute(env: Env, memberId: number) {
       marks: level.length,
       people: level.reduce((n, m) => n + (m.people || 1), 0),
       members: new Set(level.map((m) => m.member_id)).size,
-      dots: level.slice(0, DOTS_PER_RING).map((m) => ({ title: m.title, who: firstWho(m.who) })),
+      dots: level.slice(0, DOTS_PER_RING).map((m) => ({ title: m.title, who: firstWho(m.who), at: m.done_at })),
     });
     if (ring === RINGS) break;
     // People with marks in this ring pass it on.

@@ -330,5 +330,8 @@
   "who-someone-who-serves-you": "someone who serves you",
   "who-someone-having-a-hard-time": "someone having a hard time",
   "who-stranger": "a stranger",
-  "who-community": "the community"
+  "who-community": "the community",
+  "ripple-people-one": "person made happy",
+  "ripple-people-many": "people made happy",
+  "ripple-for": "for {who}"
 }

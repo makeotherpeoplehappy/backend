@@ -54,8 +54,9 @@ describe('Shopify → Webflow', () => {
     expect(product.live).toBe(true);
     expect(product.fieldData).toMatchObject({ name: 'Drop 01 Tee', slug: 'drop-01-tee', price: '$45', 'edition-size': 100, drop: drop.id, evergreen: false, 'short-description': 'Soft. Kind.' });
     expect((product.fieldData.image as { url: string }).url).toBe('https://cdn.shopify.com/tee.jpg');
-    // The home page hero: no headline or photo yet (the hero waits for a photo), the lead piece and its pieces.
-    expect(drop.fieldData).toMatchObject({ 'hero-before': 'Drop 01', 'hero-accent': '', 'hero-image': null, 'lead-name': 'Drop 01 Tee', 'lead-price': '$45', 'lead-slug': 'drop-01-tee', pieces: [product.id], 'piece-count': 1, 'sold-out': false, open: true, 'hero-on': false, 'hero-off': true });
+    // The home page hero: the drop's one image, its title as the headline, the lead piece and its pieces.
+    expect((drop.fieldData.image as { url: string }).url).toBe('https://cdn.shopify.com/drop-01.jpg');
+    expect(drop.fieldData).toMatchObject({ 'hero-before': 'Drop 01', 'hero-accent': '', 'lead-name': 'Drop 01 Tee', 'lead-price': '$45', 'lead-slug': 'drop-01-tee', pieces: [product.id], 'piece-count': 1, 'sold-out': false, open: true, 'hero-on': true, 'hero-off': false });
     expect(await syncShop(h.env, h.app.deps)).toMatchObject({ created: 0, updated: 0, unchanged: 2 });
     h.fake.products[0].status = 'ARCHIVED';
     expect(await syncShop(h.env, h.app.deps)).toMatchObject({ removed: 1 });
@@ -66,15 +67,28 @@ describe('Shopify → Webflow', () => {
     h.fake.products.push({ id: 'gid://shopify/Product/556', handle: 'drop-01-cap', title: 'Drop 01 Cap', status: 'ACTIVE', descriptionHtml: '', description: '', editionSize: 50, price: '30.0' });
     h.fake.inventory.set('gid://shopify/Product/556', 50);
     h.fake.shopCollections.set('drop-01', [PRODUCT, 'gid://shopify/Product/556']);
-    Object.assign(h.fake.dropCollections.get('drop-01')!, { heroHeadline: 'Happiness is felt by making other people *happy*.', heroImageUrl: 'https://cdn.shopify.com/hero.jpg', leadProductId: 'gid://shopify/Product/556' });
+    Object.assign(h.fake.dropCollections.get('drop-01')!, { heroHeadline: 'Happiness is felt by making other people *happy*.', imageUrl: 'https://cdn.shopify.com/hero.jpg', leadProductId: 'gid://shopify/Product/556' });
     await syncShop(h.env, h.app.deps);
     const [drop] = h.fake.collection(CMS.drops.id);
     expect(drop.fieldData).toMatchObject({ 'hero-before': 'Happiness is felt by making other people ', 'hero-accent': 'happy', 'hero-after': '.', 'lead-name': 'Drop 01 Cap', 'lead-price': '$30', 'lead-slug': 'drop-01-cap', 'piece-count': 2, 'sold-out': false, 'hero-on': true, 'hero-off': false });
-    expect((drop.fieldData['hero-image'] as { url: string }).url).toBe('https://cdn.shopify.com/hero.jpg');
+    expect((drop.fieldData.image as { url: string }).url).toBe('https://cdn.shopify.com/hero.jpg');
     h.fake.inventory.set(PRODUCT, 0);
     h.fake.inventory.set('gid://shopify/Product/556', 0);
     await syncShop(h.env, h.app.deps);
     expect(h.fake.collection(CMS.drops.id)[0].fieldData).toMatchObject({ 'sold-out': true, open: false, 'hero-on': false, 'hero-off': true });
+  });
+
+  it('a drop needs its image: without one it stays off the site', async () => {
+    h.fake.dropCollections.get('drop-01')!.imageUrl = null;
+    const r = await syncShop(h.env, h.app.deps);
+    expect(r.needsImage).toEqual(['drop-01']);
+    expect(h.fake.collection(CMS.drops.id)).toHaveLength(0);
+    h.fake.dropCollections.get('drop-01')!.imageUrl = 'https://cdn.shopify.com/drop-01.jpg';
+    await syncShop(h.env, h.app.deps);
+    expect(h.fake.collection(CMS.drops.id)[0].live).toBe(true);
+    h.fake.dropCollections.get('drop-01')!.imageUrl = null;
+    await syncShop(h.env, h.app.deps);
+    expect(h.fake.collection(CMS.drops.id)[0].live).toBe(false);
   });
 
   it('a product outside any drop is evergreen', async () => {

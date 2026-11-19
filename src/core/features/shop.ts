@@ -49,8 +49,6 @@ interface ShopifyDrop {
   dropDate: { value: string } | null;
   /** The words across the home page hero; *word* marks the accent word. */
   heroHeadline: { value: string } | null;
-  /** The hero photo: the home page shows the drop hero only once a drop has one. */
-  heroImage: { reference: { image: { url: string; altText: string | null } | null } | null } | null;
   /** The piece the hero leads with (else the collection's first piece). */
   lead: { reference: { id: string } | null } | null;
   products: { nodes: { id: string }[] };
@@ -65,7 +63,6 @@ const PRODUCTS = `query ($cursor: String) { products(first: 50, after: $cursor, 
 const DROPS = `query { collections(first: 100) { nodes { id handle title description image { url altText }
   dropDate: metafield(namespace: "custom", key: "drop_date") { value }
   heroHeadline: metafield(namespace: "custom", key: "hero_headline") { value }
-  heroImage: metafield(namespace: "custom", key: "hero_image") { reference { ... on MediaImage { image { url altText } } } }
   lead: metafield(namespace: "custom", key: "lead_product") { reference { ... on Product { id } } }
   products(first: 50) { nodes { id } } } } }`;
 
@@ -152,15 +149,14 @@ function dropFields(d: ShopifyDrop, pieces: Piece[] | null) {
   const lead = pieces.find((p) => p.productId === leadId) || pieces[0] || null;
   // Sold out once every piece is counted and none is left.
   const soldOut = pieces.length > 0 && pieces.every((p) => p.left === 0);
-  const heroImage = image(d.heroImage?.reference?.image, d.title);
   // Webflow shows or hides the home page parts with these (native conditional visibility).
-  const heroOn = !!heroImage && !soldOut;
+  // Every drop on the site has its image (see syncShop), so the hero shows until it sells out.
+  const heroOn = !!d.image?.url && !soldOut;
   return {
     ...base,
     'hero-before': head.before.slice(0, 256),
     'hero-accent': head.accent.slice(0, 256),
     'hero-after': head.after.slice(0, 256),
-    'hero-image': heroImage,
     'lead-name': lead?.title.slice(0, 256) || '',
     'lead-price': lead?.price || '',
     'lead-slug': lead?.handle || '',
@@ -193,7 +189,15 @@ function productFields(p: ShopifyProduct, dropItemId: string | null) {
 
 interface SyncRow { shopify_id: string; cms_item_id: string | null; source_hash: string | null; state: string }
 
-export interface ShopSyncResult { created: number; updated: number; unchanged: number; removed: number; errors: { item: string; error: string }[] }
+export interface ShopSyncResult {
+  created: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  errors: { item: string; error: string }[];
+  /** Drops left off the site until they have an image (the collection image in Shopify). */
+  needsImage: string[];
+}
 
 async function fetchProducts(env: Env, deps: Deps): Promise<ShopifyProduct[]> {
   const all: ShopifyProduct[] = [];
@@ -222,10 +226,13 @@ async function itemsByShopifyId(env: Env, deps: Deps, collectionId: string) {
  * before anything is taken off.
  */
 export async function syncShop(env: Env, deps: Deps): Promise<ShopSyncResult> {
-  const result: ShopSyncResult = { created: 0, updated: 0, unchanged: 0, removed: 0, errors: [] };
+  const result: ShopSyncResult = { created: 0, updated: 0, unchanged: 0, removed: 0, errors: [], needsImage: [] };
   const dropsData = await adminGraphql<{ collections: { nodes: ShopifyDrop[] } }>(env, deps, DROPS);
   const products = await fetchProducts(env, deps);
-  const drops = dropsData.collections.nodes.filter((c) => c.dropDate?.value && Number.isFinite(Date.parse(c.dropDate.value)));
+  const dated = dropsData.collections.nodes.filter((c) => c.dropDate?.value && Number.isFinite(Date.parse(c.dropDate.value)));
+  // One image per drop, used everywhere, and required: a drop without one stays off the site.
+  const drops = dated.filter((c) => !!c.image?.url);
+  result.needsImage = dated.filter((c) => !c.image?.url).map((c) => c.handle);
   const rows = new Map(
     (await env.DB.prepare(`SELECT shopify_id, cms_item_id, source_hash, state FROM product_sync`).all<SyncRow>()).results.map((r) => [r.shopify_id, r]),
   );

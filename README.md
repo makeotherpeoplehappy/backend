@@ -95,8 +95,11 @@ fulfilment; Memberstack keeps members (there are no Shopify customer logins).
 - **A drop** is a Shopify collection with a **Drop date** (collection field
   `custom.drop_date`). Its pieces are its products; each piece's size is its
   **Edition size** (`custom.edition_size`).
-- **The home page hero** leads with the newest drop once it has a **Hero photo**
-  (collection field `custom.hero_image`, a file). Also on the collection:
+- **One image per drop**, used everywhere (home page hero, /shop, the drop page):
+  the collection's own image in Shopify. It is required: a drop without an image
+  stays off the site until it has one. Normally a photo of people wearing the
+  pieces, or the pieces together. The home page hero leads with the newest drop.
+  Also on the collection:
   **Hero headline** (`custom.hero_headline`; mark the accent word with asterisks,
   e.g. `Happiness is felt by making other people *happy*.`) and **Lead piece**
   (`custom.lead_product`; else the collection's first product). The copy also

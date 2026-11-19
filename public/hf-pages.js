@@ -551,6 +551,9 @@
       P.show('ripple', !!data.rippleView);
       proof = { who: st.cardWho || data.cardWho || null, title: st.title, slug: st.slug, ref: data.refCode, name: st.me && st.me.name };
       paintProof();
+      // The card and the story, offered together: one for social, one for the Stories page.
+      P.acts('win-story').forEach(function (a) { a.setAttribute('href', '/share-your-story?action=' + encodeURIComponent(st.slug)); });
+      P.show('win-story', true);
       P.show('pass', !guest);
       P.show('keep', guest);
       P.show('keep-line', false);
@@ -2499,6 +2502,55 @@
     });
   }
 
+  // The share card after logging your own: the same card as on action pages,
+  // linking to the site (there is no action page yet), with your share code.
+  function ownName() {
+    var m = memberSaved() || {};
+    return (m.customFields && m.customFields['first-name']) || null;
+  }
+  function ownCard(P, proof) {
+    var blob = null;
+    var nameBox = P.one('[data-hf-field="proof-name"]');
+    var canFiles = false;
+    try { canFiles = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File([''], 'x.png', { type: 'image/png' })] })); } catch (e) {}
+    var url = location.origin + '/' + (proof.ref ? '?r=' + proof.ref : '');
+    async function paint() {
+      try { if (document.fonts && document.fonts.ready) await document.fonts.ready; } catch (e) {}
+      var line = cardLine(proof.who, nameBox && nameBox.checked ? proof.name : null);
+      var c = drawCard({ line: line, title: proof.title, logo: await loadLogo() });
+      P.show('proof-name', !!proof.name);
+      P.show('card-share', canFiles);
+      P.show('card-hint', !canFiles);
+      if (!c) { P.show('proof', false); return line; }
+      var slot = P.slot('proof');
+      var img = slot && slot.querySelector('img');
+      if (slot && !img) { img = document.createElement('img'); img.className = 'hf-fill-media'; slot.appendChild(img); }
+      if (img) { img.alt = line; img.src = c.toDataURL('image/png'); }
+      blob = await new Promise(function (r) { c.toBlob(r, 'image/png'); });
+      P.show('proof', true);
+      return line;
+    }
+    if (nameBox) nameBox.addEventListener('change', paint);
+    P.on('card-share', async function () {
+      var line = await paint();
+      var file = blob && window.File ? new File([blob], 'happiness.png', { type: 'image/png' }) : null;
+      if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try { await navigator.share({ files: [file], text: copyText('card-share-text', { line: line, url: url }), url: url }); } catch (e) {}
+      }
+    });
+    P.on('card-download', async function () {
+      await paint();
+      if (!blob) return;
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'happiness.png';
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+    paint();
+  }
+
   // Log your own (/log-your-own, built in Webflow: #own). Logging it counts for you
   // now (one a day) and sends it to review; while you type, close matches among the
   // site's actions are offered instead.
@@ -2546,10 +2598,13 @@
       var r = await HFB.call('/api/own-actions', { method: 'POST', body: { text: t, who: form.elements.who.value, people: form.elements.people.value } });
       setBusy(b, false);
       if (r.ok) {
+        var who = form.elements.who.value || null;
         form.reset();
         form.style.display = 'none';
         P.show('own-matches', false);
         P.show('own-done', true);
+        P.acts('own-story').forEach(function (a) { a.setAttribute('href', '/share-your-story?action=own-' + r.data.id); });
+        ownCard(P, { who: who, title: t, ref: r.data.refCode, name: ownName() });
       } else if (r.status === 401) HFB.requireSignIn({ kind: 'return', returnTo: location.pathname + location.search });
       else say(msg, msgOf(r), true);
     });

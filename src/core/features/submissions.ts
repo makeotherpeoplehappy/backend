@@ -43,10 +43,11 @@ export async function createSuggestion(
   env: Env,
   deps: Deps,
   member: Member,
-  opts: { text: string; place?: { slug: string; id: string } | null; kind?: 'idea' | 'own'; who?: string | null; note?: string },
+  opts: { text: string; place?: { slug: string; id: string } | null; kind?: 'idea' | 'own'; who?: string | null; note?: string; limited?: boolean },
 ): Promise<number> {
-  const { text, place = null, kind = 'idea', who = null, note = '' } = opts;
-  await consumeDaily(env, deps, member.id, 'suggestion');
+  const { text, place = null, kind = 'idea', who = null, note = '', limited = true } = opts;
+  // Own actions have their own daily limit (own.ts); ideas share the suggestion limit.
+  if (limited) await consumeDaily(env, deps, member.id, 'suggestion');
   let id: number | null = null;
   try {
     const now = iso(deps.now());
@@ -86,7 +87,7 @@ export async function createSuggestion(
   } catch (e) {
     // The record and its queued write are kept together: neither or both.
     if (id !== null) await env.DB.prepare(`DELETE FROM suggestions WHERE id = ?1`).bind(id).run();
-    await refundDaily(env, deps, member.id, 'suggestion');
+    if (limited) await refundDaily(env, deps, member.id, 'suggestion');
     throw e;
   }
 }

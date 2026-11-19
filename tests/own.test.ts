@@ -55,8 +55,8 @@ describe('own actions', () => {
     expect(queue.items).toEqual([]);
   });
 
-  it('one of your own counts a day', async () => {
-    expect((await own({ text: 'Held the door for a parent with a pram' })).status).toBe(201);
+  it('up to ten of your own count a day', async () => {
+    for (let i = 1; i <= 10; i++) expect((await own({ text: `Kind thing number ${i}` })).status).toBe(201);
     const again = await own({ text: 'Bought my colleague a coffee' });
     expect(again.status).toBe(429);
     expect((await again.json()).error).toBe('own_daily');

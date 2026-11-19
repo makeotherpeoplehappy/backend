@@ -896,21 +896,20 @@ describe('Gen Z touches', () => {
 describe('Active membership card', () => {
   const HTML = `<a class="hf-nav-avatar"></a><div id="hf-acct-in" data-hf-show="signed-in"><p id="hf-tally"></p>
     <div class="hf-acct-card" id="acct-active" data-hf-show="active-card"><span data-hf-show="active-badge">Active member</span><p data-hf-fill="active-status">x</p>
-    <ul data-hf-slot="active-weeks"><li data-hf-template="week" data-hf-show="template"><span data-hf-part="dot">✓</span><span data-hf-part="label">x</span></li></ul></div></div>`;
+    <div data-hf-part="active-dots"><span></span><span></span><span></span><span></span></div><p data-hf-fill="active-next"></p><p data-hf-fill="active-this"></p></div></div>`;
   const weeks = (done: boolean[]) => done.map((d, i) => ({ start: `2026-10-${12 + i * 7}`, done: d }));
   const ME = (active: Record<string, unknown>) => ({ data: { name: 'Tess', tally: 3, ripple: 0, pledges: [], done: [], stories: [], saved: [], joinedMyInvites: [], invitesIJoined: [], settings: {}, active } });
 
-  it('shows the badge, five weeks and the ring on the avatar for an Active member', async () => {
+  it('shows the badge, four full bars and how to keep it for an Active member', async () => {
     const p = await page('/account', HTML, (_m, path) => (path === '/api/me' ? ME({ active: true, weeks: weeks([true, true, false, true, true]), weeksDone: 4, needed: 4, thisWeekDone: true, toGo: 0 }) : undefined));
     (p.window as unknown as Record<string, unknown>).$memberstackDom = { getCurrentMember: async () => ({ data: {} }) };
     await p.settle();
     const d = p.document;
     expect(d.querySelector('[data-hf-show="active-badge"]')!.hasAttribute('data-hf-on')).toBe(true);
-    expect(d.querySelector('[data-hf-fill="active-status"]')!.textContent).toContain('4 of the last 5 weeks');
-    const lis = [...d.querySelectorAll('[data-hf-slot="active-weeks"] > li:not([data-hf-template])')];
-    expect(lis.length).toBe(5);
-    expect(lis.filter((l) => l.querySelector('[data-hf-part="dot"]')!.classList.contains('is-done')).length).toBe(4);
-    expect(lis[4].textContent).toContain('This week');
+    expect(d.querySelector('[data-hf-fill="active-status"]')!.textContent).toBe("You're an Active member");
+    expect(d.querySelectorAll('[data-hf-part="active-dots"] .is-done').length).toBe(4);
+    expect(d.querySelector('[data-hf-fill="active-next"]')!.textContent).toBe('Keep it by making someone happy in 4 of any 5 weeks.');
+    expect(d.querySelector('[data-hf-fill="active-this"]')!.textContent).toBe('✓ This week is done.');
   });
 
   it('says what one more week does, and never says "Inactive"', async () => {
@@ -919,10 +918,21 @@ describe('Active membership card', () => {
     await p.settle();
     const d = p.document;
     expect(d.querySelector('[data-hf-show="active-badge"]')!.hasAttribute('data-hf-on')).toBe(false);
-    const line = d.querySelector('[data-hf-fill="active-status"]')!.textContent!;
-    expect(line).toBe('3 of 4 weeks done. One more week with an action makes you an Active member.');
+    expect(d.querySelector('[data-hf-fill="active-status"]')!.textContent).toBe('3 of 4 weeks done');
+    expect(d.querySelectorAll('[data-hf-part="active-dots"] .is-done').length).toBe(3);
+    expect(d.querySelector('[data-hf-fill="active-next"]')!.textContent).toBe("Make someone happy this week, and you're an Active member.");
     expect(d.body.textContent).not.toMatch(/inactive/i);
-    expect(d.querySelectorAll('[data-hf-part="dot"].is-now').length).toBe(1);
+  });
+
+  it('names the weeks still to do, and the week it happens, when older weeks drop out', async () => {
+    const p = await page('/account', HTML, (_m, path) => (path === '/api/me' ? ME({ active: false, weeks: weeks([false, false, false, true, true]), weeksDone: 2, needed: 4, thisWeekDone: true, toGo: 2 }) : undefined));
+    (p.window as unknown as Record<string, unknown>).$memberstackDom = { getCurrentMember: async () => ({ data: {} }) };
+    await p.settle();
+    const d = p.document;
+    expect(d.querySelector('[data-hf-fill="active-status"]')!.textContent).toBe('2 of 4 weeks done');
+    const next = d.querySelector('[data-hf-fill="active-next"]')!.textContent!;
+    expect(next).toMatch(/^Make someone happy next week and the week after, and you're an Active member from the week of /);
+    expect(d.querySelector('[data-hf-fill="active-this"]')!.textContent).toBe('✓ This week is done.');
   });
 });
 

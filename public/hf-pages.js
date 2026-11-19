@@ -2418,6 +2418,30 @@
     }, TAKE_MS);
   }
 
+  // The finder on /account is a plain form that opens /actions?time=…&who=…&occasion=…
+  // Here, once the finder (Webflow embed) has filled its dropdowns, those choices are applied
+  // and the results shown, as if the visitor had chosen them on this page.
+  async function finderFromLink() {
+    var q = new URLSearchParams(location.search);
+    if (!q.get('time') && !q.get('who') && !q.get('occasion')) return;
+    var time = document.getElementById('hf-time');
+    var who = document.getElementById('hf-who');
+    if (!time || !who || time.getAttribute('data-hfp')) return;
+    time.setAttribute('data-hfp', '1');
+    await wait(function () { return who.options.length > 1; }, 5000);
+    [['hf-time', 'time'], ['hf-who', 'who'], ['hf-occasion', 'occasion']].forEach(function (x) {
+      var el = document.getElementById(x[0]);
+      var v = q.get(x[1]);
+      if (!el || !v || ![].some.call(el.options, function (o) { return o.value === v; })) return;
+      el.value = v;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    var show = document.getElementById('hf-show');
+    if (show) show.click();
+    var box = document.getElementById('find') || time;
+    box.scrollIntoView({ block: 'start' });
+  }
+
   async function shopDot() {
     var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
     if (!dots.length || dots[0].getAttribute('data-hfp')) return;
@@ -2506,7 +2530,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, evergreenSection, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, takeRotator, finderFromLink, evergreenSection, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

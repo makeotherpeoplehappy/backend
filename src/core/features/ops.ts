@@ -211,9 +211,9 @@ export async function labKpis(env: Env, deps: Deps) {
   const live = `deleted_at IS NULL AND ${REAL_MEMBER}`;
 
   const impact = {
-    peopleMadeHappy: await n(`SELECT COALESCE(SUM(COALESCE(a.people_reached, 1)), 0) AS n FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id`),
-    peopleMadeHappy30d: await n(`SELECT COALESCE(SUM(COALESCE(a.people_reached, 1)), 0) AS n FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id WHERE d.done_at >= ?1`, d30),
-    peopleMadeHappy7d: await n(`SELECT COALESCE(SUM(COALESCE(a.people_reached, 1)), 0) AS n FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id WHERE d.done_at >= ?1`, d7),
+    peopleMadeHappy: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d`),
+    peopleMadeHappy30d: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d WHERE d.done_at >= ?1`, d30),
+    peopleMadeHappy7d: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d WHERE d.done_at >= ?1`, d7),
     activeMembers: await activeCount(env),
     actionsEverDone: await n(`SELECT COUNT(DISTINCT action_id) AS n FROM done_marks`),
     pledgesMade: await n(`SELECT COUNT(*) AS n FROM pledges WHERE status != 'cancelled'`),
@@ -237,7 +237,7 @@ export async function labKpis(env: Env, deps: Deps) {
   const topActions = await many<{ title: string; slug: string | null; people: number; times: number }>(
     `SELECT COALESCE(a.title, d.action_title) AS title, a.slug AS slug, COUNT(DISTINCT d.member_id) AS people, COUNT(*) AS times
      FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id
-     WHERE d.done_at >= ?1 GROUP BY d.action_id ORDER BY people DESC, times DESC LIMIT 10`,
+     WHERE d.done_at >= ?1 GROUP BY d.action_id ORDER BY COUNT(DISTINCT d.member_id) DESC, COUNT(*) DESC LIMIT 10`,
     d30,
   );
   const mostLiked = await many<{ title: string; likes: number }>(
@@ -284,7 +284,7 @@ export async function publicImpact(env: Env): Promise<{ peopleMadeHappy: number;
   const n = async (sql: string) => (await env.DB.prepare(sql).first<{ n: number }>())?.n ?? 0;
   const out = {
     // Each "I did this" counts the action's "how many" (1, 3, 8 or 25), as everywhere else.
-    peopleMadeHappy: await n(`SELECT COALESCE(SUM(COALESCE(a.people_reached, 1)), 0) AS n FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id`),
+    peopleMadeHappy: await n(`SELECT COALESCE(SUM(COALESCE(d.people, 1)), 0) AS n FROM done_marks d`),
     actions: await n(`SELECT COUNT(*) AS n FROM actions WHERE status = 'published'`),
     stories: await n(`SELECT COUNT(*) AS n FROM stories WHERE status = 'approved'`),
   };

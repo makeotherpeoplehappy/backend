@@ -166,10 +166,8 @@ export async function publicCount(env: Env, actionId: string): Promise<number | 
 }
 
 export async function memberTally(env: Env, memberId: number): Promise<number> {
-  // People made happy: each "I did this" counts the action's "how many" (1, 3, 8 or 25), as in the ripple.
-  const r = await env.DB.prepare(
-    `SELECT COALESCE(SUM(COALESCE(a.people_reached, 1)), 0) AS n FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id WHERE d.member_id = ?1`,
-  )
+  // People made happy: each "I did this" counts 1, or the number the member gave (setMarkPeople).
+  const r = await env.DB.prepare(`SELECT COALESCE(SUM(COALESCE(people, 1)), 0) AS n FROM done_marks WHERE member_id = ?1`)
     .bind(memberId)
     .first<{ n: number }>();
   return r?.n ?? 0;
@@ -224,6 +222,20 @@ export async function actionState(env: Env, deps: Deps, actionId: string, member
     };
   }
   return state;
+}
+
+/** "How many people?" after "I did this": one, 2-5 or more. Counted low (1, 2, 6) so no total is overstated. */
+export const PEOPLE_ANSWERS: Record<string, number> = { one: 1, few: 2, more: 6 };
+
+export async function setMarkPeople(env: Env, member: Member, actionId: string, answer: unknown) {
+  const people = typeof answer === 'string' ? PEOPLE_ANSWERS[answer] : undefined;
+  if (!people) throw new HttpError(400, 'invalid_people', 'err-invalid-people');
+  const mark = await env.DB.prepare(`SELECT id FROM done_marks WHERE member_id = ?1 AND action_id = ?2 ORDER BY done_at DESC, id DESC LIMIT 1`)
+    .bind(member.id, actionId)
+    .first<{ id: number }>();
+  if (!mark) throw new HttpError(404, 'mark_not_found', 'err-action-not-found');
+  await env.DB.prepare(`UPDATE done_marks SET people = ?1 WHERE id = ?2`).bind(people, mark.id).run();
+  return { people, tally: await memberTally(env, member.id), rippleView: await rippleView(env, member.id, true) };
 }
 
 /**
@@ -296,7 +308,7 @@ export async function mostDone(env: Env) {
     `SELECT a.cms_item_id AS actionId, a.slug, a.title, COUNT(DISTINCT d.member_id) AS people
      FROM done_marks d JOIN actions a ON a.cms_item_id = d.action_id
      WHERE a.status = 'published'
-     GROUP BY a.cms_item_id HAVING people >= ?1 ORDER BY people DESC, a.title LIMIT 50`,
+     GROUP BY a.cms_item_id HAVING COUNT(DISTINCT d.member_id) >= ?1 ORDER BY COUNT(DISTINCT d.member_id) DESC, a.title LIMIT 50`,
   )
     .bind(COUNT_THRESHOLD)
     .all<{ actionId: string; slug: string; title: string; people: number }>();

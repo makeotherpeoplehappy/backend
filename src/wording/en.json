@@ -314,5 +314,21 @@
   "feed-pledge-open": "You pledged with a drop piece – one action to keep it",
   "feed-pledge-kept": "Pledge kept with {action}",
   "feed-pledge-keep": "Keep it now",
-  "dash-next-label": "Up next for you"
+  "dash-next-label": "Up next for you",
+  "err-invalid-people": "Choose 1, 2–5 or more.",
+  "people-thanks": "Thanks – counted.",
+  "ripple-who": "{action} · for {who}",
+  "who-partner": "your partner",
+  "who-child": "a child",
+  "who-parent": "a parent",
+  "who-grandparent": "a grandparent",
+  "who-family": "family",
+  "who-friend": "a friend",
+  "who-colleague": "a colleague",
+  "who-neighbor": "a neighbor",
+  "who-teacher": "a teacher",
+  "who-someone-who-serves-you": "someone who serves you",
+  "who-someone-having-a-hard-time": "someone having a hard time",
+  "who-stranger": "a stranger",
+  "who-community": "the community"
 }

@@ -401,7 +401,12 @@
     for (var k = 1; k <= shown; k++) svg.appendChild(s('circle', { cx: c, cy: c, r: 36 + k * 28, fill: 'none', stroke: 'var(--colour--pale-blue, #cfe0f2)', 'stroke-width': 1.5 }));
     rings.forEach(function (ring, i) {
       var r = 36 + (i + 1) * 28, n = ring.dots.length, turn = i * 0.37;
-      ring.dots.forEach(function (title, j) {
+      ring.dots.forEach(function (d, j) {
+        // A dot is { title, who } (older views: just the title).
+        var title = typeof d === 'string' ? d : d.title;
+        var who = typeof d === 'string' ? null : d.who;
+        var whoKey = 'who-' + who;
+        if (who && copyText(whoKey)) title = copyText('ripple-who', { action: title, who: copyText(whoKey) });
         var a = turn + (j / Math.max(n, 1)) * Math.PI * 2;
         var dot = s('circle', { cx: (c + r * Math.cos(a)).toFixed(1), cy: (c + r * Math.sin(a)).toFixed(1), r: i === 0 ? 7 : 5.5, fill: i === 0 ? 'var(--colour--deep-blue, #2e5e8e)' : i % 2 ? 'var(--colour--brand-blue, #69c)' : 'var(--colour--light-blue, #9ec0e3)', tabindex: '0', role: 'button', 'aria-label': title, style: 'cursor:pointer;outline-offset:2px' });
         var t = s('title'); t.textContent = title; dot.appendChild(t);
@@ -421,6 +426,10 @@
     var rings = (view && view.rings) || [];
     var reached = (view && view.reached) || 0;
     P.fill('ripple-h', copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached.toLocaleString() }));
+    // The three real numbers (built in Webflow): your actions, friends who joined, their actions.
+    P.fill('ripple-actions', String((view && view.actions) || 0));
+    P.fill('ripple-friends', String((view && view.friends) || 0));
+    P.fill('ripple-their', String((view && view.theirActions) || 0));
     P.fill('ripple-caption', rings.length ? copyText('ripple-tap') : '');
     var slot = P.slot('ripple');
     if (slot) {
@@ -622,12 +631,25 @@
         buzz();
         say(msg, copyText(r.data.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: r.data.tally }));
         showWin(r.data);
+        D.show('people-ask', true);
         rememberActive(r.data.active);
         window.dispatchEvent(new Event('hf-done'));
         await load();
         doneMoment(b, doneLabel);
       } else if (r.status === 401) ask('done');
       else say(msg, msgOf(r), true);
+    });
+
+    // "How many people did you make happy?" (built in Webflow, shown after I did this). Optional:
+    // without an answer the mark counts 1. Counted low: 2–5 is 2, more is 6.
+    D.on('people', async function (b) {
+      if (!id) return;
+      setBusy(b, true);
+      var r = await HFB.call('/api/actions/' + id + '/done', { method: 'PATCH', guest: true, body: { people: b.getAttribute('data-hf-people') } });
+      setBusy(b, false);
+      if (!r.ok) return say(msg, msgOf(r), true);
+      D.show('people-ask', false);
+      say(msg, copyText('people-thanks') + ' ' + copyText(r.data.tally === 1 ? 'action-tally-one' : 'action-tally-many', { n: r.data.tally }));
     });
 
     P.on('undo', async function (b) {
@@ -639,6 +661,7 @@
       rememberActive(r.data.active);
       won = false;
       P.show('win', false);
+      D.show('people-ask', false);
       await load();
       P.acts('done').forEach(function (d) { endMoment(d, doneLabel); });
       // The message tells the new total (none left: just "Undone.").

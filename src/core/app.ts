@@ -11,7 +11,7 @@ import { drain } from './queue';
 import { checkOrigin, idempotencyKey, once, requireHuman } from './safety';
 import { recentActivity } from './features/activity';
 import { refreshAllActive } from './features/active';
-import { actionState, markDone, mostDone, resolveActionRef, setLike, syncActions, undoDone, writeCountsToCms } from './features/actions';
+import { actionState, markDone, mostDone, resolveActionRef, setLike, setMarkPeople, syncActions, undoDone, writeCountsToCms } from './features/actions';
 import { deleteMemberByCustomerId, deleteMemberData, getAccount, updateSettings } from './features/account';
 import { completeIntent, createIntent, readIntent } from './features/intents';
 import { runImport } from './features/importer';
@@ -119,6 +119,17 @@ route('GET', '/api/actions/:id/state', true, async ({ req, env, deps, params }) 
 
 // "I did this" and undo also work without an account (try before sign-up).
 route('POST', '/api/actions/:id/done', true, doerWrite('done', true, async ({ req, env, deps, params }, m) => markDone(env, deps, m, await resolveActionRef(env, deps, params.id), req.headers.get('X-HF-Ref')), 201));
+
+// After "I did this": how many people it made happy (one, few or more), on the latest mark.
+route(
+  'PATCH',
+  '/api/actions/:id/done',
+  true,
+  doerWrite('people', false, async ({ req, env, deps, params }, m) => {
+    const body = await readJson<{ people?: unknown }>(req);
+    return setMarkPeople(env, m, await resolveActionRef(env, deps, params.id), body.people);
+  }),
+);
 
 route('DELETE', '/api/actions/:id/done', true, doerWrite('undo', false, async ({ env, deps, params }, m) => undoDone(env, deps, m, await resolveActionRef(env, deps, params.id))));
 

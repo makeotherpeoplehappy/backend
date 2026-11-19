@@ -6,8 +6,9 @@
 // Ring 3 is the people who came through them, and so on, up to 5 rings.
 // Everyone is counted once, in the ring nearest to you (so loops add nothing),
 // and only people with marks pass the ripple on: undo a mark and whatever hung
-// only on it goes too. Each mark counts the people its action makes happy
-// (How many: 1, 3, 8 or 25). Dots carry action titles only, never names.
+// only on it goes too. Each mark counts 1 person, or the number the member gave
+// after "I did this" (never an estimate). Dots carry the action title and who it
+// was for (a friend, a stranger…), never names.
 
 import type { Env } from '../env';
 
@@ -21,6 +22,7 @@ interface Mark {
   member_id: number;
   title: string;
   people: number;
+  who: string | null;
 }
 
 async function marksWhere(env: Env, sql: string, ids: number[]): Promise<Mark[]> {
@@ -34,7 +36,7 @@ async function marksWhere(env: Env, sql: string, ids: number[]): Promise<Mark[]>
   return out;
 }
 
-const SELECT = `SELECT d.id, d.member_id, COALESCE(a.title, d.action_title) AS title, COALESCE(a.people_reached, 1) AS people
+const SELECT = `SELECT d.id, d.member_id, COALESCE(a.title, d.action_title) AS title, COALESCE(d.people, 1) AS people, a.who AS who
   FROM done_marks d LEFT JOIN actions a ON a.cms_item_id = d.action_id`;
 
 export async function rippleView(env: Env, memberId: number, fresh = false) {
@@ -50,7 +52,7 @@ export async function rippleView(env: Env, memberId: number, fresh = false) {
 
 async function compute(env: Env, memberId: number) {
   const seen = new Set<number>([memberId]);
-  const rings: { marks: number; people: number; dots: string[] }[] = [];
+  const rings: { marks: number; people: number; members: number; dots: { title: string; who: string | null }[] }[] = [];
   let frontier = [memberId];
   let level: Mark[] = await marksWhere(env, `${SELECT} WHERE d.member_id IN ({ids}) ORDER BY d.done_at DESC`, frontier);
   for (let ring = 1; ring <= RINGS; ring++) {
@@ -58,7 +60,8 @@ async function compute(env: Env, memberId: number) {
     rings.push({
       marks: level.length,
       people: level.reduce((n, m) => n + (m.people || 1), 0),
-      dots: level.slice(0, DOTS_PER_RING).map((m) => m.title),
+      members: new Set(level.map((m) => m.member_id)).size,
+      dots: level.slice(0, DOTS_PER_RING).map((m) => ({ title: m.title, who: firstWho(m.who) })),
     });
     if (ring === RINGS) break;
     // People with marks in this ring pass it on.
@@ -74,7 +77,27 @@ async function compute(env: Env, memberId: number) {
     for (const m of next.values()) seen.add(m.member_id);
     level = [...next.values()];
   }
-  return { reached: rings.reduce((n, r) => n + r.people, 0), rings };
+  const later = rings.slice(1);
+  return {
+    reached: rings.reduce((n, r) => n + r.people, 0),
+    /** Your own "I did this" marks. */
+    actions: rings[0]?.marks ?? 0,
+    /** People who came through you (links or invites) and took an action. */
+    friends: later.reduce((n, r) => n + r.members, 0),
+    /** The actions they took. */
+    theirActions: later.reduce((n, r) => n + r.marks, 0),
+    rings,
+  };
+}
+
+/** The first "who" of an action (stored as a JSON list of slugs), e.g. "friend". */
+function firstWho(raw: string | null): string | null {
+  try {
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) && typeof list[0] === 'string' ? list[0] : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function forgetRings(env: Env, memberId: number): Promise<void> {

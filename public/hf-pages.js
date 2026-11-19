@@ -104,6 +104,13 @@
   function forgetDrafts() {
     try { Object.keys(localStorage).forEach(function (k) { if (k.indexOf('hfb_draft:' + location.pathname) === 0) localStorage.removeItem(k); }); } catch (e) {}
   }
+  /** Empties a form when you leave the page, so going back shows it fresh (Safari refills forms on Back). */
+  function clearOnLeave(form) {
+    form.reset();
+    if (document.readyState !== 'complete') window.addEventListener('load', function () { form.reset(); });
+    window.addEventListener('pagehide', function () { form.reset(); });
+    window.addEventListener('pageshow', function (e) { if (e.persisted) form.reset(); });
+  }
   function partsOf(root) {
     var P = {
       root: root,
@@ -1228,7 +1235,7 @@
     var msg = P.one('[data-hf-fill="sug-msg"]');
     freeSubmit(f);
     forgetDrafts();
-    window.addEventListener('pageshow', function (e) { if (e.persisted) f.reset(); });
+    clearOnLeave(f);
     function finished() {
       f.reset();
       f.style.display = 'none';
@@ -2491,7 +2498,7 @@
     if (location.hash === '#own') reveal(true);
     form.addEventListener('submit', function (e) { e.preventDefault(); }, true);
     forgetDrafts();
-    window.addEventListener('pageshow', function (e) { if (e.persisted) form.reset(); });
+    clearOnLeave(form);
     await wait(function () { return window.HF && window.HFB; }, 10000);
     var timer = null;
     var asked = '';

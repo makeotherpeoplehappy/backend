@@ -1,5 +1,5 @@
 /*
- * /lab: live KPIs for Happiness Foundation. Loaded by the Webflow page /lab.
+ * /lab: live KPIs for Make Other People Happy. Loaded by the Webflow page /lab.
  * Shows nothing until an allow-listed account is signed in; the numbers come
  * from GET /join/api/lab/kpis and refresh every minute.
  */

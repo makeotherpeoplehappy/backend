@@ -494,7 +494,7 @@ export async function createHarness(): Promise<Harness> {
     RESEND_API_KEY: 're_test',
     MEMBERSTACK_SECRET_KEY: 'sk_sb_test',
     MEMBERSTACK_WEBHOOK_SECRET: 'whsec_' + btoa('memberstack-webhook-secret'),
-    EMAIL_FROM: 'Happiness Foundation <team@makeotherpeoplehappy.com>',
+    EMAIL_FROM: 'Make Other People Happy <team@makeotherpeoplehappy.com>',
     ERROR_EMAIL_TO: 'mickey@example.com',
     TURNSTILE_SECRET_KEY: 'ts_secret',
     JOBS_SECRET: 'jobs_secret',

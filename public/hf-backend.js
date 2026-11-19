@@ -1,5 +1,5 @@
 /*
- * Happiness Foundation backend helper for the Webflow site, loaded by the
+ * Make Other People Happy backend helper for the Webflow site, loaded by the
  * site's loader script. Sign-in is Memberstack's (its script is in the site
  * head; window.$memberstackDom); window.HF below wraps it for the site.
  *   <script src="/join/hf-backend.js" data-turnstile-sitekey="..." defer></script>

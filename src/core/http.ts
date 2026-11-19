@@ -63,7 +63,7 @@ export async function callUpstream(
 ): Promise<Response> {
   // Some services refuse requests that do not say what they are.
   const headers = new Headers(init.headers);
-  if (!headers.has('User-Agent')) headers.set('User-Agent', 'HappinessFoundationBackend/1.0 (+https://www.makeotherpeoplehappy.com)');
+  if (!headers.has('User-Agent')) headers.set('User-Agent', 'MakeOtherPeopleHappyBackend/1.0 (+https://www.makeotherpeoplehappy.com)');
   try {
     return await doFetch(url, { ...init, headers, signal: AbortSignal.timeout(timeoutMs) });
   } catch (e) {

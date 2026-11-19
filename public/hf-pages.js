@@ -1,5 +1,5 @@
 /*
- * Happiness Foundation: page features, loaded by /join/hf-backend.js on every
+ * Make Other People Happy: page features, loaded by /join/hf-backend.js on every
  * page. Each part runs only on the page whose elements it finds:
  *
  *   Action page      #hf-did-this        done, again, undo, save, invite, pass it on, stories
@@ -338,14 +338,14 @@
     var ink = cssVar(CARD.ink, '#fff'), soft = cssVar(CARD.soft, '#cfe0f2');
     x.fillStyle = cssVar(CARD.bg, '#2e5e8e');
     x.fillRect(0, 0, CARD.w, CARD.h);
-    // The logo: the foundation's own file, unchanged, on a white label (never redrawn or recoloured).
+    // The logo: the supplied stacked logo file, unchanged, on a white label (never redrawn or recoloured).
     if (o.logo && o.logo.naturalWidth) {
-      var lh0 = 64, lw0 = Math.round((o.logo.naturalWidth / o.logo.naturalHeight) * lh0), padIn = 28;
+      var ratio = o.logo.naturalWidth / o.logo.naturalHeight, lh0 = ratio < 2 ? 200 : 64, lw0 = Math.round(ratio * lh0), padIn = 28;
       x.fillStyle = '#ffffff';
       roundRect(x, CARD.pad, CARD.pad, lw0 + padIn * 2, lh0 + padIn * 2, 28);
       x.drawImage(o.logo, CARD.pad + padIn, CARD.pad + padIn, lw0, lh0);
     } else {
-      x.fillStyle = ink; x.font = '600 40px ' + body; x.textBaseline = 'middle'; x.fillText('Happiness Foundation', CARD.pad, CARD.pad + 60);
+      x.fillStyle = ink; x.font = '600 40px ' + body; x.textBaseline = 'middle'; x.fillText(copyText('site-name'), CARD.pad, CARD.pad + 60);
     }
     // The line: as large as fits, balanced.
     var max = CARD.w - CARD.pad * 2, size = 132, lines;
@@ -1119,7 +1119,7 @@
       if (dl) dl.addEventListener('click', function (e) {
         e.preventDefault();
         var blob = new Blob([JSON.stringify(accountMe, null, 2)], { type: 'application/json' });
-        var a = el('a', { href: URL.createObjectURL(blob), download: 'happiness-foundation-my-data.json' });
+        var a = el('a', { href: URL.createObjectURL(blob), download: 'make-other-people-happy-my-data.json' });
         document.body.appendChild(a);
         a.click();
         a.remove();

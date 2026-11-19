@@ -437,7 +437,7 @@ describe('Sign-in window', () => {
   async function authPage() {
     const field = (n: string, type: string) => `<div data-hf-show="auth-f-${n}"><label for="hfp-auth-${n}">${n}</label><input id="hfp-auth-${n}" class="hf-form-input" type="${type}" name="${n}" data-hf-field="${n}"></div>`;
     const link = (show: string, to: string, text: string) => `<a href="#" data-hf-act="auth-to" data-hf-to="${to}" data-hf-show="auth-l-${show}">${text}</a>`;
-    const AUTH_HTML = `<footer><dialog id="hfp-auth" class="hf-auth" data-hf-auth="1"><a href="#" data-hf-act="auth-close" aria-label="Close">×</a><img class="hf-auth-logo" src="https://site.test/logo.png" alt="Happiness Foundation">
+    const AUTH_HTML = `<footer><dialog id="hfp-auth" class="hf-auth" data-hf-auth="1"><a href="#" data-hf-act="auth-close" aria-label="Close">×</a><img class="hf-auth-logo" src="https://site.test/logo.png" alt="Make Other People Happy">
       <p id="hfp-auth-title" data-hf-fill="auth-title">Sign in</p>
       <div data-hf-show="auth-providers"><a href="#" data-hf-act="auth-google"><span>Continue with Google</span></a><a href="#" data-hf-act="auth-otp"><span>Email me a sign-in code</span></a><div><span>or</span></div></div>
       <div class="w-form"><form data-hf-form="auth" novalidate>${field('first-name', 'text')}${field('email', 'email')}${field('code', 'text')}${field('password', 'password')}${field('password-new', 'password')}<button type="submit" data-hf-fill="auth-go">Sign in</button><p data-hf-fill="auth-msg"></p></form><div class="w-form-done">Thank you</div><div class="w-form-fail">Oops</div></div>

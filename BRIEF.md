@@ -1,10 +1,10 @@
-# Happiness Foundation backend: Build brief
+# Make Other People Happy backend: Build brief
 
 Nov 15, 2026 · @Mickey
 
 ## Purpose and principles
 
-One small backend on Webflow Cloud gives the Happiness Foundation site a shared place for data that no single member owns: Suggestions, stories, counts, pledges and invites. It is built in four phases, and each phase ships something members can use.
+One small backend on Webflow Cloud gives the Make Other People Happy site a shared place for data that no single member owns: Suggestions, stories, counts, pledges and invites. It is built in four phases, and each phase ships something members can use.
 
 This brief is written for Claude Code. It covers what to build, the rules for every edge case agreed with Mickey, and the checks that define done. Nothing in it is built yet.
 
@@ -25,7 +25,7 @@ The site is a Webflow test site with Shopify behind it for accounts and the shop
 
 | Part | Detail |
 | --- | --- |
-| Webflow site | Happiness Foundation, site ID `6af7e827a9216ac8b164c1cb`, test address happiness-foundation.webflow.io |
+| Webflow site | Make Other People Happy, site ID `6af7e827a9216ac8b164c1cb`, test address happiness-foundation.webflow.io |
 | Shopify store | `r40e0y-zs.myshopify.com`, new customer accounts, Storefront Web Components cart |
 | Sign-in | Shopify Customer Account API, run from the site through a global `HF` helper (`token`, `signin`, `finish`, `api`, `load`, `sync`, `signout`) |
 | Done actions | Customer metafield `custom.actions_taken`, a JSON list of `{idea: <action slug>, date}` |
@@ -54,7 +54,7 @@ Two things to fix as part of the build:
 Six things must exist before any code can be deployed. The accounts and keys are Mickey's to set up; none of the keys go into a chat.
 
 - [ ] A GitHub account and an empty repository for the backend.
-- [ ] A Webflow Cloud app created from the Happiness Foundation site settings and connected to that repository.
+- [ ] A Webflow Cloud app created from the Make Other People Happy site settings and connected to that repository.
 - [ ] A Shopify app with read access to customers, orders, products and inventory, and write access to customers. Its key is stored in the Webflow Cloud app's settings.
 - [ ] A Webflow API token for the site with CMS read and write access, stored the same way.
 - [ ] An email sending service set up on the makeotherpeoplehappy.com domain. Webflow Cloud does not send email itself, as far as we know.

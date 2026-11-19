@@ -1,6 +1,6 @@
-# Happiness Foundation backend
+# Make Other People Happy backend
 
-A Webflow Cloud app attached to the Happiness Foundation site and served from
+A Webflow Cloud app attached to the Make Other People Happy site and served from
 `/join`. It is built in phases from [BRIEF.md](BRIEF.md); this branch holds
 **Phase 1: Foundation**.
 
@@ -56,7 +56,7 @@ Mark the keys and secrets as secret. Never commit them; locally, copy
 | `RESEND_API_KEY` | yes | Resend API key for makeotherpeoplehappy.com (sending access only) |
 | `MEMBERSTACK_SECRET_KEY` | yes | Memberstack secret key (`sk_sb_…` in test mode, `sk_…` live): checks member sign-ins |
 | `MEMBERSTACK_WEBHOOK_SECRET` | yes | Signing secret of the Memberstack webhook (`whsec_…`), endpoint `/join/api/memberstack/webhook` (events: member updated, member deleted) |
-| `EMAIL_FROM` | no | e.g. `Happiness Foundation <team@makeotherpeoplehappy.com>` |
+| `EMAIL_FROM` | no | e.g. `Make Other People Happy <team@makeotherpeoplehappy.com>` |
 | `ERROR_EMAIL_TO` | no | Where error reports go |
 | `TURNSTILE_SECRET_KEY` | yes | Cloudflare Turnstile secret key |
 | `JOBS_SECRET` | yes | Long random string; the 5-minute timer sends it |
@@ -135,7 +135,7 @@ builds every link from the address a request came in on. On launch day:
    itself once the site is published there.
 3. **Resend:** makeotherpeoplehappy.com is added (DNS records at GoDaddy). Once
    Resend shows it as verified, set `EMAIL_FROM` in Webflow Cloud to an address on
-   it, e.g. `Happiness Foundation <team@makeotherpeoplehappy.com>`.
+   it, e.g. `Make Other People Happy <team@makeotherpeoplehappy.com>`.
 4. **Memberstack:** done. Its custom domain is makeotherpeoplehappy.com (the site
    head loads it from `memberstack-client.makeotherpeoplehappy.com`, hosted pages on
    `login.makeotherpeoplehappy.com`), and both makeotherpeoplehappy.com addresses

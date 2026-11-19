@@ -186,10 +186,13 @@ interface StoryRow {
 
 export async function saveStory(env: Env, deps: Deps, member: Member, body: StoryInput, baseUrl: string) {
   const actionId = typeof body.actionId === 'string' ? body.actionId : '';
-  const action = actionId ? await getAction(env, deps, actionId) : null;
-  if (!action) throw new HttpError(404, 'action_not_found', 'err-action-not-found');
-  const done = await env.DB.prepare(`SELECT 1 AS ok FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first();
+  // A story can also be about the member's own action ("own-<id>"), before it is on the site.
+  const own = isOwnRef(actionId);
+  const action = actionId && !own ? await getAction(env, deps, actionId) : null;
+  if (!action && !own) throw new HttpError(404, 'action_not_found', 'err-action-not-found');
+  const done = await env.DB.prepare(`SELECT action_title AS title FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first<{ title: string }>();
   if (!done) throw new HttpError(403, 'not_done', 'err-story-needs-done');
+  const actionTitle = action?.title ?? done.title;
 
   const text = cleanText(body.text, MAX_STORY);
   const video = body.videoUrl ? parseVideo(body.videoUrl) : null;
@@ -238,9 +241,9 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
   const shown = showName && name ? name : '';
   const authorPhoto = shown ? await memberstackPhoto(env, deps, member.account_id) : null;
   const fieldData: Record<string, unknown> = {
-    name: `${showName && name ? name : 'A member'}: ${action.title}`.slice(0, 256),
+    name: `${showName && name ? name : 'A member'}: ${actionTitle}`.slice(0, 256),
     story: text,
-    action: actionId,
+    ...(own ? {} : { action: actionId }),
     'submitted-by': showName ? name : '',
     email: member.email || '',
     'submitted-on': now,
@@ -250,7 +253,7 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
     'author-photo': authorPhoto ? { url: authorPhoto, alt: '' } : null,
     'author-initial': shown ? shown.trim().charAt(0).toUpperCase() : '',
     'video-file': videoKey ? `${baseUrl}/media/${videoKey}` : null,
-    'video-poster': posterKey ? { url: `${baseUrl}/media/${posterKey}`, alt: `Video from ${action.title}` } : null,
+    'video-poster': posterKey ? { url: `${baseUrl}/media/${posterKey}`, alt: `Video from ${actionTitle}` } : null,
     'children-in-video': children === 1,
   };
   const withStmts = (id: number) => [
@@ -318,6 +321,9 @@ export async function saveStory(env: Env, deps: Deps, member: Member, body: Stor
 }
 
 /** Statements that take a story off the site and out of the database. */
+/** "own-<id>": a member's own action, not (yet) on the site. */
+export const isOwnRef = (id: string) => /^own-\d+$/.test(id);
+
 export function storyRemovalStatements(env: Env, deps: Deps, story: { id: number; cms_item_id: string | null }): D1PreparedStatement[] {
   return [
     // If the CMS item was never created, its queued create is cancelled.
@@ -354,9 +360,12 @@ export async function myStory(env: Env, member: Member, actionId: string) {
     .bind(member.id, actionId)
     .first<Record<string, unknown>>();
   const withIds = s ? (await env.DB.prepare(`SELECT member_id FROM story_with WHERE story_id = ?1`).bind(s.id).all<{ member_id: number }>()).results.map((r) => r.member_id) : [];
-  const done = await env.DB.prepare(`SELECT 1 AS ok FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first();
+  const done = await env.DB.prepare(`SELECT action_title AS title FROM done_marks WHERE member_id = ?1 AND action_id = ?2 LIMIT 1`).bind(member.id, actionId).first<{ title: string }>();
   return {
     done: !!done,
+    // For an own action there is no action page to read the title from.
+    title: done?.title ?? null,
+    own: isOwnRef(actionId),
     story: s ? { ...s, showName: s.showName === 1, withMemberIds: withIds } : null,
     withCandidates: await withCandidates(env, member.id, actionId),
     name: member.share_name || member.first_name || null,

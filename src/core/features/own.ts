@@ -15,6 +15,8 @@ import { memberTally, PEOPLE_ANSWERS } from './actions';
 import { recomputeKeeps } from './pledges';
 import { forgetRings, rippleView } from './rings';
 import { cleanText, createSuggestion, similarity, titleFrom } from './submissions';
+import { storyRemovalStatements, storySlug } from './stories';
+import { enqueue } from '../queue';
 
 export const OWN_PREFIX = 'own-';
 const MAX_OWN = 140;
@@ -66,11 +68,45 @@ export async function matchActions(env: Env, q: unknown) {
   return { matches };
 }
 
-/** Once an action made from an own-action suggestion is published, its marks move to it and count in public. */
-export function relinkOwnMarks(env: Env, suggestionId: number, actionId: string, title: string): D1PreparedStatement {
-  return env.DB.prepare(`UPDATE done_marks SET action_id = ?2, action_title = ?3, source = 'site' WHERE suggestion_id = ?1 AND source = 'own'`).bind(
-    suggestionId,
-    actionId,
-    title,
-  );
+/**
+ * Once an action made from an own-action suggestion is published, its marks move to
+ * it and count in public, and a story told about it moves with them.
+ */
+export async function relinkOwn(env: Env, deps: Deps, suggestionId: number, actionId: string, title: string): Promise<D1PreparedStatement[]> {
+  const ref = `${OWN_PREFIX}${suggestionId}`;
+  const stories = await env.DB.prepare(`SELECT id, cms_item_id FROM stories WHERE action_id = ?1`).bind(ref).all<{ id: number; cms_item_id: string | null }>();
+  return [
+    env.DB.prepare(`UPDATE done_marks SET action_id = ?2, action_title = ?3, source = 'site' WHERE suggestion_id = ?1 AND source = 'own'`).bind(suggestionId, actionId, title),
+    env.DB.prepare(`UPDATE stories SET action_id = ?2 WHERE action_id = ?1`).bind(ref, actionId),
+    ...stories.results.map((s) =>
+      enqueue(env, deps, `story-own-action:${s.id}`, {
+        op: 'webflow.update',
+        collectionId: CMS.stories.id,
+        itemId: s.cms_item_id || undefined,
+        slug: storySlug(s.id),
+        fieldData: { action: actionId },
+      }),
+    ),
+  ];
+}
+
+/** A rejected own action is removed for good: its mark (and any story about it) are deleted. */
+export async function removeOwn(env: Env, deps: Deps, suggestionId: number) {
+  const ref = `${OWN_PREFIX}${suggestionId}`;
+  const marks = await env.DB.prepare(`SELECT id, member_id FROM done_marks WHERE suggestion_id = ?1 AND source = 'own'`).bind(suggestionId).all<{ id: number; member_id: number }>();
+  const stories = await env.DB.prepare(`SELECT id, cms_item_id, photo_key, video_key, poster_key FROM stories WHERE action_id = ?1`)
+    .bind(ref)
+    .all<{ id: number; cms_item_id: string | null; photo_key: string | null; video_key: string | null; poster_key: string | null }>();
+  if (!marks.results.length && !stories.results.length) return;
+  await env.DB.batch([
+    ...marks.results.map((m) => env.DB.prepare(`UPDATE pledges SET status = 'open', kept_by_done_mark_id = NULL WHERE kept_by_done_mark_id = ?1`).bind(m.id)),
+    env.DB.prepare(`DELETE FROM done_marks WHERE suggestion_id = ?1 AND source = 'own'`).bind(suggestionId),
+    ...stories.results.flatMap((s) => storyRemovalStatements(env, deps, s)),
+  ]);
+  for (const s of stories.results) for (const k of [s.photo_key, s.video_key, s.poster_key]) if (k) await env.MEDIA.delete(k);
+  for (const memberId of new Set(marks.results.map((m) => m.member_id))) {
+    await forgetRings(env, memberId);
+    await recomputeKeeps(env, memberId);
+    await refreshActive(env, deps, memberId);
+  }
 }

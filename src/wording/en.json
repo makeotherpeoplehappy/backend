@@ -318,7 +318,7 @@
   "err-invalid-people": "Choose 1, 2–5 or more.",
   "err-own-empty": "Please write what you did before logging it.",
   "err-own-who": "Choose who it was for from the list.",
-  "err-own-daily": "You've logged one of your own today. Pick one from the list, or log another tomorrow.",
+  "err-own-daily": "You've logged 10 of your own today – the most for one day. Log more tomorrow.",
   "own-empty": "Please write what you did before logging it.",
   "own-done": "Counted – thank you. It's in your weeks and your ripple now, and we'll look at adding it to the site.",
   "people-thanks": "Thanks – counted.",

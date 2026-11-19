@@ -426,6 +426,23 @@
     var rings = (view && view.rings) || [];
     var reached = (view && view.reached) || 0;
     P.fill('ripple-h', copyText(reached === 1 ? 'ripple-reached-one' : 'ripple-reached-many', { n: reached.toLocaleString() }));
+    // The chain (built in Webflow): the total, then your actions, friends who joined, their actions,
+    // and your latest few actions with who they were for.
+    P.fill('ripple-reached', reached.toLocaleString());
+    P.fill('ripple-people', copyText(reached === 1 ? 'ripple-people-one' : 'ripple-people-many'));
+    var mine = rings[0] ? rings[0].dots.slice(0, 3) : [];
+    P.show('ripple-latest', mine.length > 0);
+    fillList('ripple-latest', mine, function (li, d) {
+      var t = partIn(li, 'title');
+      if (t) t.textContent = typeof d === 'string' ? d : d.title;
+      var m = partIn(li, 'meta');
+      if (!m) return;
+      var whoKey = 'who-' + (d && d.who);
+      var bits = [];
+      if (d && d.who && copyText(whoKey)) bits.push(copyText('ripple-for', { who: copyText(whoKey) }));
+      if (d && d.at) bits.push(day(d.at));
+      m.textContent = bits.length ? ' · ' + bits.join(' · ') : '';
+    });
     // The three real numbers (built in Webflow): your actions, friends who joined, their actions.
     P.fill('ripple-actions', String((view && view.actions) || 0));
     P.fill('ripple-friends', String((view && view.friends) || 0));

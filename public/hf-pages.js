@@ -54,11 +54,6 @@
   // Page content is in Webflow: [data-hf-show="x"] is shown once the script turns
   // it on (site.css hides it until then) and [data-hf-fill="x"] receives data.
   // Interface text comes from src/wording/en.json (window.HFW, via /join/hf-wording.js).
-  function showOnly(root, key) {
-    root.querySelectorAll('[data-hf-show]').forEach(function (e) {
-      if ((' ' + e.getAttribute('data-hf-show') + ' ').indexOf(' ' + key + ' ') >= 0) e.setAttribute('data-hf-on', ''); else e.removeAttribute('data-hf-on');
-    });
-  }
   function turnOn(e) { if (e) e.setAttribute('data-hf-on', ''); return e; }
   function slot(root, key) { return root.querySelector('[data-hf-fill="' + key + '"]'); }
   function fillText(root, key, text) {
@@ -83,7 +78,6 @@
     });
     return out;
   }
-  function esc(t) { return String(t).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
   function day(iso) { try { return new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (e) { return ''; } }
   function signedIn() { return !!(window.HF && HF.token && HF.token()); }
   function wait(test, ms) {
@@ -729,16 +723,13 @@
     var root = $('hf-acct-in');
     if (!root) return;
     var openPledges = (me.pledges || []).filter(function (p) { return p.status !== 'kept'; }).length;
-    var acted = {};
-    (me.done || []).forEach(function (d) { acted[d.actionId] = 1; });
     var counts = {
       'acct-pledges': openPledges ? copyText('acct-fold-to-keep', { n: openPledges }) : '',
       'acct-saved': me.saved && me.saved.length ? String(me.saved.length) : '',
-      'acct-actions': Object.keys(acted).length ? String(Object.keys(acted).length) : '',
       'acct-joined': me.joinedMyInvites && me.joinedMyInvites.length ? String(me.joinedMyInvites.length) : '',
       'acct-invited': me.invitesIJoined && me.invitesIJoined.length ? String(me.invitesIJoined.length) : '',
     };
-    var opens = { 'acct-pledges': openPledges > 0, 'acct-saved': true, 'acct-actions': true, 'acct-joined': true, 'acct-invited': false, 'hfp-settings': false, 'acct-data': false };
+    var opens = { 'acct-pledges': openPledges > 0, 'acct-saved': true, 'acct-joined': true, 'acct-invited': false, 'hfp-settings': false, 'acct-data': false };
     var prefs = foldPrefs();
     root.querySelectorAll('.hf-acct-card').forEach(function (card) {
       var b = card.querySelector('[data-hf-act="fold"]');
@@ -948,7 +939,7 @@
       var live = d.slug && d.actionStatus === 'published';
       var s = storyFor[d.actionId];
       items.push({ cat: 'mine', at: d.doneAt, badge: '✓', title: copyText('feed-did', { action: d.title }),
-        meta: day(d.doneAt), go: live ? { href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') } : null });
+        meta: day(d.doneAt) + (s ? ' · ' + copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review') : ''), go: live ? { href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') } : null });
     });
     (me.joinedMyInvites || []).forEach(function (x) {
       items.push({ cat: 'together', at: x.joinedAt, badge: '+', title: copyText('feed-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '' }),
@@ -1056,28 +1047,6 @@
 
     var storyFor = {};
     (me.stories || []).forEach(function (s) { storyFor[s.actionId] = s; });
-    var firstDone = [];
-    var times = {};
-    (me.done || []).forEach(function (d) {
-      if (!times[d.actionId]) firstDone.push(d);
-      times[d.actionId] = (times[d.actionId] || 0) + 1;
-    });
-    fillList('done', firstDone, function (li, d) {
-      var live = d.slug && d.actionStatus === 'published';
-      setLink(partIn(li, 'title'), live ? '/action/' + d.slug : null, d.title);
-      var meta = partIn(li, 'meta');
-      if (meta) meta.textContent = day(d.doneAt) + (times[d.actionId] > 1 ? ' · ' + copyText('acct-times', { n: times[d.actionId] }) : '');
-      var s = storyFor[d.actionId];
-      var chip = partIn(li, 'story');
-      if (live && chip) {
-        chip.setAttribute('href', '/share-your-story?action=' + encodeURIComponent(d.slug));
-        var label = partIn(chip, 'story-label');
-        if (label) label.textContent = copyText(s ? 'story-edit' : 'story-share');
-      } else drop(chip);
-      var state = partIn(li, 'story-state');
-      if (s && state) state.textContent = copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review');
-      else drop(state);
-    });
 
     dashboard(me, storyFor);
 
@@ -2335,6 +2304,15 @@
   }
 
   /** The dot next to Shop in the menu (in Webflow): on while a drop is coming up or on sale. */
+  // Product cards inside a drop's piece list (a nested Webflow list) carry their product
+  // slug (data-hf-product-link, bound in Webflow) because nested lists can't link to the item.
+  function productLinks() {
+    document.querySelectorAll('a[data-hf-product-link]').forEach(function (a) {
+      var slug = a.getAttribute('data-hf-product-link');
+      if (slug) a.setAttribute('href', '/product/' + encodeURIComponent(slug));
+    });
+  }
+
   async function shopDot() {
     var dots = [].slice.call(document.querySelectorAll('[data-hf-show="shop-open"]'));
     if (!dots.length || dots[0].getAttribute('data-hfp')) return;
@@ -2423,7 +2401,7 @@
     // Pages that had their own embed code switch over once that code is
     // replaced in Webflow by the marker <div data-hf-pages hidden></div>.
     var marked = !!document.querySelector('[data-hf-pages]');
-    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, evergreenSection, productPage];
+    var parts = [emptyLists, shorterAlsoFits, rememberLocation, headerAccount, impactNumbers, claimPage, invitePage, weeklyDare, liveActivity, cmsClips, shopPage, shopDot, productLinks, evergreenSection, productPage];
     if (marked) parts.push(actionPage, accountPage, suggestPage, storyPage);
     parts.forEach(function (f) {
       try { var p = f(); if (p && p.catch) p.catch(function (e) { console.error('[hf-pages]', e); }); } catch (e) { console.error('[hf-pages]', e); }

@@ -759,8 +759,6 @@ describe('Account lists (built in Webflow)', () => {
     <div class="hf-acct-card" id="acct-pledges"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-pledges"><span>Your pledges</span><span data-hf-fill="fold-count"></span></a></h2>
       <div id="hf-pledges"><p data-hf-part="empty">No pledges yet.</p><ul data-hf-slot="pledges">${T('pledge', '<div><span data-hf-part="state">Open</span><span data-hf-part="date">x</span></div><p data-hf-part="kept">x</p><a data-hf-part="keep" href="/actions"><span>Find an action</span></a>')}</ul></div></div>
     <div class="hf-acct-card" id="acct-saved" data-hf-show="saved"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-saved"><span>Saved</span><span data-hf-fill="fold-count"></span></a></h2><ul data-hf-slot="saved">${T('saved', '<a data-hf-part="title" href="/actions">x</a>')}</ul></div>
-    <div class="hf-acct-card" id="acct-actions"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-actions"><span>Actions</span><span data-hf-fill="fold-count"></span></a></h2>
-      <div id="hf-actions"><p data-hf-part="empty">Nothing here yet.</p><ul data-hf-slot="done">${T('done', '<a data-hf-part="title" href="/actions">x</a><span data-hf-part="meta">x</span><div><a data-hf-part="story" href="/share-your-story"><span data-hf-part="story-label">x</span></a><span data-hf-part="story-state">x</span></div>')}</ul></div></div>
     <div class="hf-acct-card" id="acct-invited" data-hf-show="invited"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-invited"><span>Invites</span><span data-hf-fill="fold-count"></span></a></h2><ul data-hf-slot="invited">${T('invited', '<a data-hf-part="title" href="/actions">x</a><p data-hf-part="by">x</p><a data-hf-act="leave" href="#">Leave</a>')}</ul></div>
     <div class="hf-acct-card" id="acct-joined" data-hf-show="joined"><ul data-hf-slot="joined">${T('joined', '<p data-hf-part="text">x</p>')}</ul></div>
     <div class="hf-dash-bar"><div data-hf-part="tally-bar"></div></div><p data-hf-fill="tally-next"></p>
@@ -796,13 +794,6 @@ describe('Account lists (built in Webflow)', () => {
     expect(pl[1].querySelector('[data-hf-part="keep"]')).toBeNull();
     expect(pl[1].querySelector('[data-hf-part="kept"] a')!.getAttribute('href')).toBe('/action/cook-a-meal');
     expect((d.querySelector('#hf-pledges [data-hf-part="empty"]') as unknown as { style: { display: string } }).style.display).toBe('none');
-    // Actions: one row per action, repeats counted, a story chip only for live actions.
-    const dn = items('done');
-    expect(dn.length).toBe(2);
-    expect(dn[0].querySelector('[data-hf-part="meta"]')!.textContent).toContain('2 times');
-    expect(dn[0].querySelector('[data-hf-part="story-state"]')!.textContent).toBe(WORDING['acct-story-review']);
-    expect(dn[1].querySelector('[data-hf-part="title"]')!.hasAttribute('href')).toBe(false);
-    expect(dn[1].querySelector('[data-hf-part="story"]')).toBeNull();
     // Cards with nothing in them stay hidden; the rest show.
     expect(d.getElementById('acct-saved')!.hasAttribute('data-hf-on')).toBe(false);
     expect(d.getElementById('acct-joined')!.hasAttribute('data-hf-on')).toBe(false);
@@ -812,7 +803,7 @@ describe('Account lists (built in Webflow)', () => {
     expect(d.querySelectorAll('[data-hf-slot="ripple"] svg').length).toBe(1);
     expect(d.getElementById('hfp-ripple')!.textContent).toBe('Your actions have led to 4 more.');
     // The designs themselves are untouched.
-    expect(d.querySelectorAll('[data-hf-template]').length).toBe(6);
+    expect(d.querySelectorAll('[data-hf-template]').length).toBe(5);
     // Dashboard: tally milestone, next up (the first not done), the feed and its chips.
     expect((d.querySelector('[data-hf-part="tally-bar"]') as unknown as { style: { width: string } }).style.width).toBe('60%');
     expect(d.querySelector('[data-hf-fill="tally-next"]')!.textContent).toBe('2 more to reach 5.');
@@ -824,18 +815,21 @@ describe('Account lists (built in Webflow)', () => {
     expect(feed.length).toBe(6);
     expect(feed[0].querySelector('[data-hf-part="title"]')!.textContent).toBe('You did: Cook a meal');
     expect(feed[0].querySelector('[data-hf-part="go"]')!.getAttribute('href')).toBe('/share-your-story?action=cook-a-meal');
+    expect(feed[0].querySelector('[data-hf-part="meta"]')!.textContent).toContain(WORDING['acct-story-review']);
+    // An archived action has no story link.
+    expect(feed.find((li) => li.textContent!.includes('Old one'))!.querySelector('[data-hf-part="go"]')).toBeNull();
     expect(d.querySelector('[data-hf-show="feed-end"]')!.hasAttribute('data-hf-on')).toBe(true);
     (d.querySelector('[data-hf-filter="together"]') as unknown as { click: () => void }).click();
     expect(feed.filter((li) => (li as unknown as { style: { display: string } }).style.display !== 'none').length).toBe(1);
     expect(d.querySelector('[data-hf-filter="together"]')!.getAttribute('aria-pressed')).toBe('true');
     // Fold: counts in the title, and the title opens and closes its card.
     expect(d.querySelector('#acct-pledges [data-hf-fill="fold-count"]')!.textContent).toBe('1 to keep');
-    const fold = d.querySelector('#acct-actions [data-hf-act="fold"]') as unknown as { click: () => void };
-    expect(d.getElementById('acct-actions')!.hasAttribute('data-hf-closed')).toBe(false);
+    const fold = d.querySelector('#acct-pledges [data-hf-act="fold"]') as unknown as { click: () => void };
+    expect(d.getElementById('acct-pledges')!.hasAttribute('data-hf-closed')).toBe(false);
     fold.click();
-    expect(d.getElementById('acct-actions')!.hasAttribute('data-hf-closed')).toBe(true);
+    expect(d.getElementById('acct-pledges')!.hasAttribute('data-hf-closed')).toBe(true);
     fold.click();
-    expect(d.getElementById('acct-actions')!.hasAttribute('data-hf-closed')).toBe(false);
+    expect(d.getElementById('acct-pledges')!.hasAttribute('data-hf-closed')).toBe(false);
     // Leaving an invite removes it and hides the empty card.
     (items('invited')[0].querySelector('[data-hf-act="leave"]') as unknown as { click: () => void }).click();
     await p.settle();
@@ -998,5 +992,14 @@ describe('Shop', () => {
     expect(shown(one.querySelector('[data-hf-show="drop-notify"]'))).toBe(false);
     expect(one.querySelector('[data-hf-fill="drop-left"]')!.textContent).toBe('12 of 100 left');
     expect(shown(zero.querySelector('[data-hf-show="drop-sold-out"]'))).toBe(true);
+  });
+});
+
+describe('Drop piece cards (nested Webflow lists)', () => {
+  it('link to their own product page', async () => {
+    const p = await page('/shop', '<a class="hf-shop-card" href="/product" data-hf-product-link="drop-01-tee">Tee</a><a href="/product" data-hf-product-link="">None</a>', () => ({ data: { drops: [] } }));
+    const [a, b] = [...p.document.querySelectorAll('a')];
+    expect(a.getAttribute('href')).toBe('/product/drop-01-tee');
+    expect(b.getAttribute('href')).toBe('/product');
   });
 });

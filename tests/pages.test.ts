@@ -763,6 +763,12 @@ describe('Account lists (built in Webflow)', () => {
       <div id="hf-actions"><p data-hf-part="empty">Nothing here yet.</p><ul data-hf-slot="done">${T('done', '<a data-hf-part="title" href="/actions">x</a><span data-hf-part="meta">x</span><div><a data-hf-part="story" href="/share-your-story"><span data-hf-part="story-label">x</span></a><span data-hf-part="story-state">x</span></div>')}</ul></div></div>
     <div class="hf-acct-card" id="acct-invited" data-hf-show="invited"><h2 class="hf-acct-card-title"><a data-hf-act="fold" href="#acct-invited"><span>Invites</span><span data-hf-fill="fold-count"></span></a></h2><ul data-hf-slot="invited">${T('invited', '<a data-hf-part="title" href="/actions">x</a><p data-hf-part="by">x</p><a data-hf-act="leave" href="#">Leave</a>')}</ul></div>
     <div class="hf-acct-card" id="acct-joined" data-hf-show="joined"><ul data-hf-slot="joined">${T('joined', '<p data-hf-part="text">x</p>')}</ul></div>
+    <div class="hf-dash-bar"><div data-hf-part="tally-bar"></div></div><p data-hf-fill="tally-next"></p>
+    <section data-hf-show="next" data-hf-slug="cook-a-meal" id="n1"><p data-hf-fill="next-why"></p><a data-hf-act="next-skip" href="#">Skip</a></section>
+    <section data-hf-show="next" data-hf-slug="call-mum" id="n2"><p data-hf-fill="next-why"></p><a data-hf-act="next-skip" href="#">Skip</a></section>
+    <section data-hf-show="next" data-hf-slug="write-a-note" id="n3"><p data-hf-fill="next-why"></p><a data-hf-act="next-skip" href="#">Skip</a></section>
+    <div><button data-hf-act="feed-filter" data-hf-filter="all" class="is-on">All</button><button data-hf-act="feed-filter" data-hf-filter="together">Together</button></div>
+    <section><ul data-hf-slot="feed">${T('feed-item', '<span data-hf-part="badge">x</span><p data-hf-part="title">x</p><p data-hf-part="meta">x</p><a data-hf-part="go" href="#">Go</a>')}</ul><p data-hf-part="empty">Empty</p><p data-hf-show="feed-end">End</p></section>
   </div>`;
   const ME = { data: {
     name: 'Tess', tally: 3, ripple: 4, settings: {},
@@ -806,7 +812,22 @@ describe('Account lists (built in Webflow)', () => {
     expect(d.querySelectorAll('[data-hf-slot="ripple"] svg').length).toBe(1);
     expect(d.getElementById('hfp-ripple')!.textContent).toBe('Your actions have led to 4 more.');
     // The designs themselves are untouched.
-    expect(d.querySelectorAll('[data-hf-template]').length).toBe(5);
+    expect(d.querySelectorAll('[data-hf-template]').length).toBe(6);
+    // Dashboard: tally milestone, next up (the first not done), the feed and its chips.
+    expect((d.querySelector('[data-hf-part="tally-bar"]') as unknown as { style: { width: string } }).style.width).toBe('60%');
+    expect(d.querySelector('[data-hf-fill="tally-next"]')!.textContent).toBe('2 more to reach 5.');
+    const on = (id: string) => d.getElementById(id)!.hasAttribute('data-hf-on');
+    expect([on('n1'), on('n2'), on('n3')]).toEqual([false, true, false]);
+    (d.querySelector('#n2 [data-hf-act="next-skip"]') as unknown as { click: () => void }).click();
+    expect([on('n1'), on('n2'), on('n3')]).toEqual([false, false, true]);
+    const feed = items('feed');
+    expect(feed.length).toBe(6);
+    expect(feed[0].querySelector('[data-hf-part="title"]')!.textContent).toBe('You did: Cook a meal');
+    expect(feed[0].querySelector('[data-hf-part="go"]')!.getAttribute('href')).toBe('/share-your-story?action=cook-a-meal');
+    expect(d.querySelector('[data-hf-show="feed-end"]')!.hasAttribute('data-hf-on')).toBe(true);
+    (d.querySelector('[data-hf-filter="together"]') as unknown as { click: () => void }).click();
+    expect(feed.filter((li) => (li as unknown as { style: { display: string } }).style.display !== 'none').length).toBe(1);
+    expect(d.querySelector('[data-hf-filter="together"]')!.getAttribute('aria-pressed')).toBe('true');
     // Fold: counts in the title, and the title opens and closes its card.
     expect(d.querySelector('#acct-pledges [data-hf-fill="fold-count"]')!.textContent).toBe('1 to keep');
     const fold = d.querySelector('#acct-actions [data-hf-act="fold"]') as unknown as { click: () => void };

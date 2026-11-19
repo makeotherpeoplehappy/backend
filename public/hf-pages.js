@@ -890,6 +890,120 @@
     if (A.toGo === 1) return copyText('active-to-go-one', { n: A.weeksDone });
     return copyText('active-to-go-many', { n: A.weeksDone, left: A.toGo });
   }
+  // The account dashboard (built in Webflow): the tally's next milestone, one action to do
+  // next (a Webflow Actions list; this shows the first one not yet done or skipped) and the
+  // feed of what happened, with filter chips.
+  var MILESTONES = [5, 10, 25, 50, 100, 250, 500, 1000];
+  var SKIP_KEY = 'hfp_next_skip';
+  function skipped() { try { return JSON.parse(localStorage.getItem(SKIP_KEY) || '[]') || []; } catch (e) { return []; } }
+  function dashboard(me, storyFor) {
+    var inn = $('hf-acct-in');
+    if (!inn) return;
+    var P = partsOf(inn);
+    var n = me.tally || 0;
+    var goal = MILESTONES.filter(function (m) { return m > n; })[0] || 0;
+    var prev = MILESTONES.filter(function (m) { return m <= n; }).pop() || 0;
+    var bar = partIn(inn, 'tally-bar');
+    if (bar) bar.style.width = goal ? Math.round(((n - prev) / (goal - prev)) * 100) + '%' : '100%';
+    P.fill('tally-next', !goal ? copyText('dash-next-done') : goal - n === 1 ? copyText('dash-next-one', { goal: goal }) : copyText('dash-next-many', { left: goal - n, goal: goal }));
+
+    // Next up: the first card not done, saved or skipped.
+    var seen = {};
+    (me.done || []).forEach(function (d) { if (d.slug) seen[d.slug] = 1; });
+    skipped().forEach(function (s) { seen[s] = 1; });
+    var cards = [].slice.call(inn.querySelectorAll('[data-hf-show="next"]'));
+    function pickNext() {
+      var pick = cards.filter(function (c) { return !seen[c.getAttribute('data-hf-slug')]; })[0] || null;
+      cards.forEach(function (c) { if (c === pick) c.setAttribute('data-hf-on', '1'); else c.removeAttribute('data-hf-on'); });
+      if (pick) {
+        var why = pick.querySelector('[data-hf-fill="next-why"]');
+        if (why) why.textContent = copyText(n ? 'dash-why-popular' : 'dash-why-first');
+      }
+    }
+    pickNext();
+    cards.forEach(function (c) {
+      var skip = c.querySelector('[data-hf-act="next-skip"]');
+      if (!skip || skip.getAttribute('data-hfp')) return;
+      skip.setAttribute('data-hfp', '1');
+      skip.addEventListener('click', function (e) {
+        e.preventDefault();
+        var slug = c.getAttribute('data-hf-slug');
+        var list = skipped().filter(function (s) { return s !== slug; }).concat([slug]).slice(-50);
+        try { localStorage.setItem(SKIP_KEY, JSON.stringify(list)); } catch (err) {}
+        seen[slug] = 1;
+        if (!cards.some(function (x) { return !seen[x.getAttribute('data-hf-slug')]; })) {
+          // Every card skipped: start again, keeping only what is done.
+          try { localStorage.removeItem(SKIP_KEY); } catch (err) {}
+          seen = {};
+          (me.done || []).forEach(function (d) { if (d.slug) seen[d.slug] = 1; });
+          seen[slug] = 1;
+        }
+        pickNext();
+      });
+    });
+
+    // The feed: newest first, at most 30.
+    var items = [];
+    (me.done || []).forEach(function (d) {
+      var live = d.slug && d.actionStatus === 'published';
+      var s = storyFor[d.actionId];
+      items.push({ cat: 'mine', at: d.doneAt, badge: '✓', title: copyText('feed-did', { action: d.title }),
+        meta: day(d.doneAt), go: live ? { href: '/share-your-story?action=' + encodeURIComponent(d.slug), text: copyText(s ? 'story-edit' : 'story-share') } : null });
+    });
+    (me.joinedMyInvites || []).forEach(function (x) {
+      items.push({ cat: 'together', at: x.joinedAt, badge: '+', title: copyText('feed-joined', { name: x.name || copyText('acct-someone'), action: x.actionTitle || '' }),
+        meta: day(x.joinedAt), go: x.actionSlug ? { href: '/action/' + x.actionSlug, text: copyText('feed-see-action') } : null });
+    });
+    (me.invitesIJoined || []).forEach(function (x) {
+      items.push({ cat: 'together', at: x.joinedAt, badge: '+', title: copyText('feed-i-joined', { name: x.inviterName || copyText('acct-someone'), action: x.actionTitle || '' }),
+        meta: day(x.joinedAt), go: x.actionSlug ? { href: '/action/' + x.actionSlug, text: copyText('feed-see-action') } : null });
+    });
+    (me.pledges || []).forEach(function (p) {
+      var kept = p.status === 'kept';
+      items.push({ cat: 'drops', at: kept && p.keptOn ? p.keptOn : p.orderedAt, badge: '◆',
+        title: kept ? copyText('feed-pledge-kept', { action: p.keptByTitle || copyText('acct-pledge-an-action') }) : copyText('feed-pledge-open'),
+        meta: day(kept && p.keptOn ? p.keptOn : p.orderedAt), go: kept ? null : { href: '/#find', text: copyText('feed-pledge-keep') } });
+    });
+    items.sort(function (a, b) { return String(b.at || '').localeCompare(String(a.at || '')); });
+    items = items.slice(0, 30);
+    fillList('feed', items, function (li, x) {
+      li.setAttribute('data-cat', x.cat);
+      var b = partIn(li, 'badge');
+      if (b) { b.textContent = x.badge; b.classList.toggle('is-green', x.cat === 'together'); b.classList.toggle('is-ink', x.cat === 'drops'); }
+      var t = partIn(li, 'title');
+      if (t) t.textContent = x.title;
+      var m = partIn(li, 'meta');
+      if (m) m.textContent = x.meta;
+      var go = partIn(li, 'go');
+      if (x.go) setLink(go, x.go.href, x.go.text); else drop(go);
+    }, 'feed-item');
+    P.show('feed-end', items.length > 0);
+    feedFilter(inn, inn.getAttribute('data-hf-feed') || 'all');
+    inn.querySelectorAll('[data-hf-act="feed-filter"]').forEach(function (chip) {
+      if (chip.getAttribute('data-hfp')) return;
+      chip.setAttribute('data-hfp', '1');
+      chip.addEventListener('click', function (e) { e.preventDefault(); feedFilter(inn, chip.getAttribute('data-hf-filter')); });
+    });
+  }
+  function feedFilter(inn, f) {
+    inn.setAttribute('data-hf-feed', f);
+    inn.querySelectorAll('[data-hf-act="feed-filter"]').forEach(function (c) {
+      var on = c.getAttribute('data-hf-filter') === f;
+      c.classList.toggle('is-on', on);
+      c.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    var list = document.querySelector('[data-hf-slot="feed"]');
+    if (!list) return;
+    var shown = 0;
+    [].slice.call(list.children).forEach(function (li) {
+      if (li.hasAttribute('data-hf-template')) return;
+      var on = f === 'all' || li.getAttribute('data-cat') === f;
+      li.style.display = on ? '' : 'none';
+      if (on) shown++;
+    });
+    var empty = list.parentNode && list.parentNode.querySelector('[data-hf-part="empty"]');
+    if (empty) empty.style.display = shown ? 'none' : '';
+  }
   function renderAccount(me) {
     photoRow();
     homeAreaRow(me);
@@ -964,6 +1078,8 @@
       if (s && state) state.textContent = copyText(s.status === 'approved' ? 'acct-story-approved' : s.status === 'rejected' ? 'acct-story-rejected' : 'acct-story-review');
       else drop(state);
     });
+
+    dashboard(me, storyFor);
 
     P.show('saved', !!(me.saved && me.saved.length));
     fillList('saved', me.saved || [], function (li, d) { setLink(partIn(li, 'title'), '/action/' + d.slug, d.title); });

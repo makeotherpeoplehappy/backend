@@ -917,7 +917,7 @@
       cards.forEach(function (c) { if (c === pick) c.setAttribute('data-hf-on', '1'); else c.removeAttribute('data-hf-on'); });
       if (pick) {
         var why = pick.querySelector('[data-hf-fill="next-why"]');
-        if (why) why.textContent = copyText(n ? 'dash-why-popular' : 'dash-why-first');
+        if (why) why.textContent = copyText('dash-next-label');
       }
     }
     pickNext();

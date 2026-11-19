@@ -931,13 +931,7 @@
   }
 
   function weekLabel(d) { try { return new Date(d + 'T00:00:00Z').toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }); } catch (e) { return d; } }
-  function activeLine(A) {
-    if (A.active && A.toGo === 0) return copyText('active-yes', { n: A.weeksDone });
-    if (A.active) return copyText('active-keep');
-    if (A.weeksDone === 0) return copyText('active-start');
-    if (A.toGo === 1) return copyText('active-to-go-one', { n: A.weeksDone });
-    return copyText('active-to-go-many', { n: A.weeksDone, left: A.toGo });
-  }
+
   // The account dashboard (built in Webflow): the tally's next milestone, one action to do
   // next (a Webflow Actions list; this shows the first one not yet done or skipped) and the
   // feed of what happened, with filter chips.
@@ -1067,6 +1061,53 @@
     setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
+  // "Your weeks" (built in Webflow): where you stand (n of 4, as four bars) and what
+  // to do next, in plain words with a date – not a calendar of past weeks.
+  function weeksPlan(A) {
+    var f = A.weeks.map(function (w) { return !!w.done; });
+    var cur = f.length - 1;
+    for (var k = 0; k <= 5; k++) {
+      var n = 0;
+      for (var i = cur + k - 4; i <= cur + k; i++) if (i >= cur || f[i]) n++;
+      if (n >= 4) {
+        var todo = [];
+        for (var j = 0; j <= k; j++) if (j > 0 || !f[cur]) todo.push(j);
+        return { k: k, todo: todo };
+      }
+    }
+    return { k: 0, todo: [0] };
+  }
+  function weekName(start, j) {
+    if (j === 0) return copyText('weeks-this-week');
+    if (j === 1) return copyText('weeks-next-week');
+    if (j === 2) return copyText('weeks-after');
+    var d = new Date(start + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 7 * j);
+    return copyText('weeks-of', { date: d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }) });
+  }
+  function joinAnd(list) { return list.length < 2 ? list.join('') : list.slice(0, -1).join(', ') + copyText('weeks-and') + list[list.length - 1]; }
+  function weeksCard(P, A) {
+    var cur = A.weeks[A.weeks.length - 1] || { start: '', done: false };
+    var n = A.weeks.filter(function (w) { return w.done; }).length;
+    P.fill('active-status', A.active ? copyText('weeks-active') : copyText('weeks-done', { n: Math.min(n, 4) }));
+    var dots = P.one('[data-hf-part="active-dots"]');
+    if (dots) {
+      [].slice.call(dots.children).forEach(function (d, i) { d.classList.toggle('is-done', A.active || i < n); });
+      dots.setAttribute('aria-label', copyText('weeks-done', { n: A.active ? 4 : Math.min(n, 4) }));
+    }
+    if (A.active) {
+      P.fill('active-next', copyText('weeks-keep'));
+      P.fill('active-this', copyText(cur.done ? 'weeks-this-done' : 'weeks-this-keep'));
+      return;
+    }
+    var plan = weeksPlan(A);
+    var names = plan.todo.map(function (j) { return weekName(cur.start, j); });
+    var from = new Date(cur.start + 'T12:00:00Z'); from.setUTCDate(from.getUTCDate() + 7 * plan.k);
+    P.fill('active-next', plan.k === 0
+      ? copyText('weeks-next-now', { weeks: joinAnd(names) })
+      : copyText('weeks-next-from', { weeks: joinAnd(names), date: from.toLocaleDateString(undefined, { day: 'numeric', month: 'short', timeZone: 'UTC' }) }));
+    P.fill('active-this', cur.done ? copyText('weeks-this-done') : '');
+  }
+
   // The feed's round badge is whoever did it: your photo or initial, or your friend's initial.
   function feedAvatar(b, x) {
     var photo = '';
@@ -1122,15 +1163,7 @@
       rememberActive(A);
       P.show('active-card', true);
       P.show('active-badge', A.active);
-      P.fill('active-status', activeLine(A));
-      fillList('active-weeks', A.weeks, function (li, w, i) {
-        var dot = partIn(li, 'dot');
-        var last = A.weeks.indexOf(w) === A.weeks.length - 1;
-        if (dot) { dot.classList.toggle('is-done', w.done); dot.classList.toggle('is-now', last && !w.done); }
-        var label = partIn(li, 'label');
-        if (label) label.textContent = last ? copyText('active-this-week') : weekLabel(w.start);
-        li.setAttribute('aria-label', (last ? copyText('active-this-week') : weekLabel(w.start)) + ': ' + copyText(w.done ? 'active-week-done' : 'active-week-open'));
-      }, 'week');
+      weeksCard(P, A);
     }
     // Your ripple: its card is built in Webflow, right under the impact numbers.
     P.show('ripple', !!me.rippleView);

@@ -979,6 +979,13 @@ describe('Shop', () => {
     expect(shown(d.querySelector('[data-hf-show="product-buy"]'))).toBe(false);
   });
 
+  it('not on sale yet: no size picker, even when the piece comes in sizes', async () => {
+    for (const [status, reason] of [['upcoming', 'upcoming'], ['early', 'early_not_active']]) {
+      const p = await page('/product/drop-01-tee', PRODUCT_HTML, (_m, path) => (path === '/api/shop/products/drop-01-tee' ? { data: { ...base, status, canBuy: false, reason, variants: SIZES } } : undefined));
+      expect(shown(p.document.querySelector('[data-hf-show="product-sizes"]'))).toBe(false);
+    }
+  });
+
   it('on sale with sizes: sold-out sizes cannot be picked, Buy asks for a size, then goes to checkout', async () => {
     const p = await page('/product/drop-01-tee', PRODUCT_HTML, (m, path) => {
       if (path === '/api/shop/products/drop-01-tee') return { data: { ...base, status: 'live', canBuy: true, reason: null, variants: SIZES } };

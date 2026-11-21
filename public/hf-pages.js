@@ -2729,8 +2729,10 @@
       P.fill('product-countdown', to ? opensIn(Date.parse(to) - Date.now()) : '');
       // Before it opens: the edition size; once on sale: how many are left.
       P.fill('product-left', st.status === 'upcoming' ? (st.edition ? copyText('shop-edition', { n: st.edition }) : '') : leftText(st.left, st.edition));
-      P.show('product-sizes', st.variants.length > 1);
-      if (sizes && st.variants.length > 1) {
+      // Sizes only once this person can buy: before then there is nothing to pick for.
+      var pickSize = st.canBuy && st.variants.length > 1;
+      P.show('product-sizes', pickSize);
+      if (sizes && pickSize) {
         var keep = sizes.value;
         sizes.innerHTML = '';
         var first = document.createElement('option');
